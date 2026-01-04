@@ -1,0 +1,8 @@
+{
+  "name": "NutriChef",
+  "description": "The complete nutrition and fitness ecosystem. Track macros, scan food, and cook smart.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
