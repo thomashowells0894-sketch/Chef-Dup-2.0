@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- HealthKit -->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<key>com.apple.developer.healthkit.access</key>
+	<array>
+		<string>health-records</string>
+	</array>
+	<key>com.apple.developer.healthkit.background-delivery</key>
+	<true/>
+
+	<!-- Push Notifications -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- Associated Domains (Universal Links) -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:nutrichef.ai</string>
+		<string>webcredentials:nutrichef.ai</string>
+		<string>activitycontinuation:nutrichef.ai</string>
+	</array>
+
+	<!-- App Groups (for sharing data with widgets/extensions) -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.ai.nutrichef.app</string>
+	</array>
+
+	<!-- iCloud (for backup) -->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.ai.nutrichef.app</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.ai.nutrichef.app</string>
+	</array>
+
+	<!-- Keychain Sharing -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)ai.nutrichef.app</string>
+	</array>
+
+	<!-- Background Modes -->
+	<key>com.apple.developer.background-task-identifiers</key>
+	<array>
+		<string>ai.nutrichef.app.refresh</string>
+		<string>ai.nutrichef.app.sync</string>
+	</array>
+
+	<!-- Siri -->
+	<key>com.apple.developer.siri</key>
+	<true/>
+
+	<!-- Sign in with Apple -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+
+	<!-- Network Extensions (for API calls) -->
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>app-proxy-provider</string>
+	</array>
+
+	<!-- Data Protection -->
+	<key>com.apple.developer.default-data-protection</key>
+	<string>NSFileProtectionComplete</string>
+</dict>
+</plist>

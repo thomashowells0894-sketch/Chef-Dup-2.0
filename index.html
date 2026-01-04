@@ -2,30 +2,334 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-    <title>NutriChef</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+
+    <!-- Primary Meta Tags -->
+    <title>NutriChef - AI Nutrition & Fitness Coach</title>
+    <meta name="title" content="NutriChef - AI Nutrition & Fitness Coach" />
+    <meta name="description" content="Your AI-powered personal nutrition and fitness companion. Scan food, track calories, plan meals, and achieve your health goals." />
+    <meta name="author" content="NutriChef" />
+    <meta name="keywords" content="nutrition, fitness, diet, calories, meal planner, workout, AI, health, food scanner, recipe generator" />
+
+    <!-- iOS App Specific -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="NutriChef" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Theme Colors -->
+    <meta name="theme-color" content="#F8FAFC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0F172A" media="(prefers-color-scheme: dark)" />
+    <meta name="msapplication-TileColor" content="#F97316" />
+    <meta name="msapplication-navbutton-color" content="#F97316" />
+
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NutriChef - AI Nutrition & Fitness Coach" />
+    <meta property="og:description" content="Your AI-powered personal nutrition and fitness companion. Scan food, track calories, plan meals, and achieve your health goals." />
+    <meta property="og:image" content="/icons/og-image.png" />
+    <meta property="og:site_name" content="NutriChef" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="NutriChef - AI Nutrition & Fitness Coach" />
+    <meta name="twitter:description" content="Your AI-powered personal nutrition and fitness companion." />
+    <meta name="twitter:image" content="/icons/twitter-image.png" />
+
+    <!-- iOS App Store Smart Banner (when you have an App Store ID) -->
+    <!-- <meta name="apple-itunes-app" content="app-id=YOUR_APP_ID"> -->
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Favicon and App Icons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180x180.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167x167.png" />
+
+    <!-- iOS Splash Screens -->
+    <!-- iPhone 15 Pro Max, 14 Pro Max -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" href="/splash/splash-1290x2796.png" />
+    <!-- iPhone 15 Pro, 15, 14 Pro -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" href="/splash/splash-1179x2556.png" />
+    <!-- iPhone 14 Plus, 13 Pro Max, 12 Pro Max -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" href="/splash/splash-1284x2778.png" />
+    <!-- iPhone 14, 13, 13 Pro, 12, 12 Pro -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" href="/splash/splash-1170x2532.png" />
+    <!-- iPhone 13 mini, 12 mini -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" href="/splash/splash-1125x2436.png" />
+    <!-- iPhone 11 Pro Max, XS Max -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)" href="/splash/splash-1242x2688.png" />
+    <!-- iPhone 11, XR -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-828x1792.png" />
+    <!-- iPhone SE 3rd gen, iPhone 8, 7, 6s, 6 -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-750x1334.png" />
+    <!-- iPad Pro 12.9" -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-2048x2732.png" />
+    <!-- iPad Pro 11" -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-1668x2388.png" />
+    <!-- iPad Pro 10.5", iPad Air 3rd gen -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-1668x2224.png" />
+    <!-- iPad 10th gen -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-1640x2360.png" />
+    <!-- iPad mini 6th gen -->
+    <link rel="apple-touch-startup-image" media="screen and (device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2)" href="/splash/splash-1488x2266.png" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Import Maps for ESM -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.3",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0"
+      }
+    }
+    </script>
+
     <style>
-      body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F8FAFC; }
+      /* Base Styles */
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+        --sar: env(safe-area-inset-right);
+
+        /* iOS-style colors */
+        --color-primary: #F97316;
+        --color-primary-light: #FB923C;
+        --color-background: #F8FAFC;
+        --color-surface: #FFFFFF;
+        --color-text: #0F172A;
+        --color-text-secondary: #64748B;
+      }
+
+      /* Dark mode support */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --color-background: #0F172A;
+          --color-surface: #1E293B;
+          --color-text: #F8FAFC;
+          --color-text-secondary: #94A3B8;
+        }
+      }
+
+      * {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+
+      html, body {
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      body {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background-color: var(--color-background);
+        color: var(--color-text);
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+
+      /* iOS-style selection */
+      ::selection {
+        background-color: rgba(249, 115, 22, 0.3);
+      }
+
       /* Hide scrollbar for clean UI */
-      ::-webkit-scrollbar { width: 0px; background: transparent; }
-      .tap-highlight-transparent { -webkit-tap-highlight-color: transparent; }
+      ::-webkit-scrollbar {
+        width: 0px;
+        height: 0px;
+        background: transparent;
+      }
+
+      /* Safe area padding utilities */
+      .pt-safe { padding-top: env(safe-area-inset-top); }
+      .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+      .pl-safe { padding-left: env(safe-area-inset-left); }
+      .pr-safe { padding-right: env(safe-area-inset-right); }
+      .p-safe {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+
+      /* iOS-style button press effect */
+      .ios-press {
+        transition: transform 0.1s ease-out, opacity 0.1s ease-out;
+      }
+      .ios-press:active {
+        transform: scale(0.97);
+        opacity: 0.8;
+      }
+
+      /* iOS-style card */
+      .ios-card {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      }
+
+      /* iOS-style input */
+      input, textarea {
+        -webkit-appearance: none;
+        appearance: none;
+        border-radius: 12px;
+      }
+
+      input:focus, textarea:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+      }
+
+      /* Smooth scrolling */
+      .scroll-smooth {
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* Animation classes */
+      @keyframes slideUp {
+        from {
+          transform: translateY(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes slideDown {
+        from {
+          transform: translateY(-100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @keyframes scaleIn {
+        from {
+          transform: scale(0.95);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+
+      .animate-slide-up { animation: slideUp 0.3s ease-out; }
+      .animate-slide-down { animation: slideDown 0.3s ease-out; }
+      .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+      .animate-scale-in { animation: scaleIn 0.2s ease-out; }
+      .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+      /* Prevent pull-to-refresh on iOS */
+      body {
+        overscroll-behavior-y: contain;
+      }
+
+      /* Loading skeleton */
+      .skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+      }
+
+      @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+
+      /* iOS Dynamic Island awareness */
+      @supports (padding-top: env(safe-area-inset-top)) {
+        .dynamic-island-aware {
+          padding-top: max(env(safe-area-inset-top), 59px);
+        }
+      }
+
+      /* Reduce motion for accessibility */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0"
-  }
-}
-</script>
-</head>
-  <body class="bg-slate-50 text-slate-900 overflow-hidden">
+  </head>
+  <body class="bg-slate-50 text-slate-900 overflow-hidden antialiased">
     <div id="root"></div>
+
+    <!-- Capacitor Core -->
+    <script type="module">
+      import { Capacitor } from '@capacitor/core';
+
+      // Initialize Capacitor if available
+      window.Capacitor = Capacitor;
+
+      // Prevent context menu on long press
+      document.addEventListener('contextmenu', (e) => {
+        if (Capacitor.isNativePlatform()) {
+          e.preventDefault();
+        }
+      });
+
+      // Handle iOS rubber-banding prevention
+      document.body.addEventListener('touchmove', (e) => {
+        if (e.target === document.body) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+    </script>
+
+    <!-- Service Worker Registration for PWA -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('SW registered:', registration.scope);
+            })
+            .catch((error) => {
+              console.log('SW registration failed:', error);
+            });
+        });
+      }
+    </script>
   </body>
 </html>

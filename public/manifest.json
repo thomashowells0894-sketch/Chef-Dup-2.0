@@ -1,0 +1,177 @@
+{
+  "name": "NutriChef - AI Nutrition & Fitness Coach",
+  "short_name": "NutriChef",
+  "description": "Your AI-powered personal nutrition and fitness companion. Scan food, track calories, plan meals, and achieve your health goals.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#F97316",
+  "scope": "/",
+  "lang": "en-US",
+  "categories": ["health", "fitness", "food", "lifestyle"],
+  "dir": "ltr",
+  "prefer_related_applications": true,
+  "related_applications": [
+    {
+      "platform": "itunes",
+      "url": "https://apps.apple.com/app/nutrichef/id0000000000"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-1024x1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/home-screen.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "NutriChef Home Dashboard"
+    },
+    {
+      "src": "/screenshots/food-scanner.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "AI Food Scanner"
+    },
+    {
+      "src": "/screenshots/workout-screen.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Workout Tracker"
+    },
+    {
+      "src": "/screenshots/meal-planner.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "AI Meal Planner"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Scan Food",
+      "short_name": "Scan",
+      "description": "Open camera to scan food",
+      "url": "/?action=scan",
+      "icons": [
+        {
+          "src": "/icons/shortcut-scan.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Log Meal",
+      "short_name": "Log",
+      "description": "Quick log a meal",
+      "url": "/?action=log",
+      "icons": [
+        {
+          "src": "/icons/shortcut-log.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Start Workout",
+      "short_name": "Workout",
+      "description": "Start a workout session",
+      "url": "/?action=workout",
+      "icons": [
+        {
+          "src": "/icons/shortcut-workout.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "image",
+          "accept": ["image/*"]
+        }
+      ]
+    }
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+nutrichef",
+      "url": "/protocol?url=%s"
+    }
+  ],
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "edge_side_panel": {
+    "preferred_width": 400
+  }
+}

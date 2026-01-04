@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Bundle Information -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>NutriChef</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<!-- iOS Version Requirements -->
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>MinimumOSVersion</key>
+	<string>15.0</string>
+
+	<!-- Device Capabilities -->
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+
+	<!-- App Transport Security -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+
+	<!-- Camera Usage -->
+	<key>NSCameraUsageDescription</key>
+	<string>NutriChef needs camera access to scan food, barcodes, and restaurant menus for instant nutritional information.</string>
+
+	<!-- Photo Library Usage -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NutriChef needs photo library access to save progress photos and import food images for scanning.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NutriChef needs permission to save your progress photos and meal images to your photo library.</string>
+
+	<!-- HealthKit Usage -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>NutriChef reads your health data to provide personalized nutrition recommendations and track your fitness progress.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>NutriChef writes nutrition, workout, and weight data to Apple Health to keep your health records synchronized.</string>
+
+	<!-- Motion Usage -->
+	<key>NSMotionUsageDescription</key>
+	<string>NutriChef uses motion data to accurately track your workouts and calculate calories burned.</string>
+
+	<!-- Location Usage (optional for restaurant features) -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>NutriChef uses your location to find nearby restaurants and provide relevant dining recommendations.</string>
+
+	<!-- Push Notifications -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+
+	<!-- Face ID Usage -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>NutriChef uses Face ID to securely access your health data and app settings.</string>
+
+	<!-- Supported Interface Orientations -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- Launch Storyboard -->
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+
+	<!-- Status Bar -->
+	<key>UIStatusBarHidden</key>
+	<false/>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleDefault</string>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+
+	<!-- URL Schemes -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ai.nutrichef.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nutrichef</string>
+				<string>capacitor</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Associated Domains -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:nutrichef.ai</string>
+		<string>webcredentials:nutrichef.ai</string>
+	</array>
+
+	<!-- Capacitor Configuration -->
+	<key>KeyboardResize</key>
+	<string>body</string>
+	<key>KeyboardResizeOnFullScreen</key>
+	<true/>
+	<key>KeyboardStyle</key>
+	<string>light</string>
+
+	<!-- App Appearance -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
+	<key>UIWhitePointAdaptivityStyle</key>
+	<string>UIWhitePointAdaptivityStyleStandard</string>
+
+	<!-- Accessibility -->
+	<key>UIAccessibilityAdaptivityEnabled</key>
+	<true/>
+
+	<!-- Launch Screen -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchScreenBackgroundColor</string>
+		<key>UIImageName</key>
+		<string>LaunchLogo</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<true/>
+	</dict>
+
+	<!-- App Icons -->
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+
+	<!-- Files Sharing (for data export) -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+
+	<!-- Document Types -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>CSV</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.comma-separated-values-text</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>JSON</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.json</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Queries Schemes -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+	</array>
+
+	<!-- Siri Shortcuts -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>ai.nutrichef.scanFood</string>
+		<string>ai.nutrichef.logMeal</string>
+		<string>ai.nutrichef.startWorkout</string>
+		<string>ai.nutrichef.checkProgress</string>
+	</array>
+</dict>
+</plist>
