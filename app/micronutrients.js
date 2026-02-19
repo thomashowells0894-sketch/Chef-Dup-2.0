@@ -1,291 +1,463 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { ArrowLeft, Pill, AlertTriangle, CheckCircle } from 'lucide-react-native';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import { ArrowLeft, Pill, AlertTriangle, ChevronDown, ChevronUp, Sparkles } from 'lucide-react-native';
 import ScreenWrapper from '../components/ScreenWrapper';
+import GlassCard from '../components/ui/GlassCard';
+import AnimatedProgressRing from '../components/AnimatedProgressRing';
+import AnimatedCounter from '../components/ui/AnimatedCounter';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { MICRONUTRIENTS } from '../data/micronutrients';
+import { useMicronutrients } from '../hooks/useMicronutrients';
+import { useProfile } from '../context/ProfileContext';
+import { useMeals } from '../context/MealContext';
+import { useDailyMicronutrients } from '../hooks/useDailyMicronutrients';
 
-const MICRONUTRIENTS = [
-  { key: 'fiber', name: 'Fiber', unit: 'g', rdi: 28, color: '#8B5CF6', group: 'other' },
-  { key: 'sodium', name: 'Sodium', unit: 'mg', rdi: 2300, color: '#F59E0B', isLimit: true, group: 'other' },
-  { key: 'sugar', name: 'Sugar', unit: 'g', rdi: 50, color: '#EC4899', isLimit: true, group: 'other' },
-  { key: 'calcium', name: 'Calcium', unit: 'mg', rdi: 1000, color: '#FFFFFF', group: 'mineral' },
-  { key: 'iron', name: 'Iron', unit: 'mg', rdi: 18, color: '#EF4444', group: 'mineral' },
-  { key: 'potassium', name: 'Potassium', unit: 'mg', rdi: 4700, color: '#F97316', group: 'mineral' },
-  { key: 'vitaminA', name: 'Vitamin A', unit: '\u03BCg', rdi: 900, color: '#F59E0B', group: 'vitamin' },
-  { key: 'vitaminC', name: 'Vitamin C', unit: 'mg', rdi: 90, color: '#F97316', group: 'vitamin' },
-  { key: 'vitaminD', name: 'Vitamin D', unit: '\u03BCg', rdi: 20, color: '#FBBF24', group: 'vitamin' },
-  { key: 'vitaminE', name: 'Vitamin E', unit: 'mg', rdi: 15, color: '#34D399', group: 'vitamin' },
-  { key: 'vitaminK', name: 'Vitamin K', unit: '\u03BCg', rdi: 120, color: '#6EE7B7', group: 'vitamin' },
-  { key: 'vitaminB12', name: 'Vitamin B12', unit: '\u03BCg', rdi: 2.4, color: '#F472B6', group: 'vitamin' },
-  { key: 'magnesium', name: 'Magnesium', unit: 'mg', rdi: 420, color: '#A78BFA', group: 'mineral' },
-  { key: 'zinc', name: 'Zinc', unit: 'mg', rdi: 11, color: '#94A3B8', group: 'mineral' },
-  { key: 'folate', name: 'Folate', unit: '\u03BCg', rdi: 400, color: '#4ADE80', group: 'vitamin' },
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const CATEGORY_TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'vitamin', label: 'Vitamins' },
+  { key: 'mineral', label: 'Minerals' },
+  { key: 'other', label: 'Other' },
 ];
 
-const FOOD_SUGGESTIONS = {
-  fiber: ['lentils', 'oats', 'broccoli'],
-  calcium: ['yogurt', 'cheese', 'fortified milk'],
-  iron: ['spinach', 'red meat', 'lentils'],
-  potassium: ['bananas', 'potatoes', 'avocado'],
-  vitaminA: ['carrots', 'sweet potatoes', 'spinach'],
-  vitaminC: ['oranges', 'bell peppers', 'strawberries'],
-  vitaminD: ['salmon', 'egg yolks', 'fortified milk'],
-  vitaminE: ['almonds', 'sunflower seeds', 'avocado'],
-  vitaminK: ['kale', 'spinach', 'broccoli'],
-  vitaminB12: ['eggs', 'salmon', 'fortified cereals'],
-  magnesium: ['dark chocolate', 'almonds', 'bananas'],
-  zinc: ['beef', 'pumpkin seeds', 'chickpeas'],
-  folate: ['leafy greens', 'beans', 'citrus fruits'],
-  sodium: [],
-  sugar: [],
-};
-
-function getBarColor(percentage, isLimit) {
-  if (isLimit) {
-    return percentage > 100 ? Colors.error : Colors.success;
-  }
-  if (percentage >= 80) return Colors.success;
-  if (percentage >= 40) return Colors.warning;
+function getProgressColor(percent) {
+  if (percent >= 75) return Colors.success;
+  if (percent >= 50) return Colors.warning;
+  if (percent >= 25) return '#FF9500'; // orange
   return Colors.error;
 }
 
-function NutrientRow({ nutrient, consumed }) {
-  const percentage = nutrient.rdi > 0 ? (consumed / nutrient.rdi) * 100 : 0;
-  const clampedWidth = Math.min(percentage, 100);
-  const barColor = getBarColor(percentage, nutrient.isLimit);
+function getStatusBadgeColor(status) {
+  switch (status) {
+    case 'excellent': return { bg: Colors.successSoft, text: Colors.success };
+    case 'good': return { bg: Colors.successSoft, text: Colors.success };
+    case 'low': return { bg: Colors.warningSoft, text: Colors.warning };
+    case 'warning': return { bg: 'rgba(255, 149, 0, 0.15)', text: '#FF9500' };
+    case 'critical': return { bg: Colors.errorSoft, text: Colors.error };
+    default: return { bg: Colors.surfaceGlass, text: Colors.textSecondary };
+  }
+}
+
+function getGradeColor(grade) {
+  if (grade.startsWith('A')) return Colors.success;
+  if (grade.startsWith('B')) return Colors.primary;
+  if (grade.startsWith('C')) return Colors.warning;
+  if (grade.startsWith('D')) return '#FF9500';
+  return Colors.error;
+}
+
+// ---------------------------------------------------------------------------
+// NutrientRow — individual nutrient with expandable detail
+// ---------------------------------------------------------------------------
+function NutrientRow({ item, isExpanded, onToggle }) {
+  const progressColor = getProgressColor(item.percent);
+  const badgeColors = getStatusBadgeColor(item.status);
+  const clampedWidth = Math.min(item.percent, 100);
 
   return (
-    <View style={styles.nutrientRow}>
-      <View style={styles.nutrientHeader}>
-        <View style={styles.nutrientNameRow}>
-          <View style={[styles.nutrientDot, { backgroundColor: nutrient.color }]} />
-          <Text style={styles.nutrientName}>{nutrient.name}</Text>
-          {nutrient.isLimit && (
-            <Text style={styles.limitBadge}>limit</Text>
+    <Pressable onPress={onToggle} style={styles.nutrientRow}>
+      <View style={styles.nutrientTopRow}>
+        <Text style={styles.nutrientEmoji}>{item.emoji}</Text>
+        <View style={styles.nutrientInfo}>
+          <Text style={styles.nutrientName}>{item.name}</Text>
+          <View style={styles.nutrientBarRow}>
+            <View style={styles.barTrack}>
+              <View
+                style={[
+                  styles.barFill,
+                  { width: `${clampedWidth}%`, backgroundColor: progressColor },
+                ]}
+              />
+            </View>
+          </View>
+        </View>
+        <View style={styles.nutrientRight}>
+          <Text style={styles.nutrientAmountText}>
+            {item.current % 1 === 0 ? item.current : item.current.toFixed(1)}
+            <Text style={styles.nutrientUnitDivider}> / </Text>
+            {item.rda}{item.unit}
+          </Text>
+          <View style={[styles.percentBadge, { backgroundColor: badgeColors.bg }]}>
+            <Text style={[styles.percentBadgeText, { color: badgeColors.text }]}>
+              {item.percent}%
+            </Text>
+          </View>
+        </View>
+        {isExpanded ? (
+          <ChevronUp size={16} color={Colors.textTertiary} />
+        ) : (
+          <ChevronDown size={16} color={Colors.textTertiary} />
+        )}
+      </View>
+
+      {isExpanded && (
+        <View style={styles.expandedSection}>
+          <Text style={styles.expandedDescription}>{item.description}</Text>
+
+          <View style={styles.expandedRow}>
+            <Text style={styles.expandedLabel}>Top sources</Text>
+            <Text style={styles.expandedValue}>{item.topSources.join(', ')}</Text>
+          </View>
+
+          <View style={styles.expandedRow}>
+            <Text style={styles.expandedLabel}>If deficient</Text>
+            <Text style={[styles.expandedValue, { color: Colors.warning }]}>
+              {item.deficiencyRisk}
+            </Text>
+          </View>
+
+          {item.upperLimit && (
+            <View style={styles.expandedRow}>
+              <Text style={styles.expandedLabel}>Upper limit</Text>
+              <Text style={styles.expandedValue}>{item.upperLimit} {item.unit}/day</Text>
+            </View>
           )}
         </View>
-        <Text style={styles.nutrientAmount}>
-          {consumed % 1 === 0 ? consumed : consumed.toFixed(1)}{nutrient.unit}{' / '}
-          {nutrient.rdi}{nutrient.unit}
-        </Text>
-      </View>
-      <View style={styles.barTrack}>
-        <View
-          style={[
-            styles.barFill,
-            {
-              width: `${clampedWidth}%`,
-              backgroundColor: barColor,
-            },
-          ]}
-        />
-      </View>
-      <Text style={[styles.percentageText, { color: barColor }]}>
-        {Math.round(percentage)}% {nutrient.isLimit ? (percentage > 100 ? 'over limit' : 'of limit') : 'of RDI'}
-      </Text>
-    </View>
+      )}
+    </Pressable>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
 export default function MicronutrientsScreen() {
   const router = useRouter();
-  const { meals } = useFood();
+  const { profile } = useProfile();
+  const gender = (profile.gender === 'female') ? 'female' : 'male';
 
-  const { totals, hasData, vitamins, minerals } = useMemo(() => {
-    const allItems = [
-      ...(meals.breakfast || []),
-      ...(meals.lunch || []),
-      ...(meals.dinner || []),
-      ...(meals.snacks || []),
-    ];
-
-    const sums = {};
-    let anyMicroData = false;
-
-    MICRONUTRIENTS.forEach((n) => {
-      sums[n.key] = 0;
-    });
-
-    allItems.forEach((item) => {
-      const nut = item.nutriments || item.micronutrients || {};
-      MICRONUTRIENTS.forEach((n) => {
-        const val = nut[n.key];
-        if (val !== undefined && val !== null && val > 0) {
-          sums[n.key] += val;
-          anyMicroData = true;
-        }
-      });
-    });
-
-    const vitaminList = MICRONUTRIENTS.filter((n) => n.group === 'vitamin');
-    const mineralAndOtherList = MICRONUTRIENTS.filter((n) => n.group !== 'vitamin');
-
-    return {
-      totals: sums,
-      hasData: anyMicroData,
-      vitamins: vitaminList,
-      minerals: mineralAndOtherList,
-    };
+  // Pull real food data from today's meals
+  const { meals } = useMeals();
+  const allFoods = useMemo(() => {
+    const foods = [];
+    for (const mealType of ['breakfast', 'lunch', 'dinner', 'snacks']) {
+      for (const item of (meals[mealType] || [])) {
+        foods.push({ name: item.name || '', calories: item.calories || 0 });
+      }
+    }
+    return foods;
   }, [meals]);
 
-  const { meetingCount, deficiencies } = useMemo(() => {
-    let count = 0;
-    const defs = [];
+  const { intake: dailyIntake, matchedFoods, totalFoods } = useDailyMicronutrients(allFoods);
+  const hasRealData = totalFoods > 0;
 
-    MICRONUTRIENTS.forEach((n) => {
-      const consumed = totals[n.key] || 0;
-      const pct = n.rdi > 0 ? (consumed / n.rdi) * 100 : 0;
+  const {
+    nutrients,
+    deficiencyAlerts,
+    overallScore,
+    grade,
+    vitaminScore,
+    mineralScore,
+    topDeficiencies,
+    topStrengths,
+  } = useMicronutrients(dailyIntake, gender);
 
-      if (n.isLimit) {
-        if (pct <= 100) count++;
-      } else {
-        if (pct >= 80) count++;
-        if (pct < 40 && FOOD_SUGGESTIONS[n.key]?.length > 0) {
-          defs.push(n);
-        }
-      }
-    });
+  const [activeTab, setActiveTab] = useState('all');
+  const [expandedId, setExpandedId] = useState(null);
 
-    return { meetingCount: count, deficiencies: defs };
-  }, [totals]);
+  const filteredNutrients = useMemo(() => {
+    if (activeTab === 'all') return nutrients;
+    return nutrients.filter((n) => n.category === activeTab);
+  }, [nutrients, activeTab]);
 
-  return (
-    <ScreenWrapper>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+  const criticalAndWarningAlerts = useMemo(() => {
+    return deficiencyAlerts.filter((a) => a.severity === 'critical' || a.severity === 'warning');
+  }, [deficiencyAlerts]);
+
+  const handleToggleExpand = useCallback((id) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
+
+  const handleTabPress = useCallback((key) => {
+    setActiveTab(key);
+    setExpandedId(null);
+  }, []);
+
+  const gradeColor = getGradeColor(grade);
+
+  const renderNutrientItem = useCallback(({ item }) => (
+    <NutrientRow
+      item={item}
+      isExpanded={expandedId === item.id}
+      onToggle={() => handleToggleExpand(item.id)}
+    />
+  ), [expandedId, handleToggleExpand]);
+
+  const keyExtractor = useCallback((item) => item.id, []);
+
+  const ListHeader = useMemo(() => (
+    <View>
+      {/* Header */}
+      <Animated.View
+        entering={FadeInDown.delay(0).springify().mass(0.5).damping(10)}
+        style={styles.header}
       >
-        {/* Header */}
-        <Animated.View
-          entering={FadeInDown.delay(0).springify().mass(0.5).damping(10)}
-          style={styles.header}
-        >
-          <View style={styles.headerRow}>
-            <Pressable onPress={() => router.back()} style={styles.backButton}>
-              <ArrowLeft size={22} color={Colors.text} />
-            </Pressable>
-            <Text style={styles.title}>Micronutrients</Text>
-            <View style={[styles.headerIcon, { backgroundColor: Colors.primarySoft }]}>
-              <Pill size={20} color={Colors.primary} />
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <ArrowLeft size={22} color={Colors.text} />
+          </Pressable>
+          <Text style={styles.title}>Micronutrients</Text>
+          <View style={[styles.headerIcon, { backgroundColor: Colors.primarySoft }]}>
+            <Pill size={20} color={Colors.primary} />
+          </View>
+        </View>
+      </Animated.View>
+
+      {/* Overall Score Ring */}
+      <Animated.View
+        entering={FadeInDown.delay(80).springify().mass(0.5).damping(10)}
+      >
+        <GlassCard style={styles.scoreCard}>
+          <View style={styles.scoreRow}>
+            <AnimatedProgressRing
+              progress={overallScore}
+              size={100}
+              strokeWidth={8}
+              color={gradeColor}
+              gradientEnd={Colors.primary}
+            >
+              <View style={styles.scoreRingContent}>
+                <AnimatedCounter
+                  value={overallScore}
+                  suffix="%"
+                  style={[styles.scoreRingValue, { color: gradeColor }]}
+                />
+                <View style={[styles.gradeBadge, { backgroundColor: gradeColor + '22' }]}>
+                  <Text style={[styles.gradeText, { color: gradeColor }]}>{grade}</Text>
+                </View>
+              </View>
+            </AnimatedProgressRing>
+
+            <View style={styles.scoreTextArea}>
+              <Text style={styles.scoreTitle}>Nutrition Score</Text>
+              <Text style={styles.scoreSubtitle}>
+                Based on {nutrients.length} tracked micronutrients
+              </Text>
+              <View style={styles.strengthsRow}>
+                {topStrengths.slice(0, 2).map((n) => (
+                  <View key={n.id} style={styles.strengthChip}>
+                    <Text style={styles.strengthChipText}>{n.emoji} {n.name.split(' ')[0]}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           </View>
-        </Animated.View>
+        </GlassCard>
+      </Animated.View>
 
-        {/* Summary Card */}
-        <Animated.View
-          entering={FadeInDown.delay(80).springify().mass(0.5).damping(10)}
-        >
-          <View style={styles.glassCard}>
-            <View style={styles.summaryRow}>
-              <View style={[styles.scoreCircle, {
-                borderColor: meetingCount >= 10 ? Colors.success : meetingCount >= 5 ? Colors.warning : Colors.error,
-              }]}>
-                <Text style={styles.scoreNumber}>{meetingCount}</Text>
-                <Text style={styles.scoreTotal}>/ {MICRONUTRIENTS.length}</Text>
-              </View>
-              <View style={styles.summaryText}>
-                <Text style={styles.summaryTitle}>
-                  {meetingCount} of {MICRONUTRIENTS.length} nutrients on track
+      {/* Category Tabs */}
+      <Animated.View
+        entering={FadeInDown.delay(160).springify().mass(0.5).damping(10)}
+      >
+        <View style={styles.tabsRow}>
+          {CATEGORY_TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => handleTabPress(tab.key)}
+                style={[
+                  styles.tab,
+                  isActive && styles.tabActive,
+                ]}
+              >
+                <Text style={[
+                  styles.tabText,
+                  isActive && styles.tabTextActive,
+                ]}>
+                  {tab.label}
                 </Text>
-                <Text style={styles.summarySubtitle}>
-                  {hasData
-                    ? 'Based on foods logged today'
-                    : 'No micronutrient data available yet'}
-                </Text>
-              </View>
-            </View>
-            {!hasData && (
-              <View style={styles.limitedDataBanner}>
-                <AlertTriangle size={16} color={Colors.warning} />
-                <Text style={styles.limitedDataText}>
-                  Limited data -- scan more foods with barcodes for detailed micronutrient tracking
-                </Text>
-              </View>
-            )}
-          </View>
-        </Animated.View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Animated.View>
 
-        {/* Vitamins Section */}
-        <Animated.View
-          entering={FadeInDown.delay(160).springify().mass(0.5).damping(10)}
-        >
-          <Text style={styles.sectionTitle}>Vitamins</Text>
-          <View style={styles.glassCard}>
-            {vitamins.map((nutrient) => (
-              <NutrientRow
-                key={nutrient.key}
-                nutrient={nutrient}
-                consumed={totals[nutrient.key] || 0}
-              />
-            ))}
-          </View>
-        </Animated.View>
-
-        {/* Minerals & Other Section */}
+      {/* Deficiency Alerts */}
+      {criticalAndWarningAlerts.length > 0 && (
         <Animated.View
           entering={FadeInDown.delay(240).springify().mass(0.5).damping(10)}
         >
-          <Text style={styles.sectionTitle}>Minerals & Other</Text>
-          <View style={styles.glassCard}>
-            {minerals.map((nutrient) => (
-              <NutrientRow
-                key={nutrient.key}
-                nutrient={nutrient}
-                consumed={totals[nutrient.key] || 0}
-              />
-            ))}
-          </View>
-        </Animated.View>
-
-        {/* Tips Section */}
-        {deficiencies.length > 0 && (
-          <Animated.View
-            entering={FadeInDown.delay(320).springify().mass(0.5).damping(10)}
-          >
-            <Text style={styles.sectionTitle}>Suggestions</Text>
-            <View style={styles.glassCard}>
-              {deficiencies.slice(0, 4).map((nutrient) => (
-                <View key={nutrient.key} style={styles.tipRow}>
-                  <AlertTriangle size={16} color={Colors.warning} />
-                  <Text style={styles.tipText}>
-                    You may be low on <Text style={styles.tipBold}>{nutrient.name}</Text>. Try{' '}
-                    {FOOD_SUGGESTIONS[nutrient.key].join(', ')}.
+          {criticalAndWarningAlerts.slice(0, 3).map((alert) => {
+            const isCritical = alert.severity === 'critical';
+            const bannerBg = isCritical ? Colors.errorSoft : Colors.warningSoft;
+            const bannerBorderColor = isCritical ? 'rgba(255, 82, 82, 0.3)' : 'rgba(255, 179, 0, 0.3)';
+            const textColor = isCritical ? Colors.error : Colors.warning;
+            return (
+              <View
+                key={alert.nutrient.id}
+                style={[styles.alertBanner, { backgroundColor: bannerBg, borderColor: bannerBorderColor }]}
+              >
+                <View style={styles.alertHeader}>
+                  <AlertTriangle size={16} color={textColor} />
+                  <Text style={[styles.alertTitle, { color: textColor }]}>
+                    {alert.nutrient.emoji} {alert.nutrient.name} — {Math.round(alert.percent)}% of RDA
                   </Text>
                 </View>
-              ))}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Good standing */}
-        {deficiencies.length === 0 && hasData && (
-          <Animated.View
-            entering={FadeInDown.delay(320).springify().mass(0.5).damping(10)}
-          >
-            <View style={styles.glassCard}>
-              <View style={styles.tipRow}>
-                <CheckCircle size={16} color={Colors.success} />
-                <Text style={styles.tipText}>
-                  Looking good! Keep up the balanced diet to maintain your nutrient levels.
+                <Text style={styles.alertSuggestion}>
+                  Try: {alert.nutrient.topSources.join(', ')}
                 </Text>
               </View>
-            </View>
-          </Animated.View>
-        )}
+            );
+          })}
+        </Animated.View>
+      )}
 
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+      {/* Section label */}
+      <Text style={styles.sectionTitle}>
+        {activeTab === 'all' ? 'All Nutrients' : CATEGORY_TABS.find(t => t.key === activeTab)?.label}
+      </Text>
+    </View>
+  ), [
+    router, overallScore, gradeColor, grade, nutrients.length, topStrengths,
+    activeTab, handleTabPress, criticalAndWarningAlerts,
+  ]);
+
+  const ListFooter = useMemo(() => (
+    <View>
+      {/* Summary Cards */}
+      <Animated.View
+        entering={FadeIn.delay(400)}
+      >
+        <Text style={styles.sectionTitle}>Category Breakdown</Text>
+        <View style={styles.summaryRow}>
+          <GlassCard style={styles.summaryCard} variant="accent">
+            <View style={styles.summaryCardInner}>
+              <AnimatedProgressRing
+                progress={vitaminScore}
+                size={56}
+                strokeWidth={5}
+                color="#64D2FF"
+                gradientEnd="#5AC8FA"
+                showPercentage
+              />
+              <Text style={styles.summaryCardLabel}>Vitamins</Text>
+              <AnimatedCounter
+                value={vitaminScore}
+                suffix="%"
+                style={styles.summaryCardValue}
+              />
+            </View>
+          </GlassCard>
+
+          <GlassCard style={styles.summaryCard} variant="success">
+            <View style={styles.summaryCardInner}>
+              <AnimatedProgressRing
+                progress={mineralScore}
+                size={56}
+                strokeWidth={5}
+                color={Colors.success}
+                gradientEnd="#00C853"
+                showPercentage
+              />
+              <Text style={styles.summaryCardLabel}>Minerals</Text>
+              <AnimatedCounter
+                value={mineralScore}
+                suffix="%"
+                style={styles.summaryCardValue}
+              />
+            </View>
+          </GlassCard>
+        </View>
+      </Animated.View>
+
+      {/* Top Deficiencies */}
+      {topDeficiencies.length > 0 && topDeficiencies[0].percent < 75 && (
+        <Animated.View entering={FadeIn.delay(500)}>
+          <Text style={styles.sectionTitle}>Focus Areas</Text>
+          <GlassCard style={styles.focusCard} variant="warning">
+            {topDeficiencies.filter(n => n.percent < 75).map((n) => (
+              <View key={n.id} style={styles.focusRow}>
+                <Text style={styles.focusEmoji}>{n.emoji}</Text>
+                <View style={styles.focusInfo}>
+                  <Text style={styles.focusName}>{n.name}</Text>
+                  <Text style={styles.focusSources}>
+                    Eat more: {n.topSources.join(', ')}
+                  </Text>
+                </View>
+                <View style={[styles.percentBadge, {
+                  backgroundColor: getStatusBadgeColor(n.status).bg,
+                }]}>
+                  <Text style={[styles.percentBadgeText, {
+                    color: getStatusBadgeColor(n.status).text,
+                  }]}>
+                    {n.percent}%
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </GlassCard>
+        </Animated.View>
+      )}
+
+      {/* Top Strengths */}
+      {topStrengths.length > 0 && topStrengths[0].percent >= 75 && (
+        <Animated.View entering={FadeIn.delay(600)}>
+          <Text style={styles.sectionTitle}>Strengths</Text>
+          <GlassCard style={styles.focusCard} variant="success">
+            {topStrengths.filter(n => n.percent >= 75).map((n) => (
+              <View key={n.id} style={styles.focusRow}>
+                <Text style={styles.focusEmoji}>{n.emoji}</Text>
+                <View style={styles.focusInfo}>
+                  <Text style={styles.focusName}>{n.name}</Text>
+                  <Text style={[styles.focusSources, { color: Colors.success }]}>
+                    {n.percent}% of daily target
+                  </Text>
+                </View>
+                <Sparkles size={16} color={Colors.success} />
+              </View>
+            ))}
+          </GlassCard>
+        </Animated.View>
+      )}
+
+      {/* Data source notice */}
+      <View style={styles.noticeBanner}>
+        <AlertTriangle size={14} color={Colors.textTertiary} />
+        <Text style={styles.noticeText}>
+          {hasRealData
+            ? `Estimated from ${matchedFoods} of ${totalFoods} logged foods. Log more foods for better accuracy.`
+            : 'No foods logged today. Log meals to see your micronutrient breakdown.'}
+        </Text>
+      </View>
+
+      <View style={styles.bottomSpacer} />
+    </View>
+  ), [vitaminScore, mineralScore, topDeficiencies, topStrengths, hasRealData, matchedFoods, totalFoods]);
+
+  return (
+    <ScreenWrapper>
+      <FlatList
+        data={filteredNutrients}
+        renderItem={renderNutrientItem}
+        keyExtractor={keyExtractor}
+        ListHeaderComponent={ListHeader}
+        ListFooterComponent={ListFooter}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+      />
     </ScreenWrapper>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
+
+  // Header
   header: { marginBottom: Spacing.md },
   headerRow: {
     flexDirection: 'row',
@@ -313,63 +485,116 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  glassCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  summaryRow: {
+
+  // Score card
+  scoreCard: { marginBottom: Spacing.md },
+  scoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
   },
-  scoreCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    justifyContent: 'center',
+  scoreRingContent: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    justifyContent: 'center',
   },
-  scoreNumber: {
-    fontSize: FontSize.xl,
+  scoreRingValue: {
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
-    color: Colors.text,
   },
-  scoreTotal: {
+  gradeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+    marginTop: 2,
+  },
+  gradeText: {
     fontSize: FontSize.xs,
-    color: Colors.textTertiary,
-    marginTop: -2,
+    fontWeight: FontWeight.heavy,
   },
-  summaryText: { flex: 1 },
-  summaryTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
+  scoreTextArea: { flex: 1 },
+  scoreTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
     color: Colors.text,
     marginBottom: Spacing.xs,
   },
-  summarySubtitle: {
+  scoreSubtitle: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
   },
-  limitedDataBanner: {
+  strengthsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: Spacing.xs,
+    flexWrap: 'wrap',
+  },
+  strengthChip: {
+    backgroundColor: Colors.surfaceGlassLight,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  strengthChipText: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
+  },
+
+  // Tabs
+  tabsRow: {
+    flexDirection: 'row',
     gap: Spacing.sm,
-    marginTop: Spacing.md,
-    backgroundColor: Colors.warningSoft,
+    marginBottom: Spacing.md,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surfaceGlass,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  tabActive: {
+    backgroundColor: Colors.primarySoft,
+    borderColor: Colors.borderAccent,
+  },
+  tabText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+    color: Colors.textTertiary,
+  },
+  tabTextActive: {
+    color: Colors.primary,
+    fontWeight: FontWeight.semibold,
+  },
+
+  // Alert banners
+  alertBanner: {
     borderRadius: BorderRadius.sm,
     padding: Spacing.sm,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
   },
-  limitedDataText: {
-    flex: 1,
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: 4,
+  },
+  alertTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+  },
+  alertSuggestion: {
     fontSize: FontSize.xs,
-    color: Colors.warning,
+    color: Colors.textSecondary,
+    marginLeft: 20,
   },
+
+  // Section title
   sectionTitle: {
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
@@ -377,75 +602,178 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     marginTop: Spacing.xs,
   },
+
+  // Nutrient row
   nutrientRow: {
-    marginBottom: Spacing.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
-  nutrientHeader: {
+  nutrientTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xs,
+    gap: Spacing.sm,
   },
-  nutrientNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
+  nutrientEmoji: {
+    fontSize: 20,
+    width: 28,
+    textAlign: 'center',
   },
-  nutrientDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  nutrientInfo: {
+    flex: 1,
+    gap: 4,
   },
   nutrientName: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.semibold,
     color: Colors.text,
   },
-  limitBadge: {
-    fontSize: 9,
-    color: Colors.warning,
-    fontWeight: FontWeight.bold,
-    textTransform: 'uppercase',
-    backgroundColor: Colors.warningSoft,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  nutrientAmount: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
+  nutrientBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   barTrack: {
-    height: 6,
+    flex: 1,
+    height: 5,
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 3,
     overflow: 'hidden',
   },
   barFill: {
-    height: 6,
+    height: 5,
     borderRadius: 3,
   },
-  percentageText: {
-    fontSize: 10,
-    fontWeight: FontWeight.medium,
-    marginTop: 3,
+  nutrientRight: {
+    alignItems: 'flex-end',
+    gap: 3,
+    minWidth: 80,
   },
-  tipRow: {
+  nutrientAmountText: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+  },
+  nutrientUnitDivider: {
+    color: Colors.textMuted,
+  },
+  percentBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+  },
+  percentBadgeText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+  },
+
+  // Expanded section
+  expandedSection: {
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  expandedDescription: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+    lineHeight: 20,
+  },
+  expandedRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: Spacing.xs,
+    gap: Spacing.sm,
+  },
+  expandedLabel: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+    minWidth: 80,
+  },
+  expandedValue: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    textAlign: 'right',
+  },
+
+  // Summary cards
+  summaryRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  summaryCard: {
+    flex: 1,
+  },
+  summaryCardInner: {
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  summaryCardLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+    marginTop: Spacing.xs,
+  },
+  summaryCardValue: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.textSecondary,
+  },
+
+  // Focus / strengths card
+  focusCard: {
+    marginBottom: Spacing.md,
+  },
+  focusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
-  tipText: {
-    flex: 1,
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 20,
+  focusEmoji: {
+    fontSize: 20,
+    width: 28,
+    textAlign: 'center',
   },
-  tipBold: {
-    fontWeight: FontWeight.bold,
+  focusInfo: {
+    flex: 1,
+  },
+  focusName: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
     color: Colors.text,
   },
-  bottomSpacer: { height: 100 },
+  focusSources: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+
+  // Notice banner
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    marginTop: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    lineHeight: 16,
+  },
+
+  bottomSpacer: { height: 120 },
 });

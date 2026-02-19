@@ -1,7 +1,9 @@
-import React, { memo, useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import ScreenErrorBoundary from '../../components/ScreenErrorBoundary';
 import {
   View,
   Text,
+  SectionList,
   ScrollView,
   StyleSheet,
   Pressable,
@@ -47,6 +49,22 @@ import {
   Trash2,
   AlertTriangle,
   Camera,
+  Trophy,
+  Dumbbell,
+  Moon,
+  Pill,
+  Bookmark,
+  Wind,
+  Timer,
+  ListChecks,
+  HeartPulse,
+  BookOpen,
+  Brain,
+  ShieldAlert,
+  Syringe,
+  Watch,
+  MessageSquare,
+  ChefHat,
 } from 'lucide-react-native';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
 import ScreenWrapper from '../../components/ScreenWrapper';
@@ -56,6 +74,13 @@ import { useGamification } from '../../context/GamificationContext';
 import { useDashboardLayout } from '../../context/DashboardLayoutContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import useAchievements from '../../hooks/useAchievements';
+import { ProfileSkeleton } from '../../components/SkeletonLoader';
+
+// Pre-computed rotation styles to avoid creating new objects on every render
+const ROTATE_MINUS_90 = { transform: [{ rotate: '-90deg' }] };
+const ROTATE_180 = { transform: [{ rotate: '180deg' }] };
+const ROTATE_0 = { transform: [{ rotate: '0deg' }] };
 
 const WEEKLY_GOALS = {
   lose2: { label: 'Lose 2 lbs/week', adjustment: -1000, icon: TrendingDown },
@@ -139,7 +164,7 @@ const ActivitySelector = memo(function ActivitySelector({ value, onChange }) {
         <ChevronDown
           size={20}
           color={Colors.textSecondary}
-          style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}
+          style={expanded ? ROTATE_180 : ROTATE_0}
         />
       </Pressable>
       {expanded && (
@@ -189,7 +214,7 @@ const WeeklyGoalSelector = memo(function WeeklyGoalSelector({ value, onChange })
         <ChevronDown
           size={20}
           color={Colors.textSecondary}
-          style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}
+          style={expanded ? ROTATE_180 : ROTATE_0}
         />
       </Pressable>
       {expanded && (
@@ -245,7 +270,7 @@ const MacroSplitSelector = memo(function MacroSplitSelector({ value, onChange })
         <ChevronDown
           size={20}
           color={Colors.textSecondary}
-          style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}
+          style={expanded ? ROTATE_180 : ROTATE_0}
         />
       </Pressable>
       {expanded && (
@@ -389,6 +414,72 @@ const LevelCard = memo(function LevelCard({ levelInfo, totalXP, currentStreak })
   );
 });
 
+// Data-driven nav items — replaces 30+ inline Pressable blocks
+const NAV_ITEMS = [
+  { key: 'workout-history', title: 'Workout History', subtitle: 'View past workouts and personal records', icon: 'Dumbbell', colors: ['rgba(255, 107, 53, 0.1)', 'rgba(255, 107, 53, 0.05)'], iconColor: null, borderColor: null, route: '/workout-history' },
+  { key: 'progress-photos', title: 'Progress Photos', subtitle: 'Track your transformation over time', icon: 'Camera', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: null, route: '/progress-photos' },
+  { key: 'weight-log', title: 'Weight Tracker', subtitle: 'Log and visualize your weight journey', icon: 'Scale', colors: ['rgba(0, 230, 118, 0.1)', 'rgba(0, 230, 118, 0.05)'], iconColor: 'success', borderColor: null, route: '/weight-log' },
+  { key: 'goal-timeline', title: 'Goal Timeline', subtitle: 'Projections, milestones & completion date', icon: 'Target', colors: ['rgba(0, 230, 118, 0.1)', 'rgba(0, 230, 118, 0.05)'], iconColor: 'success', borderColor: 'rgba(0, 230, 118, 0.3)', route: '/goal-timeline' },
+  { key: 'body-measurements', title: 'Body Measurements', subtitle: 'Track chest, waist, hips and more', icon: 'Ruler', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: null, route: '/body-measurements' },
+  { key: 'sleep-tracker', title: 'Sleep Tracker', subtitle: 'Log and analyze your sleep patterns', icon: 'Moon', colors: ['rgba(138, 43, 226, 0.1)', 'rgba(138, 43, 226, 0.05)'], iconColor: '#A78BFA', borderColor: 'rgba(167, 139, 250, 0.3)', route: '/sleep-tracker' },
+  { key: 'supplements', title: 'Supplements', subtitle: 'Track vitamins and supplement intake', icon: 'Pill', colors: ['rgba(20, 184, 166, 0.1)', 'rgba(20, 184, 166, 0.05)'], iconColor: '#14B8A6', borderColor: 'rgba(20, 184, 166, 0.3)', route: '/supplements' },
+  { key: 'glp1-support', title: 'GLP-1 Support', subtitle: 'Ozempic, Wegovy, Mounjaro tracking & nutrition', icon: 'Syringe', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: '#00D4FF', borderColor: 'rgba(0, 212, 255, 0.3)', route: '/glp1-support' },
+  { key: 'workout-templates', title: 'Workout Templates', subtitle: 'Save and reuse your favorite workouts', icon: 'Bookmark', colors: ['rgba(255, 107, 53, 0.1)', 'rgba(255, 107, 53, 0.05)'], iconColor: 'secondary', borderColor: 'rgba(255, 107, 53, 0.3)', route: '/workout-templates' },
+  { key: 'exercise-library', title: 'Exercise Library', subtitle: 'Browse 140+ exercises with form tips', icon: 'BookOpen', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/exercise-library' },
+  { key: 'breathing', title: 'Breathing & Meditation', subtitle: 'Guided breathing exercises for wellness', icon: 'Wind', colors: ['rgba(100, 149, 237, 0.1)', 'rgba(100, 149, 237, 0.05)'], iconColor: '#6495ED', borderColor: 'rgba(100, 149, 237, 0.3)', route: '/breathing' },
+  { key: 'fasting-analytics', title: 'Fasting Insights', subtitle: 'Analytics and zones for your fasts', icon: 'Timer', colors: ['rgba(0, 230, 118, 0.1)', 'rgba(0, 230, 118, 0.05)'], iconColor: 'success', borderColor: 'rgba(0, 230, 118, 0.3)', route: '/fasting-analytics' },
+  { key: 'nutrition-insights', title: 'Nutrition Insights', subtitle: 'Daily score, meal timing and tips', icon: 'Award', colors: ['rgba(255, 215, 0, 0.1)', 'rgba(255, 215, 0, 0.05)'], iconColor: 'gold', borderColor: 'rgba(255, 215, 0, 0.3)', route: '/nutrition-insights' },
+  { key: 'habits', title: 'Habit Tracker', subtitle: 'Build and track daily habits', icon: 'ListChecks', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/habits' },
+  { key: 'recovery', title: 'Recovery Tracker', subtitle: 'Track readiness, soreness and recovery', icon: 'HeartPulse', colors: ['rgba(255, 82, 82, 0.1)', 'rgba(255, 107, 53, 0.05)'], iconColor: 'error', borderColor: 'rgba(255, 82, 82, 0.3)', route: '/recovery' },
+  { key: 'activity-calendar', title: 'Activity Calendar', subtitle: 'GitHub-style heatmap of your daily activity', icon: 'Calendar', colors: ['rgba(0, 212, 255, 0.12)', 'rgba(0, 212, 255, 0.04)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/activity-calendar' },
+  { key: 'allergens', title: 'Allergens & Sensitivities', subtitle: 'Track food allergens and reactions', icon: 'ShieldAlert', colors: ['rgba(255, 82, 82, 0.1)', 'rgba(255, 107, 157, 0.05)'], iconColor: '#FF6B9D', borderColor: 'rgba(255, 107, 157, 0.3)', route: '/allergens' },
+  { key: 'workout-programs', title: 'Workout Programs', subtitle: 'Structured training plans and programs', icon: 'Dumbbell', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/workout-programs' },
+  { key: 'mood-insights', title: 'Mood Insights', subtitle: 'Track and analyze your mood patterns', icon: 'Brain', colors: ['rgba(191, 90, 242, 0.1)', 'rgba(191, 90, 242, 0.05)'], iconColor: '#BF5AF2', borderColor: 'rgba(191, 90, 242, 0.3)', route: '/mood-insights' },
+  { key: 'food-journal', title: 'Food Journal', subtitle: 'Log meals and track your daily nutrition', icon: 'BookOpen', colors: ['rgba(255, 179, 0, 0.1)', 'rgba(255, 179, 0, 0.05)'], iconColor: 'warning', borderColor: 'rgba(255, 179, 0, 0.3)', route: '/food-journal' },
+  { key: 'meal-timing', title: 'Meal Timing', subtitle: 'Optimize when you eat for better results', icon: 'Timer', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/meal-timing' },
+  { key: 'food-compare', title: 'Food Compare', subtitle: 'Compare nutritional values side by side', icon: 'Scale', colors: ['rgba(0, 230, 118, 0.1)', 'rgba(0, 230, 118, 0.05)'], iconColor: 'success', borderColor: 'rgba(0, 230, 118, 0.3)', route: '/food-compare' },
+  { key: 'fitness-score', title: 'Fitness Score', subtitle: 'Your overall fitness health score', icon: 'HeartPulse', colors: ['rgba(255, 82, 82, 0.1)', 'rgba(255, 82, 82, 0.05)'], iconColor: '#FF5252', borderColor: 'rgba(255, 82, 82, 0.3)', route: '/fitness-score' },
+  { key: 'social-feed', title: 'Community Feed', subtitle: 'Share achievements and celebrate wins', icon: 'Trophy', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/social-feed' },
+  { key: 'community-challenges', title: 'Community Challenges', subtitle: 'Join challenges and compete with friends', icon: 'Award', colors: ['rgba(255, 179, 0, 0.1)', 'rgba(255, 179, 0, 0.05)'], iconColor: 'warning', borderColor: 'rgba(255, 179, 0, 0.3)', route: '/community-challenges' },
+  { key: 'friends', title: 'Friends', subtitle: 'Connect and compete with friends', icon: 'Users', colors: ['rgba(0, 230, 118, 0.1)', 'rgba(0, 230, 118, 0.05)'], iconColor: 'success', borderColor: 'rgba(0, 230, 118, 0.3)', route: '/friends' },
+  { key: 'journal', title: 'Wellness Journal', subtitle: 'Daily reflection and mood tracking', icon: 'BookOpen', colors: ['rgba(167, 139, 250, 0.1)', 'rgba(167, 139, 250, 0.05)'], iconColor: '#A78BFA', borderColor: 'rgba(167, 139, 250, 0.3)', route: '/journal' },
+  { key: 'biometric-dashboard', title: 'Biometric Dashboard', subtitle: 'Heart rate, VO2 max & health metrics', icon: 'HeartPulse', colors: ['rgba(255, 82, 82, 0.1)', 'rgba(255, 82, 82, 0.05)'], iconColor: '#FF5252', borderColor: 'rgba(255, 82, 82, 0.3)', route: '/biometric-dashboard' },
+  { key: 'ai-coaching', title: 'AI Coach', subtitle: 'Training plans, deload & injury prevention', icon: 'Brain', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/ai-coaching' },
+  { key: 'calorie-cycling', title: 'Calorie Cycling', subtitle: 'Strategic calorie variation for results', icon: 'Flame', colors: ['rgba(255, 179, 0, 0.1)', 'rgba(255, 179, 0, 0.05)'], iconColor: 'warning', borderColor: 'rgba(255, 179, 0, 0.3)', route: '/calorie-cycling' },
+  { key: 'wearable-connections', title: 'Connected Devices', subtitle: 'Fitbit, Garmin, WHOOP & Withings sync', icon: 'Watch', colors: ['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)'], iconColor: null, borderColor: 'rgba(0, 212, 255, 0.3)', route: '/wearable-connections' },
+  { key: 'groups', title: 'Groups & Forums', subtitle: 'Join communities and discussion groups', icon: 'MessageSquare', colors: ['rgba(0, 230, 118, 0.1)', 'rgba(0, 230, 118, 0.05)'], iconColor: 'success', borderColor: 'rgba(0, 230, 118, 0.3)', route: '/groups' },
+  { key: 'recipe-discovery', title: 'Recipe Discovery', subtitle: 'Browse 60+ curated healthy recipes', icon: 'ChefHat', colors: ['rgba(255, 179, 0, 0.1)', 'rgba(255, 179, 0, 0.05)'], iconColor: 'warning', borderColor: 'rgba(255, 179, 0, 0.3)', route: '/recipe-discovery' },
+];
+
+const ICON_MAP = {
+  Dumbbell, Camera, Scale, Target, Ruler, Moon, Pill, Bookmark,
+  BookOpen, Wind, Timer, Award, ListChecks, HeartPulse, Calendar,
+  ShieldAlert, Brain, Trophy, Users, Flame, Syringe, Watch, MessageSquare, ChefHat,
+};
+
+const NavButton = memo(function NavButton({ item, onNavigate }) {
+  const IconComponent = ICON_MAP[item.icon] || Activity;
+  const resolvedColor = item.iconColor
+    ? (Colors[item.iconColor] || item.iconColor)
+    : Colors.primary;
+
+  return (
+    <Pressable
+      style={[styles.editLayoutButton, item.borderColor && { borderColor: item.borderColor }]}
+      onPress={() => onNavigate(item.route)}
+    >
+      <LinearGradient colors={item.colors} style={styles.editLayoutGradient}>
+        <IconComponent size={20} color={resolvedColor} />
+        <View style={styles.editLayoutContent}>
+          <Text style={styles.editLayoutTitle}>{item.title}</Text>
+          <Text style={styles.editLayoutSubtitle}>{item.subtitle}</Text>
+        </View>
+        <ChevronDown size={18} color={Colors.textSecondary} style={ROTATE_MINUS_90} />
+      </LinearGradient>
+    </Pressable>
+  );
+});
+
 // Edit Layout Modal Component
 const EditLayoutModal = memo(function EditLayoutModal({ visible, onClose }) {
   const insets = useSafeAreaInsets();
@@ -509,9 +600,10 @@ const EditLayoutModal = memo(function EditLayoutModal({ visible, onClose }) {
   );
 });
 
-export default function ProfileScreen() {
+function ProfileScreenInner() {
   const { profile, isLoading, updateProfile, calculatedGoals, isProfileComplete } = useProfile();
   const { levelInfo, totalXP, currentStreak } = useGamification();
+  const { unlockedCount, totalCount, newUnlocked } = useAchievements();
   const { user, signOut } = useAuth();
 
   // Local form state
@@ -580,10 +672,15 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleOpenLayoutModal = async () => {
+  const handleOpenLayoutModal = useCallback(async () => {
     await hapticLight();
     setShowLayoutModal(true);
-  };
+  }, []);
+
+  const handleNavigate = useCallback(async (route) => {
+    await hapticLight();
+    router.push(route);
+  }, [router]);
 
   // Handle account deletion - Apple App Store compliance requirement
   const handleDeleteAccount = async () => {
@@ -698,6 +795,30 @@ export default function ProfileScreen() {
         '@vibefit_chat_history',
         '@vibefit_last_briefing_date',
         '@vibefit_profile_cache',
+        '@vibefit_achievements',
+        '@vibefit_sleep_history',
+        '@vibefit_supplements',
+        '@vibefit_supplements_log',
+        '@vibefit_water_history',
+        '@vibefit_favorite_foods',
+        '@vibefit_meal_plan',
+        '@vibefit_personal_records',
+        '@vibefit_adaptive_macros',
+        '@vibefit_daily_challenges',
+        '@vibefit_weekly_digest',
+        '@vibefit_workout_history',
+        '@vibefit_body_measurements',
+        '@vibefit_body_measurements_unit',
+        '@vibefit_weight_history',
+        '@vibefit_weight_goal',
+        '@vibefit_workout_templates',
+        '@vibefit_breathing_history',
+        '@vibefit_fasting_history',
+        '@vibefit_habits',
+        '@vibefit_habits_log',
+        '@vibefit_activity_scores',
+        '@vibefit_recovery',
+        '@vibefit_allergens',
       ]);
 
       // 7. Sign out
@@ -724,16 +845,13 @@ export default function ProfileScreen() {
   if (isLoading) {
     return (
       <ScreenWrapper>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading profile...</Text>
-        </View>
+        <ProfileSkeleton />
       </ScreenWrapper>
     );
   }
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper testID="profile-screen">
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -757,10 +875,7 @@ export default function ProfileScreen() {
             </View>
             <Pressable
               style={styles.settingsButton}
-              onPress={async () => {
-                await hapticLight();
-                router.push('/settings');
-              }}
+              onPress={() => handleNavigate('/settings')}
             >
               <Settings size={22} color={Colors.text} />
             </Pressable>
@@ -784,9 +899,89 @@ export default function ProfileScreen() {
             <LevelCard levelInfo={levelInfo} totalXP={totalXP} currentStreak={currentStreak} />
           </ReAnimated.View>
 
+          {/* Achievements Button */}
+          <ReAnimated.View entering={FadeInDown.delay(200).springify().mass(0.5).damping(10)}>
+            <Pressable
+              style={styles.achievementsButton}
+              onPress={() => handleNavigate('/achievements')}
+            >
+              <LinearGradient
+                colors={['rgba(255, 215, 0, 0.12)', 'rgba(255, 215, 0, 0.04)']}
+                style={styles.achievementsGradient}
+              >
+                <View style={styles.achievementsIconContainer}>
+                  <Trophy size={22} color={Colors.gold} />
+                </View>
+                <View style={styles.achievementsContent}>
+                  <View style={styles.achievementsTitleRow}>
+                    <Text style={styles.achievementsTitle}>Achievements</Text>
+                    {newUnlocked > 0 && (
+                      <View style={styles.achievementsNewBadge}>
+                        <Text style={styles.achievementsNewBadgeText}>{newUnlocked} NEW</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.achievementsSubtitle}>
+                    {unlockedCount} of {totalCount} unlocked
+                  </Text>
+                </View>
+                <View style={styles.achievementsCountBadge}>
+                  <Text style={styles.achievementsCountText}>{unlockedCount}/{totalCount}</Text>
+                </View>
+                <ChevronDown size={18} color={Colors.textSecondary} style={ROTATE_MINUS_90} />
+              </LinearGradient>
+            </Pressable>
+          </ReAnimated.View>
+
+          {/* Leaderboard Button */}
+          <ReAnimated.View entering={FadeInDown.delay(220).springify().mass(0.5).damping(10)}>
+            <Pressable
+              style={[styles.achievementsButton, { borderColor: 'rgba(255, 215, 0, 0.35)' }]}
+              onPress={() => handleNavigate('/leaderboard')}
+            >
+              <LinearGradient
+                colors={['rgba(255, 215, 0, 0.12)', 'rgba(255, 215, 0, 0.04)']}
+                style={styles.achievementsGradient}
+              >
+                <View style={[styles.achievementsIconContainer, { backgroundColor: 'rgba(255, 215, 0, 0.15)' }]}>
+                  <Trophy size={22} color="#FFD700" />
+                </View>
+                <View style={styles.achievementsContent}>
+                  <Text style={styles.achievementsTitle}>Leaderboard</Text>
+                  <Text style={styles.achievementsSubtitle}>
+                    Compete and climb the ranks
+                  </Text>
+                </View>
+                <ChevronDown size={18} color={Colors.textSecondary} style={ROTATE_MINUS_90} />
+              </LinearGradient>
+            </Pressable>
+          </ReAnimated.View>
+
           {/* BMR/TDEE Card */}
-          <ReAnimated.View entering={FadeInDown.delay(240).springify().mass(0.5).damping(10)}>
+          <ReAnimated.View entering={FadeInDown.delay(260).springify().mass(0.5).damping(10)}>
             <BMRCard bmr={profile.bmr} tdee={profile.tdee} calorieGoal={calculatedGoals.calories} />
+          </ReAnimated.View>
+
+          {/* Body Composition Button */}
+          <ReAnimated.View entering={FadeInDown.delay(280).springify().mass(0.5).damping(10)}>
+            <Pressable
+              style={[styles.editLayoutButton, { borderColor: 'rgba(0, 212, 255, 0.3)' }]}
+              onPress={() => handleNavigate('/body-composition')}
+            >
+              <LinearGradient
+                colors={['rgba(0, 212, 255, 0.12)', 'rgba(191, 90, 242, 0.08)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.editLayoutGradient}
+              >
+                <PieChart size={20} color={Colors.primary} />
+                <View style={styles.editLayoutContent}>
+                  <Text style={styles.editLayoutTitle}>Body Composition</Text>
+                  <Text style={styles.editLayoutSubtitle}>BMI, body fat, lean mass & more</Text>
+                </View>
+                <ChevronDown size={18} color={Colors.textSecondary} style={ROTATE_MINUS_90} />
+              </LinearGradient>
+            </Pressable>
           </ReAnimated.View>
 
           {/* Personal Info Section */}
@@ -907,65 +1102,67 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* Progress Photos Button */}
-          <Pressable style={styles.editLayoutButton} onPress={async () => { await hapticLight(); router.push('/progress-photos'); }}>
-            <LinearGradient
-              colors={['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)']}
-              style={styles.editLayoutGradient}
-            >
-              <Camera size={20} color={Colors.primary} />
-              <View style={styles.editLayoutContent}>
-                <Text style={styles.editLayoutTitle}>Progress Photos</Text>
-                <Text style={styles.editLayoutSubtitle}>Track your transformation over time</Text>
-              </View>
-              <ChevronDown size={18} color={Colors.textSecondary} style={{ transform: [{ rotate: '-90deg' }] }} />
-            </LinearGradient>
-          </Pressable>
-
-          {/* Edit Dashboard Layout Button */}
-          <Pressable style={styles.editLayoutButton} onPress={handleOpenLayoutModal}>
-            <LinearGradient
-              colors={['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)']}
-              style={styles.editLayoutGradient}
-            >
-              <LayoutGrid size={20} color={Colors.primary} />
-              <View style={styles.editLayoutContent}>
-                <Text style={styles.editLayoutTitle}>Edit Dashboard Layout</Text>
-                <Text style={styles.editLayoutSubtitle}>Customize which cards appear</Text>
-              </View>
-              <ChevronDown size={18} color={Colors.textSecondary} style={{ transform: [{ rotate: '-90deg' }] }} />
-            </LinearGradient>
-          </Pressable>
-
-          {/* Danger Zone - Account Deletion (Apple Compliance) */}
-          <View style={styles.dangerZone}>
-            <View style={styles.dangerZoneHeader}>
-              <AlertTriangle size={18} color={Colors.error} />
-              <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
-            </View>
-            <Pressable
-              style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
-              onPress={handleDeleteAccount}
-              disabled={isDeleting}
-            >
-              {isDeleting ? (
-                <ActivityIndicator size="small" color={Colors.text} />
-              ) : (
+          {/* Virtualized Nav Buttons — FlatList for windowed rendering */}
+          <View style={styles.navListContainer}>
+            <SectionList
+              sections={[{ title: 'nav', data: NAV_ITEMS }]}
+              keyExtractor={(item) => item.key}
+              renderItem={({ item }) => <NavButton item={item} onNavigate={handleNavigate} />}
+              renderSectionHeader={() => null}
+              scrollEnabled={false}
+              initialNumToRender={8}
+              maxToRenderPerBatch={5}
+              windowSize={3}
+              getItemLayout={(data, index) => ({ length: 72, offset: 72 * index, index })}
+              ListFooterComponent={
                 <>
-                  <Trash2 size={18} color={Colors.text} />
-                  <Text style={styles.deleteButtonText}>Delete Account</Text>
+                  {/* Edit Dashboard Layout Button */}
+                  <Pressable style={styles.editLayoutButton} onPress={handleOpenLayoutModal}>
+                    <LinearGradient
+                      colors={['rgba(0, 212, 255, 0.1)', 'rgba(0, 212, 255, 0.05)']}
+                      style={styles.editLayoutGradient}
+                    >
+                      <LayoutGrid size={20} color={Colors.primary} />
+                      <View style={styles.editLayoutContent}>
+                        <Text style={styles.editLayoutTitle}>Edit Dashboard Layout</Text>
+                        <Text style={styles.editLayoutSubtitle}>Customize which cards appear</Text>
+                      </View>
+                      <ChevronDown size={18} color={Colors.textSecondary} style={ROTATE_MINUS_90} />
+                    </LinearGradient>
+                  </Pressable>
+
+                  {/* Danger Zone - Account Deletion (Apple Compliance) */}
+                  <View style={styles.dangerZone}>
+                    <View style={styles.dangerZoneHeader}>
+                      <AlertTriangle size={18} color={Colors.error} />
+                      <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+                    </View>
+                    <Pressable
+                      style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
+                      onPress={handleDeleteAccount}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? (
+                        <ActivityIndicator size="small" color={Colors.text} />
+                      ) : (
+                        <>
+                          <Trash2 size={18} color={Colors.text} />
+                          <Text style={styles.deleteButtonText}>Delete Account</Text>
+                        </>
+                      )}
+                    </Pressable>
+                    <Text style={styles.dangerZoneWarning}>
+                      This will permanently delete your account and all data.
+                    </Text>
+                  </View>
+
+                  {/* Version */}
+                  <Text style={styles.version}>VibeFit v1.0.0</Text>
+                  <View style={styles.bottomSpacer} />
                 </>
-              )}
-            </Pressable>
-            <Text style={styles.dangerZoneWarning}>
-              This will permanently delete your account and all data.
-            </Text>
+              }
+            />
           </View>
-
-          {/* Version */}
-          <Text style={styles.version}>VibeFit v1.0.0</Text>
-
-          <View style={styles.bottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1488,6 +1685,69 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.primary,
   },
+  // Achievements Button styles
+  achievementsButton: {
+    marginBottom: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.gold + '30',
+  },
+  achievementsGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  achievementsIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.goldSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  achievementsContent: {
+    flex: 1,
+  },
+  achievementsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  achievementsTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  achievementsNewBadge: {
+    backgroundColor: Colors.goldSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  achievementsNewBadgeText: {
+    fontSize: 9,
+    fontWeight: FontWeight.bold,
+    color: Colors.gold,
+    letterSpacing: 0.5,
+  },
+  achievementsSubtitle: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  achievementsCountBadge: {
+    backgroundColor: Colors.goldSoft,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  achievementsCountText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.gold,
+  },
   version: {
     textAlign: 'center',
     fontSize: FontSize.sm,
@@ -1665,3 +1925,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
 });
+
+export default function ProfileScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="ProfileScreen">
+      <ProfileScreenInner {...props} />
+    </ScreenErrorBoundary>
+  );
+}
