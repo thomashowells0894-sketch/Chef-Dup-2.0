@@ -1,14 +1,19 @@
-import React, { useRef, memo, useCallback } from 'react';
+import React, { memo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  Animated,
   Platform,
 } from 'react-native';
+import ReAnimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
+import { Swipeable } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
-import { Plus, Coffee, Sun, Sunset, Cookie, Trash2 } from 'lucide-react-native';
+import { Plus, Coffee, Sun, Sunset, Cookie, Trash2, Copy, RotateCcw } from 'lucide-react-native';
 import { hapticImpact, hapticLight } from '../lib/haptics';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
 
@@ -16,81 +21,125 @@ const MEAL_CONFIG = {
   breakfast: {
     icon: Coffee,
     label: 'Breakfast',
-    color: '#FFD60A',
+    color: Colors.mealBreakfast,
     emoji: '🌅',
     timeLabel: '6am - 11am',
   },
   lunch: {
     icon: Sun,
     label: 'Lunch',
-    color: '#30D158',
+    color: Colors.mealLunch,
     emoji: '☀️',
     timeLabel: '11am - 3pm',
   },
   dinner: {
     icon: Sunset,
     label: 'Dinner',
-    color: '#BF5AF2',
+    color: Colors.mealDinner,
     emoji: '🌙',
     timeLabel: '3pm - 8pm',
   },
   snacks: {
     icon: Cookie,
     label: 'Snacks',
-    color: '#FF9F0A',
+    color: Colors.mealSnacks,
     emoji: '🍪',
     timeLabel: 'Anytime',
   },
 };
 
 // Memoized FoodItem - only re-renders when item or mealType changes
-const FoodItem = memo(function FoodItem({ item, onRemove, mealType }) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+const FoodItem = memo(function FoodItem({ item, onRemove, mealType, openSwipeableRef }) {
+  const scale = useSharedValue(1);
+  const swipeableRef = useRef(null);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.98,
-      friction: 8,
-      tension: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(0.98, { damping: 15, stiffness: 300 });
+  }, []);
 
   const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 5,
-      tension: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(1, { damping: 10, stiffness: 200 });
+  }, []);
 
   const handleRemove = useCallback(async () => {
     await hapticImpact();
     onRemove(item.id, mealType);
   }, [item.id, mealType, onRemove]);
 
+  const handleSwipeOpen = useCallback(() => {
+    if (openSwipeableRef.current && openSwipeableRef.current !== swipeableRef.current) {
+      openSwipeableRef.current.close();
+    }
+    openSwipeableRef.current = swipeableRef.current;
+  }, [openSwipeableRef]);
+
+  const handleSwipeClose = useCallback(() => {
+    if (openSwipeableRef.current === swipeableRef.current) {
+      openSwipeableRef.current = null;
+    }
+  }, [openSwipeableRef]);
+
+  const renderRightActions = useCallback(() => {
+    return (
+      <Pressable
+        style={styles.swipeDeleteAction}
+        onPress={handleRemove}
+        accessibilityRole="button"
+        accessibilityLabel={`Delete ${item.name}`}
+        accessibilityHint="Swipe left to delete this food item"
+      >
+        <Trash2 size={20} color={Colors.text} />
+        <Text style={styles.swipeDeleteText}>Delete</Text>
+      </Pressable>
+    );
+  }, [handleRemove]);
+
   return (
-    <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[styles.foodItem, { transform: [{ scale: scaleAnim }] }]}>
-        <View style={styles.foodEmoji}>
-          <Text style={styles.foodEmojiText}>{item.emoji || '🍽️'}</Text>
-        </View>
-        <View style={styles.foodInfo}>
-          <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.foodMacros}>
-            P {item.protein}g · C {item.carbs}g · F {item.fat}g
-          </Text>
-        </View>
-        <View style={styles.foodRight}>
-          <Text style={styles.foodCalories}>{item.calories}</Text>
-          <Text style={styles.foodCaloriesLabel}>kcal</Text>
-        </View>
-        <Pressable style={styles.removeButton} onPress={handleRemove} hitSlop={8}>
-          <Trash2 size={14} color={Colors.textTertiary} />
-        </Pressable>
-      </Animated.View>
-    </Pressable>
+    <Swipeable
+      ref={swipeableRef}
+      friction={2}
+      rightThreshold={40}
+      renderRightActions={renderRightActions}
+      onSwipeableWillOpen={handleSwipeOpen}
+      onSwipeableClose={handleSwipeClose}
+      onSwipeableOpen={(direction) => {
+        if (direction === 'right') {
+          handleRemove();
+        }
+      }}
+      overshootRight={false}
+    >
+      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
+        <ReAnimated.View style={[styles.foodItem, styles.foodItemSwipeable, animatedStyle]}>
+          <View style={styles.foodEmoji}>
+            <Text style={styles.foodEmojiText}>{item.emoji || '🍽️'}</Text>
+          </View>
+          <View style={styles.foodInfo}>
+            <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.foodMacros}>
+              P {item.protein}g · C {item.carbs}g · F {item.fat}g
+            </Text>
+          </View>
+          <View style={styles.foodRight}>
+            <Text style={styles.foodCalories}>{item.calories}</Text>
+            <Text style={styles.foodCaloriesLabel}>kcal</Text>
+          </View>
+          <Pressable
+            style={styles.removeButton}
+            onPress={handleRemove}
+            hitSlop={8}
+            accessibilityLabel={`Remove ${item.name}`}
+            accessibilityRole="button"
+          >
+            <Trash2 size={14} color={Colors.textTertiary} />
+          </Pressable>
+        </ReAnimated.View>
+      </Pressable>
+    </Swipeable>
   );
 }, (prevProps, nextProps) => {
   // Custom comparison - only re-render if item content actually changed
@@ -103,28 +152,23 @@ const FoodItem = memo(function FoodItem({ item, onRemove, mealType }) {
 });
 
 // Memoized MealSection - prevents unnecessary re-renders when other meals change
-const MealSection = memo(function MealSection({ mealType, items, calories, onAddPress, onRemoveFood }) {
+const MealSection = memo(function MealSection({ mealType, items, calories, onAddPress, onRemoveFood, onCopyMeal, onRepeatYesterday, isCopyingRepeat }) {
   const config = MEAL_CONFIG[mealType];
   const Icon = config.icon;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const addScale = useSharedValue(1);
+  const openSwipeableRef = useRef(null);
+
+  const addAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: addScale.value }],
+  }));
 
   const handleAddPressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.92,
-      friction: 8,
-      tension: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    addScale.value = withSpring(0.92, { damping: 15, stiffness: 300 });
+  }, []);
 
   const handleAddPressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 5,
-      tension: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    addScale.value = withSpring(1, { damping: 10, stiffness: 200 });
+  }, []);
 
   const handleAddPress = useCallback(async () => {
     await hapticLight();
@@ -145,38 +189,78 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
             <Icon size={18} color={config.color} />
           </View>
           <View style={styles.headerText}>
-            <Text style={styles.mealLabel}>{config.label}</Text>
+            <Text style={styles.mealLabel} maxFontSizeMultiplier={1.5}>{config.label}</Text>
             {calories > 0 && (
-              <Text style={styles.calorieLabel}>{calories} kcal</Text>
+              <Text style={styles.calorieLabel} maxFontSizeMultiplier={1.5}>{calories} kcal</Text>
             )}
           </View>
         </View>
-        <Pressable
-          onPress={handleAddPress}
-          onPressIn={handleAddPressIn}
-          onPressOut={handleAddPressOut}
-        >
-          <Animated.View
-            style={[
-              styles.addButton,
-              { backgroundColor: config.color + '20', transform: [{ scale: scaleAnim }] },
-            ]}
+        <View style={styles.headerActions}>
+          {items.length > 0 && onCopyMeal && (
+            <Pressable
+              style={styles.copyButton}
+              onPress={() => {
+                hapticLight();
+                onCopyMeal(mealType);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Copy ${config.label} to another day`}
+            >
+              <Copy size={16} color={Colors.textSecondary} />
+            </Pressable>
+          )}
+          <Pressable
+            onPress={handleAddPress}
+            onPressIn={handleAddPressIn}
+            onPressOut={handleAddPressOut}
+            accessibilityRole="button"
+            accessibilityLabel={`Add food to ${config.label}`}
+            accessibilityHint="Opens food search to add to this meal"
           >
-            <Plus size={18} color={config.color} />
-          </Animated.View>
-        </Pressable>
+            <ReAnimated.View
+              style={[
+                styles.addButton,
+                { backgroundColor: config.color + '20' },
+                addAnimatedStyle,
+              ]}
+            >
+              <Plus size={18} color={config.color} />
+            </ReAnimated.View>
+          </Pressable>
+        </View>
       </View>
 
       {/* Food Items */}
       {items.length === 0 ? (
-        <Pressable style={styles.emptyState} onPress={handleAddPress}>
-          <Text style={styles.emptyEmoji}>{config.emoji}</Text>
-          <Text style={styles.emptyText}>No {config.label.toLowerCase()} logged</Text>
-          <View style={styles.emptyAddHint}>
-            <Plus size={12} color={Colors.textTertiary} />
-            <Text style={styles.emptyAddText}>Tap to add</Text>
-          </View>
-        </Pressable>
+        <View style={styles.emptyState}>
+          <Pressable onPress={handleAddPress} style={styles.emptyStateInner}>
+            <Text style={styles.emptyEmoji}>{config.emoji}</Text>
+            <Text style={styles.emptyText}>No {config.label.toLowerCase()} logged</Text>
+            <View style={styles.emptyAddHint}>
+              <Plus size={12} color={Colors.textTertiary} />
+              <Text style={styles.emptyAddText}>Tap to add</Text>
+            </View>
+          </Pressable>
+          {onRepeatYesterday && (
+            <Pressable
+              style={styles.repeatYesterdayButton}
+              onPress={() => onRepeatYesterday(mealType)}
+              disabled={isCopyingRepeat}
+            >
+              {isCopyingRepeat ? (
+                <View style={styles.repeatButtonInner}>
+                  <Text style={styles.repeatYesterdayText}>Copying...</Text>
+                </View>
+              ) : (
+                <View style={styles.repeatButtonInner}>
+                  <RotateCcw size={13} color={Colors.textSecondary} />
+                  <Text style={styles.repeatYesterdayText}>Repeat yesterday</Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+        </View>
       ) : (
         <View style={styles.foodList}>
           {items.map((item) => (
@@ -185,6 +269,7 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
               item={item}
               mealType={mealType}
               onRemove={onRemoveFood}
+              openSwipeableRef={openSwipeableRef}
             />
           ))}
         </View>
@@ -196,6 +281,7 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
   return (
     prevProps.mealType === nextProps.mealType &&
     prevProps.calories === nextProps.calories &&
+    prevProps.isCopyingRepeat === nextProps.isCopyingRepeat &&
     prevProps.items.length === nextProps.items.length &&
     prevProps.items.every((item, idx) =>
       item.id === nextProps.items[idx]?.id &&
@@ -260,10 +346,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  copyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceElevated,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: Spacing.xl,
+    paddingVertical: Spacing.lg,
     paddingHorizontal: Spacing.md,
+  },
+  emptyStateInner: {
+    alignItems: 'center',
+    paddingBottom: Spacing.sm,
+  },
+  repeatYesterdayButton: {
+    marginTop: Spacing.xs,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  repeatButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  repeatYesterdayText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.medium,
+    color: Colors.textSecondary,
   },
   emptyEmoji: {
     fontSize: 32,
@@ -339,5 +459,21 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  foodItemSwipeable: {
+    backgroundColor: Colors.surface,
+  },
+  swipeDeleteAction: {
+    backgroundColor: Colors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 88,
+    flexDirection: 'column',
+    gap: 4,
+  },
+  swipeDeleteText: {
+    color: Colors.text,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
   },
 });

@@ -11,6 +11,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadows } from '..
 import { LinearGradient } from 'expo-linear-gradient';
 import { useProfile } from '../context/ProfileContext';
 import { hapticSuccess, hapticLight } from '../lib/haptics';
+import { safeJSONParse, isValidArray } from '../lib/validation';
 
 const STORAGE_KEY = '@vibefit_progress_photos';
 const MAX_PHOTOS = 100;
@@ -39,7 +40,12 @@ export default function ProgressPhotosScreen() {
   const loadPhotos = useCallback(async () => {
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored) setPhotos(JSON.parse(stored));
+      if (stored) {
+        const parsed = safeJSONParse(stored, []);
+        if (isValidArray(parsed)) {
+          setPhotos(parsed);
+        }
+      }
     } catch (e) {
       /* silent */
     }

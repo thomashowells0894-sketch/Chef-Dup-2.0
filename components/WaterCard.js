@@ -1,63 +1,57 @@
-import React, { useRef, useEffect, useCallback, memo } from 'react';
+import React, { useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  Animated,
-  LayoutAnimation,
   Platform,
-  UIManager,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withRepeat,
+  withSequence,
+  interpolate,
+} from 'react-native-reanimated';
 import { Droplets, Plus, GlassWater, Waves } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
 import { hapticImpact, hapticWarning } from '../lib/haptics';
-import { useFood } from '../context/FoodContext';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { useWaterProgress } from '../context/MealContext';
 
 // Memoized Water button component
 const WaterButton = memo(function WaterButton({ emoji, label, amount, onPress, style }) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useSharedValue(1);
+  const glowAnim = useSharedValue(0);
 
   const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.92,
-      friction: 8,
-      tension: 400,
-      useNativeDriver: true,
-    }).start();
+    scaleAnim.value = withSpring(0.92, { damping: 8, stiffness: 400 });
   }, [scaleAnim]);
 
   const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 4,
-      tension: 200,
-      useNativeDriver: true,
-    }).start();
+    scaleAnim.value = withSpring(1, { damping: 4, stiffness: 200 });
   }, [scaleAnim]);
 
   const handlePress = useCallback(async () => {
     // Glow animation
-    glowAnim.setValue(1);
-    Animated.timing(glowAnim, {
-      toValue: 0,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
+    glowAnim.value = 1;
+    glowAnim.value = withTiming(0, { duration: 400 });
 
     await hapticImpact();
 
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     onPress(amount);
   }, [glowAnim, amount, onPress]);
+
+  const animatedScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleAnim.value }],
+  }));
+
+  const animatedGlowStyle = useAnimatedStyle(() => ({
+    opacity: glowAnim.value,
+  }));
 
   return (
     <Pressable
@@ -65,17 +59,19 @@ const WaterButton = memo(function WaterButton({ emoji, label, amount, onPress, s
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={style}
+      accessibilityRole="button"
+      accessibilityLabel={`Add ${amount} milliliters of water`}
     >
       <Animated.View
         style={[
           styles.waterButton,
-          { transform: [{ scale: scaleAnim }] },
+          animatedScaleStyle,
         ]}
       >
         <Animated.View
           style={[
             styles.buttonGlow,
-            { opacity: glowAnim },
+            animatedGlowStyle,
           ]}
         />
         <Text style={styles.buttonEmoji}>{emoji}</Text>
@@ -87,53 +83,36 @@ const WaterButton = memo(function WaterButton({ emoji, label, amount, onPress, s
 
 // Memoized WaterCard - re-renders only when waterProgress changes
 function WaterCard() {
-  const { waterProgress, addWater, resetWater } = useFood();
+  const { waterProgress, addWater, resetWater } = useWaterProgress();
 
   // Animation values
-  const fillWidth = useRef(new Animated.Value(0)).current;
-  const waveOffset = useRef(new Animated.Value(0)).current;
-  const splashScale = useRef(new Animated.Value(1)).current;
+  const fillWidth = useSharedValue(0);
+  const waveOffset = useSharedValue(0);
+  const splashScale = useSharedValue(1);
 
-  // Animate fill width when water changes (scaleX for native driver)
+  // Animate fill width when water changes (scaleX)
   useEffect(() => {
-    Animated.spring(fillWidth, {
-      toValue: Math.min(waterProgress.percentage / 100, 1),
-      friction: 8,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
+    fillWidth.value = withSpring(Math.min(waterProgress.percentage / 100, 1), {
+      damping: 8,
+      stiffness: 40,
+    });
   }, [waterProgress.percentage, fillWidth]);
 
   // Continuous wave animation
   useEffect(() => {
-    const animateWave = () => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(waveOffset, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(waveOffset, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    };
-    animateWave();
+    waveOffset.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2000 }),
+        withTiming(0, { duration: 2000 }),
+      ),
+      -1,
+    );
   }, [waveOffset]);
 
   const handleAddWater = useCallback(async (amount) => {
     // Splash animation
-    splashScale.setValue(0.95);
-    Animated.spring(splashScale, {
-      toValue: 1,
-      friction: 3,
-      tension: 200,
-      useNativeDriver: true,
-    }).start();
+    splashScale.value = 0.95;
+    splashScale.value = withSpring(1, { damping: 3, stiffness: 200 });
 
     await addWater(amount);
   }, [addWater, splashScale]);
@@ -141,21 +120,25 @@ function WaterCard() {
   const handleLongPress = useCallback(async () => {
     await hapticWarning();
 
-    Animated.timing(fillWidth, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    fillWidth.value = withTiming(0, { duration: 300 });
 
     await resetWater();
   }, [resetWater, fillWidth]);
 
-  // fillWidth is now 0-1 for scaleX (native driver compatible)
+  // Animated styles
+  const animatedFillStyle = useAnimatedStyle(() => ({
+    width: '100%',
+    transform: [{ scaleX: fillWidth.value }],
+    transformOrigin: 'left',
+  }));
 
-  const waveTranslate = waveOffset.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 5],
-  });
+  const animatedWaveStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(waveOffset.value, [0, 1], [0, 5]) }],
+  }));
+
+  const animatedSplashStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: splashScale.value }],
+  }));
 
   // Format numbers with comma
   const formatMl = (ml) => ml.toLocaleString();
@@ -169,13 +152,16 @@ function WaterCard() {
       style={styles.card}
       onLongPress={handleLongPress}
       delayLongPress={500}
+      accessibilityRole="button"
+      accessibilityLabel={`Water: ${waterProgress.glasses} of ${waterProgress.glassesGoal} glasses. ${formatMl(waterProgress.ml)} of ${formatMl(waterProgress.goal)} milliliters`}
+      accessibilityHint="Tap to log water"
     >
       {/* Glass blur layer */}
       {Platform.OS === 'ios' && (
         <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
       )}
 
-      <Animated.View style={[styles.cardInner, { transform: [{ scale: splashScale }] }]}>
+      <Animated.View style={[styles.cardInner, animatedSplashStyle]}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -192,7 +178,7 @@ function WaterCard() {
         </View>
 
         {/* Stats */}
-        <View style={styles.statsContainer}>
+        <View style={styles.statsContainer} accessibilityLiveRegion="polite">
           <Text style={styles.currentMl}>{formatMl(waterProgress.ml)}</Text>
           <Text style={styles.goalMl}> / {formatMl(waterProgress.goal)} ml</Text>
         </View>
@@ -203,11 +189,7 @@ function WaterCard() {
             <Animated.View
               style={[
                 styles.progressFillContainer,
-                {
-                  width: '100%',
-                  transform: [{ scaleX: fillWidth }],
-                  transformOrigin: 'left',
-                },
+                animatedFillStyle,
               ]}
             >
               <LinearGradient
@@ -220,7 +202,7 @@ function WaterCard() {
               <Animated.View
                 style={[
                   styles.waveIndicator,
-                  { transform: [{ translateX: waveTranslate }] },
+                  animatedWaveStyle,
                 ]}
               >
                 <Waves size={12} color="rgba(255,255,255,0.6)" />

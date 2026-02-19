@@ -7,6 +7,8 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
+import PremiumGate from '../components/PremiumGate';
 import {
   View,
   Text,
@@ -38,8 +40,11 @@ import {
   ChefHat,
   Clock,
   ChevronDown,
+  Users,
+  Minus,
+  Plus,
 } from 'lucide-react-native';
-import { useFood } from '../context/FoodContext';
+import { useMeals } from '../context/MealContext';
 import { useProfile } from '../context/ProfileContext';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { useMealPlan } from '../hooks/useMealPlan';
@@ -288,11 +293,11 @@ function CoachNoteCard({ note }) {
 // Main Screen
 // ============================================================================
 
-export default function MealPlanScreen() {
+function MealPlanScreenInner() {
   const router = useRouter();
-  const { addFood } = useFood();
+  const { addFood } = useMeals();
   const { profile } = useProfile();
-  const { mealPlan, isGenerating, generatePlan } = useMealPlan();
+  const { mealPlan, isGenerating, generatePlan, householdSize, updateHouseholdSize } = useMealPlan();
 
   const [selectedDay, setSelectedDay] = useState(0);
 
@@ -446,6 +451,36 @@ export default function MealPlanScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/* Household Size Selector */}
+          <ReAnimated.View
+            entering={FadeInDown.delay(0).springify().damping(12)}
+            style={styles.householdRow}
+          >
+            <View style={styles.householdLeft}>
+              <Users size={16} color={Colors.textSecondary} />
+              <Text style={styles.householdLabel}>Household</Text>
+            </View>
+            <View style={styles.householdControls}>
+              <Pressable
+                style={styles.householdBtn}
+                onPress={async () => { await hapticLight(); updateHouseholdSize(householdSize - 1); }}
+                disabled={householdSize <= 1}
+              >
+                <Minus size={14} color={householdSize <= 1 ? Colors.textTertiary : Colors.text} />
+              </Pressable>
+              <Text style={styles.householdValue}>
+                {householdSize} {householdSize === 1 ? 'person' : 'people'}
+              </Text>
+              <Pressable
+                style={styles.householdBtn}
+                onPress={async () => { await hapticLight(); updateHouseholdSize(householdSize + 1); }}
+                disabled={householdSize >= 8}
+              >
+                <Plus size={14} color={householdSize >= 8 ? Colors.textTertiary : Colors.text} />
+              </Pressable>
+            </View>
+          </ReAnimated.View>
+
           {/* Day Tabs */}
           <ReAnimated.View
             entering={FadeInDown.delay(0).springify().damping(12)}
@@ -552,6 +587,50 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.sm,
+  },
+
+  // Household Size
+  householdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  householdLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  householdLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+    color: Colors.textSecondary,
+  },
+  householdControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  householdBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  householdValue: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+    minWidth: 70,
+    textAlign: 'center',
   },
 
   // Day Tabs
@@ -985,3 +1064,13 @@ const styles = StyleSheet.create({
     height: 100,
   },
 });
+
+export default function MealPlanScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="MealPlanScreen">
+      <PremiumGate>
+        <MealPlanScreenInner {...props} />
+      </PremiumGate>
+    </ScreenErrorBoundary>
+  );
+}

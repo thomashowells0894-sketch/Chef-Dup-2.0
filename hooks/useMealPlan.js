@@ -47,9 +47,29 @@ export function useMealPlan() {
   const [mealPlan, setMealPlan] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
+  const [householdSize, setHouseholdSize] = useState(1);
   const hasChecked = useRef(false);
 
   const { profile, calculatedGoals, currentGoalType } = useProfile();
+
+  // Load saved household size
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@vibefit_household_size');
+        if (saved) setHouseholdSize(parseInt(saved, 10) || 1);
+      } catch {}
+    })();
+  }, []);
+
+  // Persist household size changes
+  const updateHouseholdSize = useCallback(async (size) => {
+    const clamped = Math.max(1, Math.min(8, size));
+    setHouseholdSize(clamped);
+    try {
+      await AsyncStorage.setItem('@vibefit_household_size', String(clamped));
+    } catch {}
+  }, []);
 
   // Load cached meal plan on mount
   useEffect(() => {
@@ -88,6 +108,7 @@ export function useMealPlan() {
         allergies: [],
         goal,
         daysCount: 3,
+        householdSize,
       };
 
       const result = await generateMealPlan(params);
@@ -101,7 +122,7 @@ export function useMealPlan() {
     } finally {
       setIsGenerating(false);
     }
-  }, [isGenerating, calculatedGoals, profile, currentGoalType]);
+  }, [isGenerating, calculatedGoals, profile, currentGoalType, householdSize]);
 
   // Auto-generate if stale
   useEffect(() => {
@@ -114,5 +135,5 @@ export function useMealPlan() {
     }
   }, [mealPlan, generatePlan]);
 
-  return { mealPlan, isGenerating, generatePlan, lastGenerated };
+  return { mealPlan, isGenerating, generatePlan, lastGenerated, householdSize, updateHouseholdSize };
 }

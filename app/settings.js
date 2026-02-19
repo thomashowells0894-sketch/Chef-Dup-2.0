@@ -1,24 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert, ActivityIndicator, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Save, AlertCircle, Dumbbell, Utensils, Bell, Droplets, Timer, Flame, Download, FileText, Heart } from 'lucide-react-native';
+import { ChevronLeft, Save, AlertCircle, Dumbbell, Utensils, Bell, Droplets, Timer, Flame, Download, FileText, Heart, Sun, Moon, Monitor, RotateCcw } from 'lucide-react-native';
 import { useHealthKit } from '../hooks/useHealthKit';
 import { getHealthPlatformName } from '../services/healthService';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useNotifications } from '../context/NotificationContext';
-import { useFood } from '../context/FoodContext';
+import { useMeals } from '../context/MealContext';
 import { useProfile } from '../context/ProfileContext';
 import { useGamification } from '../context/GamificationContext';
+import { useTheme } from '../context/ThemeContext';
 import { exportFoodDiaryCSV, exportWeeklySummaryPDF } from '../services/exportData';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
+import { sanitizeText } from '../lib/validation';
+import useTour from '../hooks/useTour';
 
-export default function SettingsScreen() {
+function SettingsScreenInner() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { settings: notifSettings, updateSettings: updateNotifSettings, hasPermission } = useNotifications();
-  const { dayData, weeklyData, weeklyStats, goals } = useFood();
+  const { dayData, weeklyData, weeklyStats, goals } = useMeals();
   const { profile } = useProfile();
   const { currentStreak } = useGamification();
   const [loading, setLoading] = useState(false);
@@ -27,6 +31,13 @@ export default function SettingsScreen() {
   const [exportingPDF, setExportingPDF] = useState(false);
 
   const { isConnected: healthConnected, steps: healthSteps, lastSynced: healthLastSynced, connect: healthConnect, disconnect: healthDisconnect } = useHealthKit();
+  const { preference: themePreference, setTheme } = useTheme();
+  const { resetTours } = useTour();
+
+  const handleReplayTour = async () => {
+    await resetTours();
+    router.replace('/(tabs)');
+  };
 
   const [injuries, setInjuries] = useState('');
   const [equipment, setEquipment] = useState('');
@@ -58,9 +69,9 @@ export default function SettingsScreen() {
     const { error } = await supabase
       .from('profiles')
       .update({
-        injuries,
-        equipment,
-        dietary_preferences: diet
+        injuries: sanitizeText(injuries, 500),
+        equipment: sanitizeText(equipment, 500),
+        dietary_preferences: sanitizeText(diet, 500),
       })
       .eq('user_id', user.id)
       .select();
@@ -119,7 +130,46 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
-        <Text style={styles.sectionHeader}>Train the AI</Text>
+        {/* Appearance — placed first so users can switch theme immediately */}
+        <Text style={styles.sectionHeader}>Appearance</Text>
+        <Text style={styles.description}>
+          Choose your preferred appearance.
+        </Text>
+
+        <View style={styles.themeSelector}>
+          {[
+            { key: 'system', label: 'System', Icon: Monitor },
+            { key: 'dark', label: 'Dark', Icon: Moon },
+            { key: 'light', label: 'Light', Icon: Sun },
+          ].map(({ key, label, Icon }) => {
+            const isActive = themePreference === key;
+            return (
+              <Pressable
+                key={key}
+                style={[
+                  styles.themeOption,
+                  isActive && styles.themeOptionActive,
+                ]}
+                onPress={() => setTheme(key)}
+              >
+                <Icon
+                  size={FontSize.lg}
+                  color={isActive ? Colors.primary : Colors.textTertiary}
+                />
+                <Text
+                  style={[
+                    styles.themeOptionLabel,
+                    isActive && styles.themeOptionLabelActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.sectionHeader, { marginTop: Spacing.md }]}>Train the AI</Text>
         <Text style={styles.description}>
           The AI Trainer will use this information to customize your workouts and meal plans.
         </Text>
@@ -136,6 +186,7 @@ export default function SettingsScreen() {
             value={injuries}
             onChangeText={setInjuries}
             multiline
+            maxLength={500}
           />
         </View>
 
@@ -151,6 +202,7 @@ export default function SettingsScreen() {
             value={equipment}
             onChangeText={setEquipment}
             multiline
+            maxLength={500}
           />
         </View>
 
@@ -166,6 +218,7 @@ export default function SettingsScreen() {
             value={diet}
             onChangeText={setDiet}
             multiline
+            maxLength={500}
           />
         </View>
 
@@ -340,6 +393,26 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
+        {/* Replay Feature Tour */}
+        <Text style={[styles.sectionHeader, { marginTop: Spacing.md }]}>App Tour</Text>
+        <Text style={styles.description}>
+          Revisit the guided tour to rediscover all VibeFit features.
+        </Text>
+
+        <View style={styles.toggleGroup}>
+          <Pressable style={styles.toggleRow} onPress={handleReplayTour}>
+            <View style={styles.toggleLeft}>
+              <View style={[styles.toggleIcon, { backgroundColor: Colors.primarySoft }]}>
+                <RotateCcw size={FontSize.md} color={Colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.toggleLabel}>Replay Feature Tour</Text>
+                <Text style={styles.toggleHint}>Show the welcome walkthrough again</Text>
+              </View>
+            </View>
+          </Pressable>
+        </View>
+
         <Pressable style={styles.logoutBtn} onPress={signOut}>
           <Text style={styles.logoutText}>Log Out</Text>
         </Pressable>
@@ -364,6 +437,19 @@ const styles = StyleSheet.create({
   toggleIcon: { width: 34, height: 34, borderRadius: BorderRadius.xs, justifyContent: 'center', alignItems: 'center' },
   toggleLabel: { color: Colors.text, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
   toggleHint: { color: Colors.textTertiary, fontSize: FontSize.sm, marginTop: 1 },
+  themeSelector: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  themeOption: { flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.md, backgroundColor: Colors.inputBackground, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.border },
+  themeOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primarySoft },
+  themeOptionLabel: { color: Colors.textTertiary, fontSize: FontSize.sm, fontWeight: FontWeight.medium },
+  themeOptionLabelActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
   logoutBtn: { marginTop: Spacing.xxl, padding: Spacing.md, alignItems: 'center' },
   logoutText: { color: Colors.error, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
 });
+
+export default function SettingsScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="SettingsScreen">
+      <SettingsScreenInner {...props} />
+    </ScreenErrorBoundary>
+  );
+}

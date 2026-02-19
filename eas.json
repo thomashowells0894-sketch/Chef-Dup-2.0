@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "version": ">= 13.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "SENTRY_ORG": "vibefit",
+        "SENTRY_PROJECT": "vibefit-mobile"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "SENTRY_ORG": "vibefit",
+        "SENTRY_PROJECT": "vibefit-mobile"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "SENTRY_ORG": "vibefit",
+        "SENTRY_PROJECT": "vibefit-mobile"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -11,10 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ShoppingCart, Check, Sparkles } from 'lucide-react-native';
+import { ChevronLeft, ShoppingCart, Check, Sparkles, ExternalLink, Truck } from 'lucide-react-native';
+import * as Linking from 'expo-linking';
 import { hapticLight } from '../lib/haptics';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { useMeals } from '../context/MealContext';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -81,7 +82,7 @@ function EmptyState() {
 
 export default function ShoppingListScreen() {
   const router = useRouter();
-  const { getShoppingList } = useFood();
+  const { getShoppingList } = useMeals();
   const [checkedItems, setCheckedItems] = useState({});
 
   const shoppingList = useMemo(() => getShoppingList(), [getShoppingList]);
@@ -169,6 +170,47 @@ export default function ShoppingListScreen() {
                 onToggle={() => toggleItem(item.name)}
               />
             ))}
+
+            {/* Grocery Delivery */}
+            <View style={styles.deliverySection}>
+              <View style={styles.deliverySectionHeader}>
+                <Truck size={18} color={Colors.primary} />
+                <Text style={styles.deliverySectionTitle}>Order Groceries</Text>
+              </View>
+              <Text style={styles.deliverySectionSubtitle}>
+                Get everything delivered to your door
+              </Text>
+              <View style={styles.deliveryButtons}>
+                {[
+                  { name: 'Instacart', color: '#43B02A', url: 'https://www.instacart.com/' },
+                  { name: 'Amazon Fresh', color: '#FF9900', url: 'https://www.amazon.com/alm/storefront?almBrandId=QW1hem9uIEZyZXNo' },
+                  { name: 'Walmart', color: '#0071CE', url: 'https://www.walmart.com/grocery' },
+                  { name: 'Kroger', color: '#0A3D8F', url: 'https://www.kroger.com/' },
+                ].map((service) => (
+                  <Pressable
+                    key={service.name}
+                    style={[styles.deliveryButton, { borderColor: service.color + '40' }]}
+                    onPress={async () => {
+                      await hapticLight();
+                      // Build search query from unchecked items
+                      const unchecked = shoppingList
+                        .filter((item) => !checkedItems[item.name])
+                        .map((item) => item.name)
+                        .slice(0, 10);
+                      const query = encodeURIComponent(unchecked.join(', '));
+                      const url = service.name === 'Instacart'
+                        ? `https://www.instacart.com/store/search/${query}`
+                        : service.url;
+                      Linking.openURL(url).catch(() => {});
+                    }}
+                  >
+                    <View style={[styles.deliveryDot, { backgroundColor: service.color }]} />
+                    <Text style={styles.deliveryButtonText}>{service.name}</Text>
+                    <ExternalLink size={14} color={Colors.textTertiary} />
+                  </Pressable>
+                ))}
+              </View>
+            </View>
 
             <View style={styles.bottomSpacer} />
           </ScrollView>
@@ -369,6 +411,52 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 40,
+  },
+  deliverySection: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+  },
+  deliverySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: 4,
+  },
+  deliverySectionTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  deliverySectionSubtitle: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.md,
+  },
+  deliveryButtons: {
+    gap: Spacing.sm,
+  },
+  deliveryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  deliveryDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  deliveryButtonText: {
+    flex: 1,
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
   },
   // Empty state
   emptyContainer: {
