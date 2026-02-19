@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -20,9 +21,10 @@ import {
 } from 'lucide-react-native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadows, Glass } from '../constants/theme';
 import { useProfile } from '../context/ProfileContext';
-import { useFood } from '../context/FoodContext';
+import { useWeeklyData, useMealTotals } from '../context/MealContext';
 import { useGamification } from '../context/GamificationContext';
 import { useFasting } from '../context/FastingContext';
+import { useIsPremium } from '../context/SubscriptionContext';
 import { generateMorningBriefing } from '../services/ai';
 
 const STORAGE_KEY_DISMISSED = '@vibefit_morning_briefing_dismissed';
@@ -62,22 +64,7 @@ function getScoreBgColor(score) {
   return Colors.errorSoft;
 }
 
-// Shimmer placeholder component
-function ShimmerBlock({ width, height, style }) {
-  return (
-    <View
-      style={[
-        {
-          width,
-          height,
-          backgroundColor: Colors.surfaceGlass,
-          borderRadius: BorderRadius.sm,
-        },
-        style,
-      ]}
-    />
-  );
-}
+import { SkeletonBox } from './SkeletonLoader';
 
 function LoadingShimmer() {
   return (
@@ -87,43 +74,56 @@ function LoadingShimmer() {
         style={styles.card}
       >
         <View style={styles.shimmerHeader}>
-          <ShimmerBlock width={40} height={40} style={{ borderRadius: BorderRadius.full }} />
+          <SkeletonBox width={40} height={40} borderRadius={BorderRadius.full} />
           <View style={{ flex: 1, gap: Spacing.xs }}>
-            <ShimmerBlock width="70%" height={FontSize.lg} />
-            <ShimmerBlock width="90%" height={FontSize.sm} />
+            <SkeletonBox width="70%" height={FontSize.lg} />
+            <SkeletonBox width="90%" height={FontSize.sm} />
           </View>
         </View>
-        <ShimmerBlock width={60} height={60} style={{ alignSelf: 'center', borderRadius: BorderRadius.full, marginVertical: Spacing.md }} />
+        <SkeletonBox width={60} height={60} style={{ alignSelf: 'center', borderRadius: BorderRadius.full, marginVertical: Spacing.md }} />
         {[1, 2, 3].map((i) => (
-          <ShimmerBlock
+          <SkeletonBox
             key={i}
             width="100%"
             height={70}
             style={{ marginBottom: Spacing.sm, borderRadius: BorderRadius.md }}
           />
         ))}
-        <ShimmerBlock width="100%" height={80} style={{ borderRadius: BorderRadius.md, marginTop: Spacing.sm }} />
+        <SkeletonBox width="100%" height={80} style={{ borderRadius: BorderRadius.md, marginTop: Spacing.sm }} />
       </LinearGradient>
     </View>
   );
 }
 
-export default function MorningBriefing() {
+function MorningBriefing() {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [briefingData, setBriefingData] = useState(null);
   const [error, setError] = useState(false);
 
+  const { isPremium } = useIsPremium();
   const { profile, calculatedGoals, weightStats } = useProfile();
-  const { getDayTotals, goals } = useFood();
+  const { getDayTotals } = useWeeklyData();
+  const { goals } = useMealTotals();
   const { currentStreak } = useGamification();
   const { isFasting, fastDuration } = useFasting();
 
   // Check if briefing should show and load data
   const loadBriefing = useCallback(async () => {
+    // Skip AI briefing for free users — silently hide
+    if (!isPremium) {
+      setVisible(false);
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Check if dismissed today
-      const dismissedDate = await AsyncStorage.getItem(STORAGE_KEY_DISMISSED);
+      // Defer storage reads until animations complete to avoid blocking JS thread
+      const dismissedDate = await new Promise((resolve) => {
+        InteractionManager.runAfterInteractions(async () => {
+          resolve(await AsyncStorage.getItem(STORAGE_KEY_DISMISSED));
+        });
+      });
       const today = getTodayKey();
 
       if (dismissedDate === today) {
@@ -137,7 +137,11 @@ export default function MorningBriefing() {
       setLoading(true);
 
       // Check for cached briefing for today
-      const cachedRaw = await AsyncStorage.getItem(STORAGE_KEY_CACHE);
+      const cachedRaw = await new Promise((resolve) => {
+        InteractionManager.runAfterInteractions(async () => {
+          resolve(await AsyncStorage.getItem(STORAGE_KEY_CACHE));
+        });
+      });
       if (cachedRaw) {
         try {
           const cached = JSON.parse(cachedRaw);
@@ -157,6 +161,40 @@ export default function MorningBriefing() {
       const calorieGoal = calculatedGoals?.calories || goals?.calories || 2000;
       const proteinGoal = calculatedGoals?.protein || goals?.protein || 150;
 
+      // Collect last 7 days of meal totals for weekly pattern analysis
+      const weeklyPatterns = [];
+      let totalWeekCalories = 0;
+      let totalWeekProtein = 0;
+      let highestCalDay = { date: '', calories: 0 };
+      let lowestCalDay = { date: '', calories: Infinity };
+      let daysWithData = 0;
+
+      for (let i = 1; i <= 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateKey = d.toISOString().split('T')[0];
+        const dayTotals = getDayTotals(dateKey);
+        if (dayTotals && dayTotals.calories > 0) {
+          daysWithData++;
+          totalWeekCalories += dayTotals.calories;
+          totalWeekProtein += dayTotals.protein || 0;
+          weeklyPatterns.push({
+            date: dateKey,
+            calories: dayTotals.calories,
+            protein: dayTotals.protein || 0,
+          });
+          if (dayTotals.calories > highestCalDay.calories) {
+            highestCalDay = { date: dateKey, calories: dayTotals.calories };
+          }
+          if (dayTotals.calories < lowestCalDay.calories) {
+            lowestCalDay = { date: dateKey, calories: dayTotals.calories };
+          }
+        }
+      }
+
+      const avgWeekCalories = daysWithData > 0 ? Math.round(totalWeekCalories / daysWithData) : 0;
+      const avgWeekProtein = daysWithData > 0 ? Math.round(totalWeekProtein / daysWithData) : 0;
+
       const userData = {
         userName: profile.name || 'Champion',
         yesterdayCalories: yesterdayTotals?.calories || 0,
@@ -169,16 +207,27 @@ export default function MorningBriefing() {
         fastDuration: fastDuration || 0,
         dietaryPreferences: profile.dietaryRestrictions || [],
         goal: mapWeeklyGoalToGoal(profile.weeklyGoal),
+        // Weekly pattern data for richer AI coaching
+        weeklyPatterns: daysWithData > 0 ? {
+          avgCalories: avgWeekCalories,
+          avgProtein: avgWeekProtein,
+          daysTracked: daysWithData,
+          highestDay: highestCalDay.calories < Infinity ? highestCalDay : null,
+          lowestDay: lowestCalDay.calories < Infinity ? lowestCalDay : null,
+          dailyBreakdown: weeklyPatterns,
+        } : null,
       };
 
       const result = await generateMorningBriefing(userData);
       setBriefingData(result);
 
-      // Cache the result
-      await AsyncStorage.setItem(
-        STORAGE_KEY_CACHE,
-        JSON.stringify({ date: today, data: result })
-      );
+      // Cache the result (non-blocking)
+      InteractionManager.runAfterInteractions(() => {
+        AsyncStorage.setItem(
+          STORAGE_KEY_CACHE,
+          JSON.stringify({ date: today, data: result })
+        );
+      });
 
       setLoading(false);
     } catch (err) {
@@ -196,10 +245,12 @@ export default function MorningBriefing() {
     return () => clearTimeout(timer);
   }, [loadBriefing]);
 
-  const handleDismiss = useCallback(async () => {
-    const today = getTodayKey();
-    await AsyncStorage.setItem(STORAGE_KEY_DISMISSED, today);
+  const handleDismiss = useCallback(() => {
     setVisible(false);
+    InteractionManager.runAfterInteractions(() => {
+      const today = getTodayKey();
+      AsyncStorage.setItem(STORAGE_KEY_DISMISSED, today);
+    });
   }, []);
 
   // Fallback greeting for error state
@@ -230,13 +281,21 @@ export default function MorningBriefing() {
           <LinearGradient
             colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
             style={styles.card}
+            accessibilityRole="alert"
+            accessibilityLabel={`${fallbackGreeting} Ready to make today count? Let's get after it!`}
           >
             <View style={styles.headerRow}>
               <View style={styles.greetingIconWrap}>
                 <Sun size={20} color={Colors.warning} />
               </View>
               <Text style={styles.greetingText}>{fallbackGreeting}</Text>
-              <Pressable onPress={handleDismiss} style={styles.dismissButton} hitSlop={12}>
+              <Pressable
+              onPress={handleDismiss}
+              style={styles.dismissButton}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss morning briefing"
+            >
                 <X size={18} color={Colors.textSecondary} />
               </Pressable>
             </View>
@@ -259,6 +318,8 @@ export default function MorningBriefing() {
         <LinearGradient
           colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
           style={styles.card}
+          accessibilityRole="alert"
+          accessibilityLabel={`Morning briefing. ${greeting} ${headline}`}
         >
           {/* Header: Greeting + Dismiss */}
           <Animated.View entering={FadeInDown.duration(400).delay(150)} style={styles.headerRow}>
@@ -269,7 +330,13 @@ export default function MorningBriefing() {
               <Text style={styles.greetingText} numberOfLines={1}>{greeting}</Text>
               <Text style={styles.headlineText} numberOfLines={2}>{headline}</Text>
             </View>
-            <Pressable onPress={handleDismiss} style={styles.dismissButton} hitSlop={12}>
+            <Pressable
+              onPress={handleDismiss}
+              style={styles.dismissButton}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss morning briefing"
+            >
               <X size={18} color={Colors.textSecondary} />
             </Pressable>
           </Animated.View>
@@ -349,7 +416,12 @@ export default function MorningBriefing() {
 
           {/* Dismiss Button */}
           <Animated.View entering={FadeInDown.duration(400).delay(800)}>
-            <Pressable onPress={handleDismiss} style={styles.dismissCta}>
+            <Pressable
+              onPress={handleDismiss}
+              style={styles.dismissCta}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss morning briefing"
+            >
               <Text style={styles.dismissCtaText}>Got it, let's go!</Text>
             </Pressable>
           </Animated.View>
@@ -358,6 +430,8 @@ export default function MorningBriefing() {
     </Animated.View>
   );
 }
+
+export default React.memo(MorningBriefing);
 
 const styles = StyleSheet.create({
   container: {

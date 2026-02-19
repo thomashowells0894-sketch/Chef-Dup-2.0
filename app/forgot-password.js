@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeft } from 'lucide-react-native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Gradients } from '../constants/theme';
+import { globalRateLimiter } from '../lib/security';
 
 export default function ForgotPassword() {
   const router = useRouter();
@@ -16,21 +17,37 @@ export default function ForgotPassword() {
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    const rateLimitResult = globalRateLimiter.check('forgot_password', 3, 60000);
+    if (!rateLimitResult.allowed) {
+      Alert.alert('Too many attempts', 'Too many attempts. Please try again in a minute.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
         redirectTo: 'vibefit://update-password',
       });
 
-      if (error) throw error;
+      if (error) {
+        // Don't reveal whether email exists — always show success
+        if (__DEV__) console.error('[ForgotPassword] Reset error:', error.message);
+      }
 
+      // Always show the same message to prevent email enumeration
       Alert.alert(
         'Check your email',
-        'We have sent you a password reset link.',
+        'If an account exists with this email, we have sent you a password reset link.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', 'Failed to send reset email. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -39,7 +56,7 @@ export default function ForgotPassword() {
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <Ionicons name="arrow-back" size={24} color={Colors.text} />
+        <ArrowLeft size={24} color={Colors.text} />
       </TouchableOpacity>
 
       <Text style={styles.header}>Reset Password</Text>

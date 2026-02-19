@@ -11,7 +11,7 @@ import { X, Sparkles, Target, Leaf, Zap, ChevronRight } from 'lucide-react-nativ
 import { hapticImpact, hapticLight } from '../lib/haptics';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { getRecommendations, getCoachMessage, mealToFood, getSuggestedMealType } from '../services/mealRecommendation';
-import { useFood } from '../context/FoodContext';
+import { useMealTotals } from '../context/MealContext';
 
 function RecommendationCard({ meal, type, icon: Icon, label, sublabel, onPress }) {
   if (!meal) return null;
@@ -68,7 +68,7 @@ export default function SmartCoachModal({
   onClose,
   onSelectMeal,
 }) {
-  const { remaining, goals } = useFood();
+  const { remaining, goals } = useMealTotals();
 
   const recommendations = useMemo(() => {
     const remainingCals = remaining?.calories ?? goals?.calories ?? 2000;
@@ -103,7 +103,7 @@ export default function SmartCoachModal({
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.container}>
+      <View style={styles.container} accessibilityViewIsModal={true} accessibilityLabel="Smart coach recommendations">
         {/* Header */}
         <View style={styles.header}>
           <Pressable style={styles.closeButton} onPress={handleClose}>

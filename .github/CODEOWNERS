@@ -1,0 +1,8 @@
+# Default owners
+* @vibefit/core-team
+
+# Security-critical files
+lib/security.ts @vibefit/security
+lib/encryptedStorage.ts @vibefit/security
+lib/certPinning.ts @vibefit/security
+supabase/migrations/ @vibefit/security

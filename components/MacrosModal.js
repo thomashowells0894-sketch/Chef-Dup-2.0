@@ -11,7 +11,7 @@ import { X } from 'lucide-react-native';
 import Svg, { G, Circle } from 'react-native-svg';
 import { hapticLight } from '../lib/haptics';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { useMealTotals } from '../context/MealContext';
 
 const { width } = Dimensions.get('window');
 const PIE_SIZE = width * 0.5;
@@ -94,7 +94,7 @@ function MacroRow({ label, current, goal, color, unit = 'g' }) {
 }
 
 export default function MacrosModal({ visible, onClose }) {
-  const { totals, goals } = useFood();
+  const { totals, goals } = useMealTotals();
 
   const pieData = [
     { label: 'Protein', value: totals.protein, color: Colors.protein },
@@ -114,7 +114,7 @@ export default function MacrosModal({ visible, onClose }) {
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.container}>
+      <View style={styles.container} accessibilityViewIsModal={true} accessibilityLabel="Macro goals editor">
         <View style={styles.header}>
           <Text style={styles.title}>Macro Breakdown</Text>
           <Pressable style={styles.closeButton} onPress={handleClose}>

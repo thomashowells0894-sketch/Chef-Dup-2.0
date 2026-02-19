@@ -14,7 +14,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { StatusBar } from 'expo-status-bar';
 import { Mail, Lock, ArrowRight, Sparkles } from 'lucide-react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { hapticImpact } from '../lib/haptics';
@@ -32,7 +31,7 @@ const MAX_ATTEMPTS_BEFORE_LOCKOUT = 5;
 const LOCKOUT_DURATION_MS = 60000;
 
 // Glowing input component with focus state
-function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoComplete, autoCapitalize }) {
+function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoComplete, autoCapitalize, testID }) {
   const [focused, setFocused] = useState(false);
 
   return (
@@ -44,6 +43,7 @@ function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEn
         <Icon size={18} color={focused ? Colors.primary : Colors.textTertiary} />
       </View>
       <TextInput
+        testID={testID}
         style={styles.input}
         placeholder={placeholder}
         placeholderTextColor={Colors.textTertiary}
@@ -62,7 +62,7 @@ function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEn
 }
 
 // Pulsing neon button
-function NeonButton({ onPress, loading, disabled, label }) {
+function NeonButton({ onPress, loading, disabled, label, testID }) {
   const glowScale = useSharedValue(1);
 
   useEffect(() => {
@@ -88,6 +88,7 @@ function NeonButton({ onPress, loading, disabled, label }) {
 
   return (
     <Pressable
+      testID={testID}
       onPress={handlePress}
       disabled={disabled}
       style={styles.buttonOuter}
@@ -227,7 +228,7 @@ export default function AuthScreen() {
       }
     } catch (error) {
       if (__DEV__) console.error('OAuth Error:', error);
-      Alert.alert('OAuth Error', error.message || 'Failed to sign in with ' + provider);
+      Alert.alert('Sign In Failed', 'Unable to complete sign in. Please try again.');
     }
   };
 
@@ -251,13 +252,16 @@ export default function AuthScreen() {
       });
 
       if (error) {
-        Alert.alert('Error', error.message);
-      } else {
-        Alert.alert(
-          'Check Your Email',
-          'We sent you a password reset link. Please check your inbox.'
-        );
+        // Always show success message for password reset to prevent email enumeration
+        if (__DEV__) console.error('[Auth] Reset password error:', error.message);
       }
+      // Random delay to prevent timing-based account enumeration
+      await new Promise(r => setTimeout(r, 500 + Math.random() * 500));
+      // Always show the same message whether email exists or not
+      Alert.alert(
+        'Check Your Email',
+        'We sent you a password reset link. Please check your inbox.'
+      );
     } catch (error) {
       Alert.alert('Error', 'Failed to send reset email. Please try again.');
     } finally {
@@ -306,7 +310,9 @@ export default function AuthScreen() {
       if (isSignUp) {
         const { error } = await signUp(email.trim().toLowerCase(), password);
         if (error) {
-          Alert.alert('Sign Up Error', error.message);
+          // Generic message to prevent account enumeration
+          Alert.alert('Sign Up Failed', 'Unable to create account. Please check your details and try again.');
+          if (__DEV__) console.error('[Auth] Sign up error:', error.message);
         } else {
           Alert.alert(
             'Check Your Email',
@@ -318,7 +324,9 @@ export default function AuthScreen() {
       } else {
         const { error } = await signIn(email.trim().toLowerCase(), password);
         if (error) {
-          Alert.alert('Sign In Error', error.message);
+          // Generic message — never reveal whether email exists or password is wrong
+          Alert.alert('Sign In Failed', 'Invalid email or password. Please try again.');
+          if (__DEV__) console.error('[Auth] Sign in error:', error.message);
         } else {
           // Reset attempt count on successful login
           attemptCount.current = 0;
@@ -453,6 +461,7 @@ function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPass
       {/* Inputs */}
       <View style={styles.form}>
         <GlassInput
+          testID="email-input"
           icon={Mail}
           placeholder="Email address"
           value={email}
@@ -463,6 +472,7 @@ function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPass
         />
 
         <GlassInput
+          testID="password-input"
           icon={Lock}
           placeholder="Password"
           value={password}
@@ -483,6 +493,7 @@ function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPass
 
         {/* Submit button */}
         <NeonButton
+          testID={isSignUp ? 'sign-up-button' : 'sign-in-button'}
           onPress={handleSubmit}
           loading={loading}
           disabled={loading || isRateLimited}
@@ -501,7 +512,7 @@ function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPass
           style={styles.oauthButtonGoogle}
           onPress={() => performOAuth('google')}
         >
-          <Ionicons name="logo-google" size={18} color={Colors.oauthGoogleText} />
+          <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.oauthGoogleText }}>G</Text>
           <Text style={styles.oauthButtonTextGoogle}>Continue with Google</Text>
         </Pressable>
 
@@ -509,7 +520,7 @@ function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPass
           style={styles.oauthButtonApple}
           onPress={() => performOAuth('apple')}
         >
-          <Ionicons name="logo-apple" size={20} color={Colors.oauthAppleText} />
+          <Text style={{ fontSize: 20, color: Colors.oauthAppleText }}>{'\uF8FF'}</Text>
           <Text style={styles.oauthButtonTextApple}>Continue with Apple</Text>
         </Pressable>
       </View>

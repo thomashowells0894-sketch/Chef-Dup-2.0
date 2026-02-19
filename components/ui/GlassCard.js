@@ -1,7 +1,15 @@
-import React, { useRef, useEffect } from 'react';
-import { View, StyleSheet, Animated, Pressable, Platform } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import AdaptiveBlur from './AdaptiveBlur';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withRepeat,
+  withSequence,
+} from 'react-native-reanimated';
 import { hapticLight, hapticImpact } from '../../lib/haptics';
 import { Colors, Gradients, BorderRadius, Shadows, Spacing, Glass } from '../../constants/theme';
 
@@ -20,77 +28,56 @@ export default function GlassCard({
   breathe = false,
   disabled = false,
 }) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
-  const breatheAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+  const breatheScale = useSharedValue(1);
+  const glowOpacity = useSharedValue(0);
 
   // Breathing animation for special cards
-  useEffect(() => {
+  React.useEffect(() => {
     if (breathe && animated) {
-      const breatheLoop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(breatheAnim, {
-            toValue: 1.02,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(breatheAnim, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ])
+      breatheScale.value = withRepeat(
+        withSequence(
+          withTiming(1.02, { duration: 2000 }),
+          withTiming(1, { duration: 2000 })
+        ),
+        -1
       );
-      breatheLoop.start();
-      return () => breatheLoop.stop();
+    } else {
+      breatheScale.value = withTiming(1, { duration: 200 });
     }
-  }, [breathe, animated, breatheAnim]);
+  }, [breathe, animated]);
 
-  const handlePressIn = () => {
+  const handlePressIn = useCallback(() => {
     if (disabled || !animated) return;
-    Animated.spring(scaleAnim, {
-      toValue: 0.97,
-      friction: 8,
-      tension: 400,
-      useNativeDriver: true,
-    }).start();
-  };
+    scale.value = withSpring(0.97, { damping: 12, stiffness: 400 });
+  }, [disabled, animated]);
 
-  const handlePressOut = () => {
+  const handlePressOut = useCallback(() => {
     if (disabled || !animated) return;
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 4,
-      tension: 200,
-      useNativeDriver: true,
-    }).start();
-  };
+    scale.value = withSpring(1, { damping: 8, stiffness: 200 });
+  }, [disabled, animated]);
 
-  const handlePress = async () => {
+  const handlePress = useCallback(async () => {
     if (disabled) return;
     await hapticLight();
 
     // Flash glow on press
     if (glow) {
-      glowAnim.setValue(1);
-      Animated.timing(glowAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
+      glowOpacity.value = 1;
+      glowOpacity.value = withTiming(0, { duration: 400 });
     }
 
     onPress?.();
-  };
+  }, [disabled, glow, onPress]);
 
-  const handleLongPress = async () => {
+  const handleLongPress = useCallback(async () => {
     if (disabled) return;
     await hapticImpact();
     onLongPress?.();
-  };
+  }, [disabled, onLongPress]);
 
   // Get gradient and shadow based on variant
-  const getVariantStyles = () => {
+  const variantStyles = useMemo(() => {
     switch (variant) {
       case 'elevated':
         return {
@@ -129,21 +116,23 @@ export default function GlassCard({
           glowColor: Colors.primaryGlow,
         };
     }
-  };
+  }, [variant, glow]);
 
-  const variantStyles = getVariantStyles();
+  const containerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value * breatheScale.value }],
+    opacity: disabled ? 0.5 : 1,
+  }));
+
+  const glowAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
 
   const CardContent = (
     <Animated.View
       style={[
         styles.container,
         variantStyles.shadow,
-        {
-          transform: [
-            { scale: Animated.multiply(scaleAnim, breatheAnim) },
-          ],
-          opacity: disabled ? 0.5 : 1,
-        },
+        containerAnimatedStyle,
         style,
       ]}
     >
@@ -153,24 +142,16 @@ export default function GlassCard({
         end={{ x: 0, y: 1 }}
         style={styles.gradient}
       >
-        {/* Glass blur layer - iOS only */}
-        {Platform.OS === 'ios' && (
-          <BlurView
-            intensity={80}
-            tint="dark"
-            style={StyleSheet.absoluteFill}
-          />
-        )}
+        {/* Glass blur layer */}
+        <AdaptiveBlur intensity={80} tint="dark" />
 
         {/* Glow overlay */}
         {glow && (
           <Animated.View
             style={[
               styles.glowOverlay,
-              {
-                backgroundColor: variantStyles.glowColor,
-                opacity: glowAnim,
-              },
+              { backgroundColor: variantStyles.glowColor },
+              glowAnimatedStyle,
             ]}
           />
         )}
@@ -202,16 +183,6 @@ export default function GlassCard({
 
   return CardContent;
 }
-
-// Flash animation helper - can be called from parent
-export const flashCard = (glowAnim) => {
-  glowAnim.setValue(1);
-  Animated.timing(glowAnim, {
-    toValue: 0,
-    duration: 500,
-    useNativeDriver: true,
-  }).start();
-};
 
 const CARD_RADIUS = 24;
 
