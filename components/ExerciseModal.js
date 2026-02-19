@@ -11,7 +11,7 @@ import {
 import { X, Trash2, Flame, Clock, Zap } from 'lucide-react-native';
 import { hapticLight, hapticWarning } from '../lib/haptics';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { useCurrentDayMeals, useMealActions } from '../context/MealContext';
 
 function ExerciseItem({ exercise, onRemove }) {
   const logTime = new Date(exercise.loggedAt).toLocaleTimeString('en-US', {
@@ -52,7 +52,8 @@ function ExerciseItem({ exercise, onRemove }) {
 }
 
 export default function ExerciseModal({ visible, onClose }) {
-  const { exercises, caloriesBurned, exerciseMinutes, removeExercise } = useFood();
+  const { exercises, caloriesBurned, exerciseMinutes } = useCurrentDayMeals();
+  const { removeExercise } = useMealActions();
 
   const handleClose = async () => {
     await hapticLight();
@@ -83,7 +84,7 @@ export default function ExerciseModal({ visible, onClose }) {
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.container}>
+      <View style={styles.container} accessibilityViewIsModal={true} accessibilityLabel="Log exercise">
         <View style={styles.header}>
           <Text style={styles.title}>Today's Workouts</Text>
           <Pressable style={styles.closeButton} onPress={handleClose}>

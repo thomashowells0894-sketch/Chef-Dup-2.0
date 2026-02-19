@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
+import ScreenErrorBoundary from '../../components/ScreenErrorBoundary';
 import {
   View,
   Text,
@@ -15,6 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
+import OptimizedFlatList from '../../components/OptimizedFlatList';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
@@ -38,6 +40,7 @@ import {
   Mic,
   Square,
   Heart,
+  Zap,
 } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -52,6 +55,12 @@ import BarcodeScanner from '../../components/BarcodeScanner';
 import ProductFoundModal from '../../components/ProductFoundModal';
 import FoodDetailModal from '../../components/FoodDetailModal';
 import RecipeBuilderModal from '../../components/RecipeBuilderModal';
+import QuickLogSheet from '../../components/QuickLogSheet';
+import QuickCalModal from '../../components/QuickCalModal';
+import ExerciseDurationModal from '../../components/ExerciseDurationModal';
+import VoiceRecordingModal from '../../components/VoiceRecordingModal';
+import VoiceResultsSheet from '../../components/VoiceResultsSheet';
+import { useFrequentFoods } from '../../hooks/useFrequentFoods';
 import {
   fetchProductByBarcode,
   searchProducts,
@@ -59,8 +68,11 @@ import {
   searchProductsWithUKPreference,
   productToFood,
 } from '../../services/openFoodFacts';
+import { searchAllSources } from '../../services/foodSearch';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useFavoriteFoods } from '../../hooks/useFavoriteFoods';
+import { useIsPremium } from '../../context/SubscriptionContext';
+import { hapticLight } from '../../lib/haptics';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
 
 const mealTypes = [
@@ -69,6 +81,61 @@ const mealTypes = [
   { id: 'dinner', label: 'Dinner', icon: Sunset },
   { id: 'snacks', label: 'Snack', icon: Moon },
 ];
+
+// API search result cache — avoids repeat network calls for common queries
+const API_SEARCH_CACHE = new Map(); // key: query string, value: { products, sources, timestamp }
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 20;
+
+function getCachedSearch(query) {
+  const entry = API_SEARCH_CACHE.get(query.toLowerCase());
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    API_SEARCH_CACHE.delete(query.toLowerCase());
+    return null;
+  }
+  return entry;
+}
+
+function setCachedSearch(query, products, sources) {
+  // Evict oldest if at capacity
+  if (API_SEARCH_CACHE.size >= CACHE_MAX_SIZE) {
+    const oldest = API_SEARCH_CACHE.keys().next().value;
+    API_SEARCH_CACHE.delete(oldest);
+  }
+  API_SEARCH_CACHE.set(query.toLowerCase(), { products, sources, timestamp: Date.now() });
+}
+
+// Pre-indexed food search: build trigram index for O(1) lookup instead of O(n) filter
+const FOOD_SEARCH_INDEX = (() => {
+  const index = new Map();
+  foodDatabase.forEach((food, i) => {
+    const name = food.name.toLowerCase();
+    // Index every 2-char substring for fast prefix/contains matching
+    for (let j = 0; j <= name.length - 2; j++) {
+      const bigram = name.substring(j, j + 2);
+      if (!index.has(bigram)) index.set(bigram, []);
+      index.get(bigram).push(i);
+    }
+  });
+  return index;
+})();
+
+function searchFoodIndex(query, limit = 5) {
+  const q = query.toLowerCase();
+  if (q.length < 2) return [];
+  const bigram = q.substring(0, 2);
+  const candidates = FOOD_SEARCH_INDEX.get(bigram);
+  if (!candidates) return [];
+  const results = [];
+  for (const idx of candidates) {
+    if (foodDatabase[idx].name.toLowerCase().includes(q)) {
+      results.push({ ...foodDatabase[idx], barcode: `local-${foodDatabase[idx].id}`, isLocal: true });
+      if (results.length >= limit) break;
+    }
+  }
+  return results;
+}
 
 const addModes = [
   { id: 'food', label: 'Food', icon: Utensils },
@@ -86,7 +153,7 @@ const ModeSelector = memo(function ModeSelector({ mode, onModeChange }) {
           <Pressable
             key={m.id}
             style={[styles.modeSelectorButton, isSelected && styles.modeSelectorButtonActive]}
-            onPress={() => onModeChange(m.id)}
+            onPress={() => { hapticLight(); onModeChange(m.id); }}
           >
             <Icon
               size={18}
@@ -117,7 +184,7 @@ const MealTypeSelector = memo(function MealTypeSelector({ selected, onSelect }) 
           <Pressable
             key={meal.id}
             style={[styles.mealTypeButton, isSelected && styles.mealTypeButtonActive]}
-            onPress={() => onSelect(meal.id)}
+            onPress={() => { hapticLight(); onSelect(meal.id); }}
           >
             <Icon
               size={16}
@@ -165,40 +232,44 @@ const SearchRecentToggle = memo(function SearchRecentToggle({ activeTab, onTabCh
 });
 
 // Recent Food Item Component (for 1-tap adding)
-const RecentFoodItem = memo(function RecentFoodItem({ item, onPress }) {
+const RecentFoodItem = memo(function RecentFoodItem({ item, onPress, index = 0 }) {
   return (
-    <Pressable style={styles.recentFoodItem} onPress={() => onPress(item)}>
-      <View style={styles.recentFoodIcon}>
-        <Text style={styles.recentFoodIconText}>
-          {item.name?.charAt(0)?.toUpperCase() || '?'}
-        </Text>
-      </View>
-      <View style={styles.recentFoodInfo}>
-        <Text style={styles.recentFoodName} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={styles.recentFoodServing} numberOfLines={1}>
-          {item.serving || '1 serving'}
-        </Text>
-      </View>
-      <View style={styles.recentFoodCalories}>
-        <Text style={styles.recentFoodCaloriesValue}>{item.calories}</Text>
-        <Text style={styles.recentFoodCaloriesLabel}>kcal</Text>
-      </View>
-      <View style={styles.recentFoodAddButton}>
-        <Plus size={16} color={Colors.background} />
-      </View>
-    </Pressable>
+    <ReAnimated.View entering={FadeInDown.delay(index * 30).duration(300)}>
+      <Pressable style={styles.recentFoodItem} onPress={() => onPress(item)}>
+        <View style={styles.recentFoodIcon}>
+          <Text style={styles.recentFoodIconText}>
+            {item.name?.charAt(0)?.toUpperCase() || '?'}
+          </Text>
+        </View>
+        <View style={styles.recentFoodInfo}>
+          <Text style={styles.recentFoodName} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={styles.recentFoodServing} numberOfLines={1}>
+            {item.serving || '1 serving'}
+          </Text>
+        </View>
+        <View style={styles.recentFoodCalories}>
+          <Text style={styles.recentFoodCaloriesValue}>{item.calories}</Text>
+          <Text style={styles.recentFoodCaloriesLabel}>kcal</Text>
+        </View>
+        <View style={styles.recentFoodAddButton}>
+          <Plus size={16} color={Colors.background} />
+        </View>
+      </Pressable>
+    </ReAnimated.View>
   );
 });
 
-const SearchResultItem = memo(function SearchResultItem({ item, onPress }) {
+const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuickAdd, index = 0 }) {
   const hasCalories = item.calories !== null && item.calories !== undefined;
+  const canQuickAdd = hasCalories && item.calories > 0;
 
   return (
+    <ReAnimated.View entering={FadeInDown.delay(index * 30).duration(300)}>
     <Pressable style={styles.resultItem} onPress={() => onPress(item)}>
       {item.image ? (
-        <Image source={{ uri: item.image }} style={styles.resultImage} />
+        <Image source={{ uri: item.image }} style={styles.resultImage} cachePolicy="memory-disk" transition={200} />
       ) : (
         <View style={[styles.resultImage, styles.resultImagePlaceholder]}>
           <Text style={styles.resultImagePlaceholderText}>
@@ -238,19 +309,32 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress }) {
         </Text>
         {hasCalories && <Text style={styles.resultCaloriesLabel}>kcal</Text>}
       </View>
-      <View style={styles.resultAddButton}>
-        <Plus size={16} color={Colors.background} />
-      </View>
+      {canQuickAdd ? (
+        <Pressable
+          style={styles.quickAddBtnInline}
+          onPress={(e) => { e.stopPropagation?.(); onQuickAdd?.(item); }}
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        >
+          <Check size={14} color={Colors.background} />
+        </Pressable>
+      ) : (
+        <View style={styles.resultAddButton}>
+          <Plus size={16} color={Colors.background} />
+        </View>
+      )}
     </Pressable>
+    </ReAnimated.View>
   );
 });
 
-const LocalFoodItem = memo(function LocalFoodItem({ item, onPress }) {
+const LocalFoodItem = memo(function LocalFoodItem({ item, onPress, index = 0 }) {
   return (
-    <Pressable style={styles.localFoodItem} onPress={() => onPress(item)}>
-      <Text style={styles.localFoodName}>{item.name}</Text>
-      <Text style={styles.localFoodCalories}>{item.calories} kcal</Text>
-    </Pressable>
+    <ReAnimated.View entering={FadeInDown.delay(index * 30).duration(300)}>
+      <Pressable style={styles.localFoodItem} onPress={() => onPress(item)}>
+        <Text style={styles.localFoodName}>{item.name}</Text>
+        <Text style={styles.localFoodCalories}>{item.calories} kcal</Text>
+      </Pressable>
+    </ReAnimated.View>
   );
 });
 
@@ -341,262 +425,8 @@ const FavoriteFoodItem = memo(function FavoriteFoodItem({ item, onAdd, index }) 
   );
 });
 
-// Exercise Duration Modal
-function ExerciseDurationModal({ visible, exercise, userWeight, onClose, onConfirm }) {
-  const [duration, setDuration] = useState('30');
 
-  if (!exercise) return null;
-
-  const durationNum = parseInt(duration, 10) || 0;
-  const caloriesBurned = calculateCaloriesBurned(exercise.met, userWeight || 150, durationNum);
-
-  const handleConfirm = () => {
-    if (durationNum > 0) {
-      onConfirm(exercise, durationNum, caloriesBurned);
-    }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.modalHeader}>
-            <View style={styles.modalExerciseIcon}>
-              <Dumbbell size={24} color={Colors.primary} />
-            </View>
-            <Text style={styles.modalTitle}>{exercise.name}</Text>
-            <Text style={styles.modalSubtitle}>{exercise.category} · MET {exercise.met}</Text>
-          </View>
-
-          <View style={styles.durationInputContainer}>
-            <Clock size={20} color={Colors.textSecondary} />
-            <TextInput
-              style={styles.durationInput}
-              value={duration}
-              onChangeText={setDuration}
-              keyboardType="number-pad"
-              placeholder="30"
-              placeholderTextColor={Colors.textTertiary}
-              maxLength={3}
-              selectTextOnFocus
-            />
-            <Text style={styles.durationLabel}>minutes</Text>
-          </View>
-
-          <View style={styles.caloriesPreview}>
-            <Flame size={24} color={Colors.primary} />
-            <View style={styles.caloriesPreviewText}>
-              <Text style={styles.caloriesPreviewValue}>{caloriesBurned}</Text>
-              <Text style={styles.caloriesPreviewLabel}>calories burned</Text>
-            </View>
-          </View>
-
-          <Text style={styles.formulaText}>
-            ({exercise.met} × 3.5 × {((userWeight || 150) * 0.453592).toFixed(1)}kg) / 200 × {durationNum}min
-          </Text>
-
-          <View style={styles.modalButtons}>
-            <Pressable style={styles.modalCancelButton} onPress={onClose}>
-              <Text style={styles.modalCancelButtonText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modalConfirmButton, durationNum === 0 && styles.modalConfirmButtonDisabled]}
-              onPress={handleConfirm}
-              disabled={durationNum === 0}
-            >
-              <Check size={18} color={Colors.background} />
-              <Text style={styles.modalConfirmButtonText}>Log Exercise</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-// Voice Recording Overlay Modal with animated waveform
-const WAVE_BAR_COUNT = 12;
-function VoiceRecordingModal({ visible, onStop }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const waveAnims = useRef(
-    Array.from({ length: WAVE_BAR_COUNT }, () => new Animated.Value(0.3))
-  ).current;
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    if (!visible) {
-      setSeconds(0);
-      return;
-    }
-
-    // Pulse animation for red dot
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.3, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-
-    // Staggered waveform bar animations — each bar bounces at different speed/phase
-    const waveLoops = waveAnims.map((anim, i) => {
-      const speed = 300 + (i % 3) * 150; // 300ms, 450ms, 600ms cycle
-      const delay = i * 80; // stagger start
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(anim, { toValue: 0.5 + Math.random() * 0.5, duration: speed, useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0.15 + Math.random() * 0.25, duration: speed, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return loop;
-    });
-
-    const interval = setInterval(() => {
-      setSeconds(s => s + 1);
-    }, 1000);
-
-    return () => {
-      pulse.stop();
-      waveLoops.forEach(l => l.stop());
-      clearInterval(interval);
-    };
-  }, [visible]);
-
-  const formatTime = (s) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onStop}>
-      <View style={styles.voiceOverlay}>
-        <View style={styles.voiceRecordingCard}>
-          <Animated.View style={[styles.voicePulseDot, { transform: [{ scale: pulseAnim }] }]}>
-            <View style={styles.voiceRedDot} />
-          </Animated.View>
-          <Text style={styles.voiceListeningText}>Listening...</Text>
-          <Text style={styles.voiceTimerText}>{formatTime(seconds)}</Text>
-
-          {/* Animated waveform bars */}
-          <View style={styles.voiceWaveform}>
-            {waveAnims.map((anim, i) => (
-              <Animated.View
-                key={i}
-                style={[
-                  styles.voiceWaveBar,
-                  {
-                    transform: [{ scaleY: anim }],
-                    opacity: Animated.add(0.4, Animated.multiply(anim, 0.6)),
-                  },
-                ]}
-              />
-            ))}
-          </View>
-
-          <Text style={styles.voiceHintText}>Describe what you ate</Text>
-
-          <Pressable style={styles.voiceStopButton} onPress={onStop}>
-            <Square size={20} color={Colors.text} fill={Colors.text} />
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// Voice Results Sheet
-function VoiceResultsSheet({ visible, transcript, foods, selectedMeal, onAddFood, onAddAll, onClose, addedIndices }) {
-  if (!visible) return null;
-
-  const mealLabel = mealTypes.find(m => m.id === selectedMeal)?.label || 'Meal';
-  const remainingFoods = foods.filter((_, i) => !addedIndices.has(i));
-  const remainingCalories = remainingFoods.reduce((sum, f) => sum + (f.calories || 0), 0);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.voiceResultsOverlay}>
-        <View style={styles.voiceResultsCard}>
-          <View style={styles.voiceResultsHandle} />
-
-          <View style={styles.voiceResultsHeader}>
-            <Text style={styles.voiceResultsTitle}>Voice Results</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <X size={22} color={Colors.textSecondary} />
-            </Pressable>
-          </View>
-
-          {transcript ? (
-            <View style={styles.voiceTranscriptBox}>
-              <Mic size={14} color={Colors.textSecondary} />
-              <Text style={styles.voiceTranscriptText}>"{transcript}"</Text>
-            </View>
-          ) : null}
-
-          {foods.length === 0 ? (
-            <View style={styles.voiceNoFoods}>
-              <Text style={styles.voiceNoFoodsText}>
-                No foods detected. Try speaking more clearly.
-              </Text>
-            </View>
-          ) : (
-            <>
-              {/* Add All button — only for remaining un-added foods */}
-              {remainingFoods.length > 1 && (
-                <Pressable style={styles.voiceAddAllBtn} onPress={onAddAll}>
-                  <Plus size={18} color={Colors.background} />
-                  <Text style={styles.voiceAddAllText}>
-                    Add All {remainingFoods.length} Items to {mealLabel}
-                  </Text>
-                  <Text style={styles.voiceAddAllCalories}>{remainingCalories} kcal</Text>
-                </Pressable>
-              )}
-
-              <ScrollView style={styles.voiceFoodsList} showsVerticalScrollIndicator={false}>
-                {foods.map((food, idx) => {
-                  const isAdded = addedIndices.has(idx);
-                  return (
-                    <View key={idx} style={styles.voiceFoodCard}>
-                      <Text style={styles.voiceFoodEmoji}>{food.emoji || '🍽️'}</Text>
-                      <View style={styles.voiceFoodInfo}>
-                        <Text style={styles.voiceFoodName}>{food.name}</Text>
-                        <Text style={styles.voiceFoodMacros}>
-                          {food.calories} kcal · P{food.protein}g · C{food.carbs}g · F{food.fat}g
-                        </Text>
-                        <Text style={styles.voiceFoodServing}>{food.serving}</Text>
-                      </View>
-                      <Pressable
-                        style={[styles.voiceFoodAddBtn, isAdded && styles.voiceFoodAddedBtn]}
-                        onPress={() => !isAdded && onAddFood(food, selectedMeal, idx)}
-                        disabled={isAdded}
-                      >
-                        {isAdded ? (
-                          <>
-                            <Check size={16} color={Colors.primary} />
-                            <Text style={[styles.voiceFoodAddText, { color: Colors.primary }]}>Added</Text>
-                          </>
-                        ) : (
-                          <>
-                            <Plus size={16} color={Colors.background} />
-                            <Text style={styles.voiceFoodAddText}>Add</Text>
-                          </>
-                        )}
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </>
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-export default function AddScreen() {
+function AddScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const {
@@ -610,9 +440,13 @@ export default function AddScreen() {
     fetchRecentFoods,
   } = useFood();
   const { profile } = useProfile();
+  const { isPremium } = useIsPremium();
   const { recordMealLogged } = useFasting();
   const { favorites } = useFavoriteFoods();
+  const { recordFood, getTopFoods } = useFrequentFoods();
   const [mode, setMode] = useState('food');
+  const [quickLogVisible, setQuickLogVisible] = useState(false);
+  const [quickCalVisible, setQuickCalVisible] = useState(false);
 
   // Recipe builder state
   const [recipeBuilderVisible, setRecipeBuilderVisible] = useState(false);
@@ -629,7 +463,8 @@ export default function AddScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [searchError, setSearchError] = useState(null);
-  const debouncedQuery = useDebounce(searchQuery, 300);
+  const [searchSources, setSearchSources] = useState({ local: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
+  const debouncedQuery = useDebounce(searchQuery, 80);
 
   // Tab state: 'recent' or 'search'
   const [activeTab, setActiveTab] = useState('recent');
@@ -680,6 +515,18 @@ export default function AddScreen() {
 
   const handleStartRecording = useCallback(async () => {
     if (isProcessingVoice) return;
+    if (!isPremium) {
+      Alert.alert(
+        'Pro Feature',
+        'Voice food logging requires VibeFit Pro. Upgrade to unlock AI-powered voice logging and more.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Upgrade', onPress: () => router.push('/paywall') },
+        ]
+      );
+      return;
+    }
+    hapticLight();
     Keyboard.dismiss();
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -721,6 +568,7 @@ export default function AddScreen() {
   }, [isProcessingVoice]);
 
   const handleStopRecording = useCallback(async () => {
+    hapticLight();
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
       recordingTimeoutRef.current = null;
@@ -788,10 +636,11 @@ export default function AddScreen() {
 
     addFood(foodEntry, mealType);
     recordMealLogged(mealType);
+    recordFood(foodEntry);
 
     // Inline confirmation — button switches to checkmark
     setAddedVoiceIndices(prev => new Set(prev).add(foodIndex));
-  }, [addFood, recordMealLogged]);
+  }, [addFood, recordMealLogged, recordFood]);
 
   const handleAddAllVoiceFoods = useCallback(() => {
     if (voiceFoods.length === 0) return;
@@ -811,13 +660,14 @@ export default function AddScreen() {
         servingUnit: 'serving',
       };
       addFood(foodEntry, selectedMeal);
+      recordFood(foodEntry);
     });
     recordMealLogged(selectedMeal);
 
     setVoiceFoods([]);
     setAddedVoiceIndices(new Set());
     setVoiceResultsVisible(false);
-  }, [voiceFoods, selectedMeal, addFood, recordMealLogged, addedVoiceIndices]);
+  }, [voiceFoods, selectedMeal, addFood, recordMealLogged, recordFood, addedVoiceIndices]);
 
   // Quick-add a favorite food
   const handleAddFavorite = useCallback((food) => {
@@ -835,7 +685,39 @@ export default function AddScreen() {
     };
     addFood(foodEntry, selectedMeal);
     recordMealLogged(selectedMeal);
-  }, [addFood, selectedMeal, recordMealLogged]);
+    recordFood(foodEntry);
+  }, [addFood, selectedMeal, recordMealLogged, recordFood]);
+
+  // Quick-log a frequent food (from QuickLogSheet or horizontal scroll)
+  const handleQuickLog = useCallback((food, mealType) => {
+    hapticLight();
+    const effectiveMeal = mealType || selectedMeal;
+    const foodEntry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      name: food.name,
+      emoji: food.emoji || '?',
+      calories: food.calories || 0,
+      protein: food.protein || 0,
+      carbs: food.carbs || 0,
+      fat: food.fat || 0,
+      serving: food.serving || '1 serving',
+      servingSize: 1,
+      servingUnit: food.servingUnit || 'serving',
+    };
+    addFood(foodEntry, effectiveMeal);
+    recordMealLogged(effectiveMeal);
+    recordFood(foodEntry);
+  }, [addFood, selectedMeal, recordMealLogged, recordFood]);
+
+  // Quick Cal log handler
+  const handleQuickCalLog = useCallback((food, mealType) => {
+    addFood(food, mealType);
+    recordMealLogged(mealType);
+    recordFood(food);
+  }, [addFood, recordMealLogged, recordFood]);
+
+  // Frequent foods for horizontal quick-add strip
+  const topFrequentFoods = useMemo(() => getTopFoods(5), [getTopFoods]);
 
   // Update selected meal when params change
   useEffect(() => {
@@ -844,19 +726,22 @@ export default function AddScreen() {
     }
   }, [params.meal]);
 
+  // Handle quickCal deep link
+  useEffect(() => {
+    if (params.quickCal === 'true') {
+      setQuickCalVisible(true);
+    }
+  }, [params.quickCal]);
+
   // Fetch recent foods on mount
   useEffect(() => {
     fetchRecentFoods();
   }, []);
 
-  // Auto-switch tab based on search query
+  // Only reset to recent tab when search is fully cleared (not while typing)
   useEffect(() => {
-    if (mode === 'food') {
-      if (searchQuery.length >= 2) {
-        setActiveTab('search');
-      } else if (searchQuery.length === 0) {
-        setActiveTab('recent');
-      }
+    if (mode === 'food' && searchQuery.length === 0) {
+      setActiveTab('recent');
     }
   }, [searchQuery, mode]);
 
@@ -875,7 +760,10 @@ export default function AddScreen() {
   }, [searchQuery, debouncedQuery, mode]);
 
   // Perform food search when debounced query changes
+  // Strategy: show local results INSTANTLY, then merge API results when they arrive
   useEffect(() => {
+    let cancelled = false;
+
     async function performSearch() {
       // Clear immediately if query is too short or empty
       if (!debouncedQuery || debouncedQuery.length < 2) {
@@ -886,73 +774,60 @@ export default function AddScreen() {
       }
 
       setIsTyping(false);
-      setIsSearching(true);
       setSearchError(null);
 
-      // Get matching local foods first (instant, no network needed)
-      const localMatches = foodDatabase
-        .filter((food) => food.name.toLowerCase().includes(debouncedQuery.toLowerCase()))
-        .slice(0, 5)
-        .map((food) => ({
-          ...food,
-          barcode: `local-${food.id}`,
-          isLocal: true,
-        }));
+      // Phase 1: Show local matches INSTANTLY via pre-built index (O(1) vs O(n))
+      const localMatches = searchFoodIndex(debouncedQuery, 5);
+
+      // Render local results immediately -- user sees results in <50ms
+      if (localMatches.length > 0) {
+        setSearchResults(localMatches);
+      }
+
+      // Phase 2: Check cache first, then fetch API results
+      const cached = getCachedSearch(debouncedQuery);
+      if (cached) {
+        if (!cancelled) {
+          setSearchResults(cached.products);
+          setSearchSources(cached.sources);
+        }
+        return;
+      }
+
+      setIsSearching(true);
 
       try {
-        // Use global OpenFoodFacts search (covers US + UK + EU markets)
-        // Built-in 8 second timeout for resilience
-        const results = await searchProductsGlobal(debouncedQuery, 30);
+        const results = await searchAllSources(debouncedQuery, localMatches, 25, 4000, isPremium);
+        if (cancelled) return;
 
-        // Combine local + API results, deduplicate by name
-        const seenNames = new Set();
-        const combinedResults = [];
-
-        // Add local matches first (they're faster/more reliable)
-        for (const item of localMatches) {
-          const normalizedName = item.name.toLowerCase().trim();
-          if (!seenNames.has(normalizedName)) {
-            seenNames.add(normalizedName);
-            combinedResults.push(item);
-          }
+        if (!cancelled) {
+          setSearchResults(results.products);
+          setSearchSources(results.sources);
+          setCachedSearch(debouncedQuery, results.products, results.sources);
         }
-
-        // Add API results, avoiding duplicates
-        for (const item of results.products || []) {
-          const normalizedName = item.name.toLowerCase().trim();
-          if (!seenNames.has(normalizedName)) {
-            seenNames.add(normalizedName);
-            combinedResults.push(item);
-          }
-        }
-
-        setSearchResults(combinedResults);
       } catch (error) {
-        // If API fails, silently return local results only (don't crash)
-        if (localMatches.length > 0) {
-          setSearchResults(localMatches);
-        } else {
-          // Only show error if we have no results at all
-          setSearchError('Could not reach food database. Showing local foods only.');
-          setSearchResults([]);
+        if (cancelled) return;
+        if (localMatches.length === 0) {
+          setSearchError('Could not reach food databases. Showing local foods only.');
         }
       } finally {
-        setIsSearching(false);
+        if (!cancelled) {
+          setIsSearching(false);
+        }
       }
     }
 
     if (mode === 'food') {
       performSearch();
     }
+
+    return () => { cancelled = true; };
   }, [debouncedQuery, mode]);
 
   // Filter local foods based on search (for quick-add section when not searching API)
   const filteredLocalFoods = useMemo(() => {
-    if (searchQuery.length === 0) return foodDatabase;
-    const lower = searchQuery.toLowerCase();
-    return foodDatabase.filter((food) =>
-      food.name.toLowerCase().includes(lower)
-    );
+    if (searchQuery.length < 2) return foodDatabase;
+    return searchFoodIndex(searchQuery, 50);
   }, [searchQuery]);
 
   // Filter recipes based on search query
@@ -966,6 +841,7 @@ export default function AddScreen() {
 
   // Handle selecting a search result - open FoodDetailModal
   const handleSelectResult = useCallback((product) => {
+    hapticLight();
     Keyboard.dismiss();
     const food = productToFood(product);
     setSelectedFood({
@@ -981,6 +857,7 @@ export default function AddScreen() {
 
   // Handle selecting a local food - open FoodDetailModal
   const handleSelectLocalFood = useCallback((food) => {
+    hapticLight();
     Keyboard.dismiss();
     setSelectedFood({
       ...food,
@@ -995,11 +872,12 @@ export default function AddScreen() {
   const handleConfirmFoodDetail = useCallback((food, mealType) => {
     addFood(food, mealType);
     recordMealLogged(mealType);
+    recordFood(food);
     setFoodDetailModalVisible(false);
     setSelectedFood(null);
     setSearchQuery('');
     router.navigate('/');
-  }, [addFood, recordMealLogged, router]);
+  }, [addFood, recordMealLogged, recordFood, router]);
 
   // Close food detail modal
   const handleCloseFoodDetail = useCallback(() => {
@@ -1015,6 +893,7 @@ export default function AddScreen() {
 
   // Handle selecting a recipe - open FoodDetailModal with recipe as food
   const handleSelectRecipe = useCallback((recipe) => {
+    hapticLight();
     Keyboard.dismiss();
     setSelectedFood({
       ...recipe,
@@ -1043,6 +922,7 @@ export default function AddScreen() {
 
   // Handle opening recipe builder - navigate to standalone screen
   const handleOpenRecipeBuilder = () => {
+    hapticLight();
     Keyboard.dismiss();
     router.push('/create-recipe');
   };
@@ -1062,6 +942,7 @@ export default function AddScreen() {
 
   // Exercise handlers
   const handleSelectExercise = useCallback((exercise) => {
+    hapticLight();
     Keyboard.dismiss();
     setSelectedExercise(exercise);
     setExerciseModalVisible(true);
@@ -1087,12 +968,14 @@ export default function AddScreen() {
 
   // Barcode lookup screen (Open Food Facts)
   const handleOpenBarcodeLookup = () => {
+    hapticLight();
     Keyboard.dismiss();
     router.push('/barcode');
   };
 
   // AI Food Lens handler
   const handleOpenFoodLens = () => {
+    hapticLight();
     Keyboard.dismiss();
     router.push({
       pathname: '/scan',
@@ -1102,6 +985,7 @@ export default function AddScreen() {
 
   // AI Workout Generator handler
   const handleOpenWorkoutGenerator = () => {
+    hapticLight();
     Keyboard.dismiss();
     router.push('/generate-workout');
   };
@@ -1115,6 +999,24 @@ export default function AddScreen() {
       const product = await fetchProductByBarcode(barcode);
 
       if (product) {
+        // If product has complete nutrition data, auto-log it (skip modal)
+        if (product.calories > 0 && product.name) {
+          const foodItem = {
+            name: product.name,
+            brand: product.brand || '',
+            calories: product.calories,
+            protein: product.protein || 0,
+            carbs: product.carbs || 0,
+            fat: product.fat || 0,
+            serving: product.serving || '1 serving',
+            barcode: product.barcode || barcode,
+          };
+          await addFood(foodItem, selectedMeal);
+          await hapticSuccess();
+          setScannerVisible(false);
+          return;
+        }
+        // Incomplete data — show modal for user to review/edit
         setSelectedProduct(product);
         setScannerVisible(false);
         setProductModalVisible(true);
@@ -1124,7 +1026,6 @@ export default function AddScreen() {
         setProductModalVisible(true);
       }
     } catch (error) {
-      if (__DEV__) console.error('Barcode scan error:', error);
       setScanError('Failed to look up product. Please try again.');
       setScannerVisible(false);
       setProductModalVisible(true);
@@ -1144,6 +1045,7 @@ export default function AddScreen() {
       setIsTyping(false);
       setIsSearching(false);
       setSearchError(null);
+      setSearchSources({ local: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
     } else {
       setExerciseQuery('');
     }
@@ -1153,17 +1055,25 @@ export default function AddScreen() {
   const currentQuery = mode === 'food' ? searchQuery : exerciseQuery;
   const setCurrentQuery = mode === 'food' ? setSearchQuery : setExerciseQuery;
 
-  // Stable renderItem and keyExtractor callbacks for FlatList optimization
-  const renderSearchResult = useCallback(({ item }) => (
-    <SearchResultItem item={item} onPress={handleSelectResult} />
-  ), [handleSelectResult]);
+  // 1-tap quick add: log food with 1 serving, skip FoodDetailModal
+  const handleQuickAddResult = useCallback(async (product) => {
+    hapticLight();
+    Keyboard.dismiss();
+    const food = productToFood(product);
+    await addFood(food, selectedMeal);
+  }, [addFood, selectedMeal]);
 
-  const renderRecentFood = useCallback(({ item }) => (
-    <RecentFoodItem item={item} onPress={handleSelectLocalFood} />
+  // Stable renderItem and keyExtractor callbacks for FlatList optimization
+  const renderSearchResult = useCallback(({ item, index }) => (
+    <SearchResultItem item={item} index={index} onPress={handleSelectResult} onQuickAdd={handleQuickAddResult} />
+  ), [handleSelectResult, handleQuickAddResult]);
+
+  const renderRecentFood = useCallback(({ item, index }) => (
+    <RecentFoodItem item={item} index={index} onPress={handleSelectLocalFood} />
   ), [handleSelectLocalFood]);
 
-  const renderLocalFood = useCallback(({ item }) => (
-    <LocalFoodItem item={item} onPress={handleSelectLocalFood} />
+  const renderLocalFood = useCallback(({ item, index }) => (
+    <LocalFoodItem item={item} index={index} onPress={handleSelectLocalFood} />
   ), [handleSelectLocalFood]);
 
   const renderExercise = useCallback(({ item }) => (
@@ -1174,7 +1084,7 @@ export default function AddScreen() {
   const idKeyExtractor = useCallback((item) => item.id, []);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']} testID="add-screen">
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Add {mode === 'food' ? 'Food' : 'Exercise'}</Text>
@@ -1188,6 +1098,7 @@ export default function AddScreen() {
         <View style={styles.searchInputContainer}>
           <Search size={20} color={Colors.textSecondary} />
           <TextInput
+            testID="food-search-input"
             style={styles.searchInput}
             placeholder={mode === 'food' ? 'Search foods...' : 'Search exercises...'}
             placeholderTextColor={Colors.textTertiary}
@@ -1195,6 +1106,7 @@ export default function AddScreen() {
             onChangeText={setCurrentQuery}
             returnKeyType="search"
             autoCorrect={false}
+            maxLength={200}
           />
           {currentQuery.length > 0 && (
             <Pressable onPress={clearSearch} hitSlop={8}>
@@ -1204,6 +1116,12 @@ export default function AddScreen() {
         </View>
         {mode === 'food' && (
           <>
+            <Pressable
+              style={styles.quickCalButton}
+              onPress={() => setQuickCalVisible(true)}
+            >
+              <Zap size={22} color={Colors.warning} fill={Colors.warning} />
+            </Pressable>
             <Pressable
               style={[styles.micButton, isRecording && styles.micButtonRecording]}
               onPress={isRecording ? handleStopRecording : handleStartRecording}
@@ -1234,6 +1152,42 @@ export default function AddScreen() {
       {/* Food Mode Content */}
       {mode === 'food' && (
         <>
+          {/* Quick Add Frequent Foods Strip */}
+          {topFrequentFoods.length > 0 && (
+            <ReAnimated.View entering={FadeInDown.delay(50).springify().mass(0.5).damping(10)}>
+              <View style={styles.quickAddSection}>
+                <View style={styles.quickAddHeader}>
+                  <View style={styles.quickAddTitleRow}>
+                    <Zap size={14} color={Colors.primary} />
+                    <Text style={styles.quickAddTitle}>Quick Add</Text>
+                  </View>
+                  <Pressable onPress={() => setQuickLogVisible(true)} hitSlop={8}>
+                    <Text style={styles.quickAddSeeAll}>See All</Text>
+                  </Pressable>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.quickAddScroll}
+                >
+                  {topFrequentFoods.map((food) => (
+                    <Pressable
+                      key={food.id || food.name}
+                      style={styles.quickAddCard}
+                      onPress={() => handleQuickLog(food)}
+                    >
+                      <Text style={styles.quickAddCardEmoji}>{food.emoji || '?'}</Text>
+                      <Text style={styles.quickAddCardName} numberOfLines={1}>
+                        {food.name}
+                      </Text>
+                      <Text style={styles.quickAddCardCal}>{food.calories} kcal</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </ReAnimated.View>
+          )}
+
           {/* Meal Type Selector */}
           <MealTypeSelector selected={selectedMeal} onSelect={setSelectedMeal} />
 
@@ -1267,7 +1221,7 @@ export default function AddScreen() {
                   </Text>
                 </View>
               ) : (
-                <FlatList
+                <OptimizedFlatList
                   data={searchResults}
                   keyExtractor={searchKeyExtractor}
                   renderItem={renderSearchResult}
@@ -1280,7 +1234,16 @@ export default function AddScreen() {
                   removeClippedSubviews={true}
                   ListHeaderComponent={
                     <Text style={styles.resultsHeader}>
-                      {searchResults.length} results from OpenFoodFacts
+                      {searchResults.length} results
+                      {(searchSources.openFoodFacts > 0 || searchSources.usda > 0 || searchSources.fatSecret > 0 || searchSources.nutritionix > 0)
+                        ? ` from ${[
+                            searchSources.local > 0 && 'local',
+                            searchSources.usda > 0 && 'USDA',
+                            searchSources.fatSecret > 0 && 'FatSecret',
+                            searchSources.openFoodFacts > 0 && 'OpenFoodFacts',
+                            searchSources.nutritionix > 0 && 'Nutritionix',
+                          ].filter(Boolean).join(' + ')}`
+                        : ''}
                     </Text>
                   }
                 />
@@ -1295,7 +1258,7 @@ export default function AddScreen() {
                   <Text style={styles.loadingText}>Loading recent foods...</Text>
                 </View>
               ) : (
-                <FlatList
+                <OptimizedFlatList
                   data={recentFoods}
                   keyExtractor={idKeyExtractor}
                   renderItem={renderRecentFood}
@@ -1357,7 +1320,7 @@ export default function AddScreen() {
             </View>
           ) : (
             // Local Foods & Quick Add
-            <FlatList
+            <OptimizedFlatList
               data={filteredLocalFoods}
               keyExtractor={idKeyExtractor}
               renderItem={renderLocalFood}
@@ -1439,7 +1402,7 @@ export default function AddScreen() {
 
       {/* Exercise Mode Content */}
       {mode === 'exercise' && (
-        <FlatList
+        <OptimizedFlatList
           data={filteredExercises}
           keyExtractor={idKeyExtractor}
           renderItem={renderExercise}
@@ -1483,70 +1446,97 @@ export default function AddScreen() {
         />
       )}
 
-      {/* Barcode Scanner Modal */}
-      <BarcodeScanner
-        visible={scannerVisible}
-        onClose={handleCloseScanner}
-        onBarcodeScanned={handleBarcodeScanned}
-      />
+      {/* Lazy-mounted modals — only render when visible to reduce memory */}
 
-      {/* Product Found Modal (for barcode scans) */}
-      <ProductFoundModal
-        visible={productModalVisible}
-        product={selectedProduct}
-        error={scanError}
-        onClose={handleCloseProductModal}
-        onConfirm={handleConfirmProduct}
-        defaultMeal={selectedMeal}
-      />
+      {scannerVisible && (
+        <BarcodeScanner
+          visible={scannerVisible}
+          onClose={handleCloseScanner}
+          onBarcodeScanned={handleBarcodeScanned}
+        />
+      )}
 
-      {/* Food Detail Modal (for search results) */}
-      <FoodDetailModal
-        visible={foodDetailModalVisible}
-        food={selectedFood}
-        mealType={selectedMeal}
-        onClose={handleCloseFoodDetail}
-        onConfirm={isAddingIngredient ? handleConfirmAsIngredient : handleConfirmFoodDetail}
-      />
+      {productModalVisible && (
+        <ProductFoundModal
+          visible={productModalVisible}
+          product={selectedProduct}
+          error={scanError}
+          onClose={handleCloseProductModal}
+          onConfirm={handleConfirmProduct}
+          defaultMeal={selectedMeal}
+        />
+      )}
 
-      {/* Recipe Builder Modal */}
-      <RecipeBuilderModal
-        visible={recipeBuilderVisible}
-        onClose={() => setRecipeBuilderVisible(false)}
-        onAddIngredient={handleAddIngredientFromBuilder}
-        pendingIngredient={pendingIngredient}
-        onClearPendingIngredient={() => setPendingIngredient(null)}
-      />
+      {foodDetailModalVisible && (
+        <FoodDetailModal
+          visible={foodDetailModalVisible}
+          food={selectedFood}
+          mealType={selectedMeal}
+          onClose={handleCloseFoodDetail}
+          onConfirm={isAddingIngredient ? handleConfirmAsIngredient : handleConfirmFoodDetail}
+        />
+      )}
 
-      {/* Exercise Duration Modal */}
-      <ExerciseDurationModal
-        visible={exerciseModalVisible}
-        exercise={selectedExercise}
-        userWeight={profile?.weight}
-        onClose={() => setExerciseModalVisible(false)}
-        onConfirm={handleConfirmExercise}
-      />
+      {recipeBuilderVisible && (
+        <RecipeBuilderModal
+          visible={recipeBuilderVisible}
+          onClose={() => setRecipeBuilderVisible(false)}
+          onAddIngredient={handleAddIngredientFromBuilder}
+          pendingIngredient={pendingIngredient}
+          onClearPendingIngredient={() => setPendingIngredient(null)}
+        />
+      )}
 
-      {/* Voice Recording Overlay */}
-      <VoiceRecordingModal
-        visible={isRecording}
-        onStop={handleStopRecording}
-      />
+      {exerciseModalVisible && (
+        <ExerciseDurationModal
+          visible={exerciseModalVisible}
+          exercise={selectedExercise}
+          userWeight={profile?.weight}
+          onClose={() => setExerciseModalVisible(false)}
+          onConfirm={handleConfirmExercise}
+        />
+      )}
 
-      {/* Voice Results Sheet */}
-      <VoiceResultsSheet
-        visible={voiceResultsVisible}
-        transcript={voiceTranscript}
-        foods={voiceFoods}
-        selectedMeal={selectedMeal}
-        onAddFood={handleAddVoiceFood}
-        onAddAll={handleAddAllVoiceFoods}
-        onClose={() => {
-          setVoiceResultsVisible(false);
-          setAddedVoiceIndices(new Set());
-        }}
-        addedIndices={addedVoiceIndices}
-      />
+      {isRecording && (
+        <VoiceRecordingModal
+          visible={isRecording}
+          onStop={handleStopRecording}
+        />
+      )}
+
+      {voiceResultsVisible && (
+        <VoiceResultsSheet
+          visible={voiceResultsVisible}
+          transcript={voiceTranscript}
+          foods={voiceFoods}
+          selectedMeal={selectedMeal}
+          onAddFood={handleAddVoiceFood}
+          onAddAll={handleAddAllVoiceFoods}
+          onClose={() => {
+            setVoiceResultsVisible(false);
+            setAddedVoiceIndices(new Set());
+          }}
+          addedIndices={addedVoiceIndices}
+        />
+      )}
+
+      {quickLogVisible && (
+        <QuickLogSheet
+          visible={quickLogVisible}
+          onClose={() => setQuickLogVisible(false)}
+          mealType={selectedMeal}
+          onLog={handleQuickLog}
+        />
+      )}
+
+      {quickCalVisible && (
+        <QuickCalModal
+          visible={quickCalVisible}
+          onClose={() => setQuickCalVisible(false)}
+          onLog={handleQuickCalLog}
+          initialMealType={selectedMeal}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1886,6 +1876,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  quickAddBtnInline: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.success,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   localFoodsList: {
     paddingHorizontal: Spacing.md,
   },
@@ -1940,6 +1938,64 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.text,
     flexShrink: 1,
+  },
+  // Quick Add strip styles
+  quickAddSection: {
+    marginBottom: Spacing.md,
+    paddingLeft: Spacing.md,
+  },
+  quickAddHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingRight: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  quickAddTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  quickAddTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  quickAddSeeAll: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
+  quickAddScroll: {
+    gap: Spacing.sm,
+    paddingRight: Spacing.md,
+  },
+  quickAddCard: {
+    width: 100,
+    backgroundColor: Colors.surfaceGlass,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  quickAddCardEmoji: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  quickAddCardName: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  quickAddCardCal: {
+    fontSize: FontSize.xs,
+    color: Colors.primary,
+    fontWeight: FontWeight.medium,
   },
   bottomSpacer: {
     height: 120,
@@ -2046,127 +2102,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.md,
-  },
-  modalContent: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    width: '100%',
-    maxWidth: 360,
-  },
-  modalHeader: {
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  modalExerciseIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  modalTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  durationInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  durationInput: {
-    flex: 1,
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.bold,
-    color: Colors.text,
-    textAlign: 'center',
-    marginHorizontal: Spacing.sm,
-  },
-  durationLabel: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-  },
-  caloriesPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary + '15',
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  caloriesPreviewText: {
-    alignItems: 'center',
-  },
-  caloriesPreviewValue: {
-    fontSize: FontSize.xxxl,
-    fontWeight: FontWeight.bold,
-    color: Colors.primary,
-  },
-  caloriesPreviewLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.primary,
-  },
-  formulaText: {
-    fontSize: FontSize.xs,
-    color: Colors.textTertiary,
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  modalCancelButton: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-  },
-  modalCancelButtonText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-  },
-  modalConfirmButton: {
-    flex: 2,
-    flexDirection: 'row',
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-  },
-  modalConfirmButtonDisabled: {
-    opacity: 0.5,
-  },
-  modalConfirmButtonText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.background,
   },
   // Recipe styles
   createRecipeButton: {
@@ -2285,6 +2220,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Quick Cal button
+  quickCalButton: {
+    width: 48,
+    height: 48,
+    backgroundColor: Colors.warning + '20',
+    borderRadius: BorderRadius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.warning + '40',
+  },
   // Mic button
   micButton: {
     width: 48,
@@ -2299,213 +2245,6 @@ const styles = StyleSheet.create({
   micButtonRecording: {
     backgroundColor: Colors.error,
     borderColor: Colors.error,
-  },
-  // Voice Recording Overlay
-  voiceOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.lg,
-  },
-  voiceRecordingCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    alignItems: 'center',
-    width: '85%',
-    maxWidth: 320,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  voicePulseDot: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.error + '30',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  voiceRedDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: Colors.error,
-  },
-  voiceListeningText: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.text,
-    marginBottom: Spacing.xs,
-  },
-  voiceTimerText: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.lg,
-  },
-  voiceWaveform: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    height: 48,
-    marginBottom: Spacing.lg,
-  },
-  voiceWaveBar: {
-    width: 4,
-    height: 40,
-    borderRadius: 2,
-    backgroundColor: Colors.primary,
-  },
-  voiceHintText: {
-    fontSize: FontSize.sm,
-    color: Colors.textTertiary,
-    marginBottom: Spacing.lg,
-  },
-  voiceStopButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  // Voice Results Sheet
-  voiceResultsOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  voiceResultsCard: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xxl,
-    maxHeight: '75%',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderBottomWidth: 0,
-  },
-  voiceResultsHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textTertiary,
-    alignSelf: 'center',
-    marginBottom: Spacing.md,
-  },
-  voiceResultsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  voiceResultsTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.text,
-  },
-  voiceTranscriptBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  voiceTranscriptText: {
-    flex: 1,
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  voiceAddAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-    gap: Spacing.xs,
-  },
-  voiceAddAllText: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
-    color: Colors.background,
-    flex: 1,
-  },
-  voiceAddAllCalories: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.background,
-    opacity: 0.8,
-  },
-  voiceNoFoods: {
-    padding: Spacing.lg,
-    alignItems: 'center',
-  },
-  voiceNoFoodsText: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  voiceFoodsList: {
-    flexGrow: 0,
-  },
-  voiceFoodCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  voiceFoodEmoji: {
-    fontSize: 28,
-    marginRight: Spacing.sm,
-  },
-  voiceFoodInfo: {
-    flex: 1,
-  },
-  voiceFoodName: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.text,
-  },
-  voiceFoodMacros: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  voiceFoodServing: {
-    fontSize: FontSize.xs,
-    color: Colors.textTertiary,
-    marginTop: 1,
-  },
-  voiceFoodAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
-  },
-  voiceFoodAddedBtn: {
-    backgroundColor: Colors.primary + '20',
-  },
-  voiceFoodAddText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.background,
   },
   // Favorites section styles
   favoritesSection: {
@@ -2595,3 +2334,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+
+export default function AddScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="AddScreen">
+      <AddScreenInner {...props} />
+    </ScreenErrorBoundary>
+  );
+}

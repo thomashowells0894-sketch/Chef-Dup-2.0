@@ -1,15 +1,21 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  Animated,
 } from 'react-native';
+import ReAnimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSequence,
+  withTiming,
+  withSpring,
+} from 'react-native-reanimated';
 import { ChevronLeft, ChevronRight, Calendar, Sparkles } from 'lucide-react-native';
 import { format, isToday } from 'date-fns';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { useDateNav } from '../context/MealContext';
 
 export default function DateNavigator() {
   const {
@@ -18,42 +24,27 @@ export default function DateNavigator() {
     changeDate,
     goToToday,
     getDateLabel,
-  } = useFood();
+  } = useDateNav();
 
-  // Animation for the label
-  const labelScale = useRef(new Animated.Value(1)).current;
-  const labelOpacity = useRef(new Animated.Value(1)).current;
+  // Animation for the label (Reanimated - UI thread)
+  const labelScale = useSharedValue(1);
+  const labelOpacity = useSharedValue(1);
+
+  const labelAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: labelScale.value }],
+    opacity: labelOpacity.value,
+  }));
 
   const animateChange = useCallback(() => {
-    // Quick fade and scale animation
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(labelScale, {
-          toValue: 0.9,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(labelOpacity, {
-          toValue: 0.5,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.parallel([
-        Animated.spring(labelScale, {
-          toValue: 1,
-          friction: 6,
-          tension: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(labelOpacity, {
-          toValue: 1,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
-  }, [labelScale, labelOpacity]);
+    labelScale.value = withSequence(
+      withTiming(0.9, { duration: 100 }),
+      withSpring(1, { damping: 12, stiffness: 200 })
+    );
+    labelOpacity.value = withSequence(
+      withTiming(0.5, { duration: 100 }),
+      withTiming(1, { duration: 150 })
+    );
+  }, []);
 
   const handlePrev = async () => {
     animateChange();
@@ -102,14 +93,8 @@ export default function DateNavigator() {
 
         {/* Center Date Display */}
         <Pressable style={styles.centerContent} onPress={handleTodayPress}>
-          <Animated.View
-            style={[
-              styles.dateContainer,
-              {
-                transform: [{ scale: labelScale }],
-                opacity: labelOpacity,
-              },
-            ]}
+          <ReAnimated.View
+            style={[styles.dateContainer, labelAnimatedStyle]}
           >
             <View style={[styles.dateIcon, { backgroundColor: accentColor + '20' }]}>
               <Calendar size={16} color={accentColor} />
@@ -120,7 +105,7 @@ export default function DateNavigator() {
               </Text>
               <Text style={styles.fullDate}>{fullDate}</Text>
             </View>
-          </Animated.View>
+          </ReAnimated.View>
         </Pressable>
 
         {/* Next Day Button */}

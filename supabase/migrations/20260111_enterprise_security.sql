@@ -32,7 +32,7 @@ ON workouts(user_id);
 
 -- Index for profiles: Primary lookup by user_id (already PK, but explicit)
 CREATE INDEX IF NOT EXISTS idx_profiles_user_id
-ON profiles(id);
+ON profiles(user_id);
 
 -- ============================================================================
 -- PART 2: ROW LEVEL SECURITY (RLS) - STRICT MODE
@@ -59,24 +59,24 @@ DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
 -- SELECT: Users can ONLY view their own profile
 CREATE POLICY "profiles_select_own" ON profiles
     FOR SELECT
-    USING (auth.uid() = id);
+    USING (auth.uid() = user_id);
 
 -- INSERT: Users can ONLY insert their own profile (with matching ID)
 CREATE POLICY "profiles_insert_own" ON profiles
     FOR INSERT
-    WITH CHECK (auth.uid() = id);
+    WITH CHECK (auth.uid() = user_id);
 
 -- UPDATE: Users can ONLY update their own profile
 CREATE POLICY "profiles_update_own" ON profiles
     FOR UPDATE
-    USING (auth.uid() = id)
-    WITH CHECK (auth.uid() = id);
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
 
 -- DELETE: Users can delete their own profile (for account deletion)
 DROP POLICY IF EXISTS "profiles_delete_own" ON profiles;
 CREATE POLICY "profiles_delete_own" ON profiles
     FOR DELETE
-    USING (auth.uid() = id);
+    USING (auth.uid() = user_id);
 
 -- ============================================================================
 -- FOOD_LOGS TABLE POLICIES
@@ -172,11 +172,11 @@ CREATE OR REPLACE VIEW user_daily_stats AS
 SELECT
     user_id,
     date,
-    SUM(CASE WHEN is_water = false THEN calories ELSE 0 END) as total_calories,
-    SUM(CASE WHEN is_water = false THEN protein ELSE 0 END) as total_protein,
-    SUM(CASE WHEN is_water = false THEN carbs ELSE 0 END) as total_carbs,
-    SUM(CASE WHEN is_water = false THEN fat ELSE 0 END) as total_fat,
-    SUM(CASE WHEN is_water = true THEN 1 ELSE 0 END) as water_count,
+    SUM(CASE WHEN name != 'Water' THEN calories ELSE 0 END) as total_calories,
+    SUM(CASE WHEN name != 'Water' THEN protein ELSE 0 END) as total_protein,
+    SUM(CASE WHEN name != 'Water' THEN carbs ELSE 0 END) as total_carbs,
+    SUM(CASE WHEN name != 'Water' THEN fat ELSE 0 END) as total_fat,
+    SUM(CASE WHEN name = 'Water' THEN 1 ELSE 0 END) as water_count,
     COUNT(*) as entry_count
 FROM food_logs
 GROUP BY user_id, date;

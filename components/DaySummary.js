@@ -1,14 +1,18 @@
-import React, { useRef, memo, useCallback, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  Animated,
   Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Flame, TrendingUp, Zap } from 'lucide-react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import { hapticImpact } from '../lib/haptics';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
 import CalorieRing from './CalorieRing';
@@ -22,34 +26,28 @@ const DaySummary = memo(function DaySummary({
   streak,
   onPress,
 }) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
 
   // Memoize computed values
   const isOverGoal = useMemo(() => remaining < 0, [remaining]);
   const percentage = useMemo(() => goal > 0 ? Math.round((consumed / goal) * 100) : 0, [consumed, goal]);
 
   const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.98,
-      friction: 8,
-      tension: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(0.98, { damping: 12, stiffness: 300 });
+  }, []);
 
   const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 5,
-      tension: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(1, { damping: 8, stiffness: 200 });
+  }, []);
 
   const handlePress = useCallback(async () => {
     await hapticImpact();
     if (onPress) onPress();
   }, [onPress]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   return (
     <Pressable
@@ -57,7 +55,11 @@ const DaySummary = memo(function DaySummary({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
     >
-      <Animated.View style={[styles.container, { transform: [{ scale: scaleAnim }] }]}>
+      <Animated.View
+        style={[styles.container, animatedStyle]}
+        accessibilityRole="summary"
+        accessibilityLabel={`Day summary. ${consumed} of ${goal} calories consumed. ${burned} calories burned from exercise. ${Math.abs(remaining)} calories ${isOverGoal ? 'over' : 'remaining'}. ${streak} day streak.`}
+      >
         {/* Glass blur layer */}
         {Platform.OS === 'ios' && (
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
@@ -82,7 +84,7 @@ const DaySummary = memo(function DaySummary({
           </View>
 
           {/* Stats */}
-          <View style={styles.statsContainer}>
+          <View style={styles.statsContainer} accessibilityLiveRegion="polite">
             <View style={styles.statRow}>
               <View style={styles.stat}>
                 <Text style={styles.statLabel}>Goal</Text>

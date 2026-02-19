@@ -10,7 +10,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  InteractionManager,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { X, Check, Edit3, Calculator, ChevronDown, Sparkles, Heart } from 'lucide-react-native';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
@@ -20,6 +22,33 @@ import { useFavoriteFoods } from '../hooks/useFavoriteFoods';
 
 // Performance: Blurhash placeholder for smooth loading
 const BLURHASH = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
+
+// Quantity memory: remember last-used quantity/unit per food
+const QTY_MEMORY_KEY = '@qty_memory';
+let _qtyCache = null;
+
+async function getQtyMemory() {
+  if (_qtyCache) return _qtyCache;
+  try {
+    const raw = await AsyncStorage.getItem(QTY_MEMORY_KEY);
+    _qtyCache = raw ? JSON.parse(raw) : {};
+  } catch {
+    _qtyCache = {};
+  }
+  return _qtyCache;
+}
+
+async function saveQtyMemory(foodName, quantity, unit) {
+  const mem = await getQtyMemory();
+  mem[foodName] = { quantity, unit };
+  // Keep only last 200 entries
+  const keys = Object.keys(mem);
+  if (keys.length > 200) {
+    delete mem[keys[0]];
+  }
+  _qtyCache = mem;
+  AsyncStorage.setItem(QTY_MEMORY_KEY, JSON.stringify(mem)).catch(() => {});
+}
 
 const MEAL_LABELS = {
   breakfast: 'Breakfast',
@@ -187,18 +216,29 @@ function FoodDetailModal({
   // Reset state when modal opens with new food
   useEffect(() => {
     if (visible && food) {
-      setQuantity('1');
-      setUnit('serving');
       setManualOverride(false);
       setManualCalories('');
       setManualProtein('');
       setManualCarbs('');
       setManualFat('');
 
-      // Auto-focus quantity input
-      setTimeout(() => {
+      // Restore last-used quantity for this food, or default to 1 serving
+      getQtyMemory().then((mem) => {
+        const saved = mem[food.name];
+        if (saved) {
+          setQuantity(saved.quantity);
+          setUnit(saved.unit);
+        } else {
+          setQuantity('1');
+          setUnit('serving');
+        }
+      });
+
+      // Auto-focus after modal transition completes (no arbitrary delay)
+      const handle = InteractionManager.runAfterInteractions(() => {
         quantityInputRef.current?.focus();
-      }, 400);
+      });
+      return () => handle.cancel();
     }
   }, [visible, food]);
 
@@ -255,6 +295,11 @@ function FoodDetailModal({
 
   const handleConfirm = useCallback(async () => {
     await hapticSuccess();
+
+    // Remember this quantity/unit for next time
+    if (food?.name) {
+      saveQtyMemory(food.name, quantity, unit);
+    }
 
     onConfirm({
       ...food,
@@ -328,8 +373,11 @@ function FoodDetailModal({
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
+        testID="food-detail-modal"
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        accessibilityViewIsModal={true}
+        accessibilityLabel="Food detail and quantity selector"
       >
         {/* Header */}
         <View style={styles.header}>
@@ -398,6 +446,7 @@ function FoodDetailModal({
             {/* Large Quantity Input */}
             <View style={styles.quantityInputContainer}>
               <TextInput
+                testID="quantity-input"
                 ref={quantityInputRef}
                 style={styles.quantityInput}
                 value={quantity}
@@ -588,6 +637,7 @@ function FoodDetailModal({
         {/* Bottom Action */}
         <View style={styles.bottomAction}>
           <Pressable
+            testID="confirm-food-button"
             style={[
               styles.confirmButton,
               !isValidQuantity && styles.confirmButtonDisabled,
