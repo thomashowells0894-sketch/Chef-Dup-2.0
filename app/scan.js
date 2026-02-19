@@ -34,6 +34,8 @@ import {
   Shadows,
 } from '../constants/theme';
 import { analyzeFoodImage } from '../services/ai';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
+import PremiumGate from '../components/PremiumGate';
 import { useFood } from '../context/FoodContext';
 import { useFasting } from '../context/FastingContext';
 import { useOffline } from '../context/OfflineContext';
@@ -41,7 +43,7 @@ import { useOffline } from '../context/OfflineContext';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FRAME_SIZE = SCREEN_WIDTH * 0.75;
 
-export default function ScanScreen() {
+function ScanScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const cameraRef = useRef(null);
@@ -727,3 +729,13 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 });
+
+export default function ScanScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="ScanScreen">
+      <PremiumGate>
+        <ScanScreenInner {...props} />
+      </PremiumGate>
+    </ScreenErrorBoundary>
+  );
+}

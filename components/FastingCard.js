@@ -1,5 +1,12 @@
-import React, { memo, useRef, useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Platform } from 'react-native';
+import React, { memo, useEffect, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  withSequence,
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { Timer, Play, Square, Flame } from 'lucide-react-native';
@@ -9,9 +16,6 @@ import { useFasting, calculateFastingProgress, formatTime } from '../context/Fas
 // Fasting orange color
 const FASTING_COLOR = '#FF9500';
 const FASTING_COLOR_LIGHT = 'rgba(255, 149, 0, 0.15)';
-
-// Animated circle component
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 function CircularProgress({ progress, size = 100, strokeWidth = 8 }) {
   const radius = (size - strokeWidth) / 2;
@@ -106,42 +110,36 @@ function FastingCard() {
   }, [lastMealTime, tick]);
 
   // Animation values
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const glowOpacity = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useSharedValue(1);
+  const glowOpacity = useSharedValue(0);
 
   // Pulse animation when fasting
   useEffect(() => {
     if (isFasting) {
       // Start pulse animation
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.05,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ])
+      pulseAnim.value = withRepeat(
+        withSequence(
+          withTiming(1.05, { duration: 1500 }),
+          withTiming(1, { duration: 1500 })
+        ),
+        -1
       );
-      pulse.start();
 
       // Glow effect
-      Animated.timing(glowOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-
-      return () => pulse.stop();
+      glowOpacity.value = withTiming(1, { duration: 300 });
     } else {
-      pulseAnim.setValue(1);
-      glowOpacity.setValue(0);
+      pulseAnim.value = 1;
+      glowOpacity.value = 0;
     }
   }, [isFasting, pulseAnim, glowOpacity]);
+
+  const pulseAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseAnim.value }],
+  }));
+
+  const glowAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
 
   const handleStartFast = () => {
     startFast();
@@ -152,7 +150,16 @@ function FastingCard() {
   };
 
   return (
-    <View style={[styles.card, isFasting && styles.cardFasting]}>
+    <View
+      style={[styles.card, isFasting && styles.cardFasting]}
+      accessible={true}
+      accessibilityRole="timer"
+      accessibilityLabel={
+        isFasting
+          ? `Fasting timer. ${formattedElapsed} elapsed, ${formattedRemaining} remaining. ${Math.round(fastingProgress.progress * 100)} percent complete`
+          : `Fasting timer. Not fasting. ${fastDuration}:${24 - fastDuration} protocol`
+      }
+    >
       {/* Glass blur layer */}
       {Platform.OS === 'ios' && (
         <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
@@ -163,7 +170,7 @@ function FastingCard() {
         <Animated.View
           style={[
             styles.glowEffect,
-            { opacity: glowOpacity },
+            glowAnimatedStyle,
           ]}
         />
       )}
@@ -194,7 +201,7 @@ function FastingCard() {
             <Animated.View
               style={[
                 styles.progressContainer,
-                { transform: [{ scale: pulseAnim }] },
+                pulseAnimatedStyle,
               ]}
             >
               <CircularProgress
@@ -209,7 +216,7 @@ function FastingCard() {
               </View>
             </Animated.View>
 
-            <View style={styles.timeStats}>
+            <View style={styles.timeStats} accessibilityLiveRegion="polite">
               <View style={styles.timeStat}>
                 <Text style={styles.timeValue}>{formattedElapsed}</Text>
                 <Text style={styles.timeLabel}>Elapsed</Text>
@@ -223,7 +230,13 @@ function FastingCard() {
               </View>
             </View>
 
-            <Pressable style={styles.endButton} onPress={handleEndFast}>
+            <Pressable
+              style={styles.endButton}
+              onPress={handleEndFast}
+              accessibilityRole="button"
+              accessibilityLabel="End fast"
+              accessibilityHint="Stops the current fasting timer"
+            >
               <Square size={14} color={Colors.background} fill={Colors.background} />
               <Text style={styles.endButtonText}>End Fast</Text>
             </Pressable>
@@ -264,7 +277,13 @@ function FastingCard() {
                   <Text style={styles.lastMealText}>Last meal: {timeSinceLastMeal}</Text>
                 )}
 
-                <Pressable style={styles.startButton} onPress={handleStartFast}>
+                <Pressable
+                  style={styles.startButton}
+                  onPress={handleStartFast}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start fast now"
+                  accessibilityHint="Begins a new fasting timer"
+                >
                   <Play size={16} color={Colors.background} fill={Colors.background} />
                   <Text style={styles.startButtonText}>Start Fast Now</Text>
                 </Pressable>
@@ -277,7 +296,13 @@ function FastingCard() {
                   <Text style={styles.idleSubtitle}>{fastDuration}:{24 - fastDuration} protocol</Text>
                 </View>
 
-                <Pressable style={styles.startButton} onPress={handleStartFast}>
+                <Pressable
+                  style={styles.startButton}
+                  onPress={handleStartFast}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start fast"
+                  accessibilityHint="Begins a new fasting timer"
+                >
                   <Play size={16} color={Colors.background} fill={Colors.background} />
                   <Text style={styles.startButtonText}>Start Fast</Text>
                 </Pressable>

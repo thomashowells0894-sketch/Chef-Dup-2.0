@@ -15,6 +15,7 @@
  * - adaptive-macros: Analyze weekly data and recommend macro adjustments
  * - meal-plan: Generate personalized multi-day meal plans
  * - morning-briefing: Generate personalized AI morning briefing
+ * - recipe-import: Extract recipe from a URL with ingredient nutrition estimates
  */
 
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
@@ -23,14 +24,116 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // CORS headers for cross-origin requests
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vibefit-timestamp, x-vibefit-nonce",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// Counter for periodic nonce cleanup (every 100th request)
+let requestCounter = 0;
 
 // Safety limits
 const MAX_RESPONSE_LENGTH = 50000;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const GEMINI_TIMEOUT_MS = 30000; // 30 second timeout for Gemini calls
+
+// ============================================================================
+// CACHING
+// ============================================================================
+
+/** Cache TTLs in seconds by request type. Types not listed are never cached. */
+const CACHE_TTL: Record<string, number> = {
+  "generate-workout": 3600,    // 1 hour
+  "meal-plan": 3600,           // 1 hour
+  "weekly-digest": 14400,      // 4 hours
+  "morning-briefing": 7200,    // 2 hours
+  "adaptive-macros": 14400,    // 4 hours
+};
+
+/** In-flight dedup map: prevents concurrent duplicate Gemini calls. */
+const inflight = new Map<string, Promise<Record<string, unknown>>>();
+
+/**
+ * Create a SHA-256 hex cache key from request type + payload.
+ */
+async function makeCacheKey(type: string, payload: unknown): Promise<string> {
+  const data = JSON.stringify({ type, payload });
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex;
+}
+
+/**
+ * Look up a cached response. Returns null on miss.
+ */
+async function cacheGet(
+  supabaseUrl: string,
+  serviceKey: string,
+  cacheKey: string
+): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/ai_response_cache?cache_key=eq.${cacheKey}&expires_at=gt.${new Date().toISOString()}&select=response`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+
+    // Fire-and-forget hit_count increment
+    fetch(
+      `${supabaseUrl}/rest/v1/ai_response_cache?cache_key=eq.${cacheKey}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ hit_count: (rows[0].hit_count ?? 0) + 1 }),
+      }
+    ).catch(() => {});
+
+    return rows[0].response as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write a response into the cache (fire-and-forget).
+ */
+function cacheSet(
+  supabaseUrl: string,
+  serviceKey: string,
+  cacheKey: string,
+  requestType: string,
+  response: Record<string, unknown>,
+  ttlSeconds: number
+): void {
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  fetch(`${supabaseUrl}/rest/v1/ai_response_cache`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal,resolution=merge-duplicates",
+    },
+    body: JSON.stringify({
+      cache_key: cacheKey,
+      request_type: requestType,
+      response,
+      expires_at: expiresAt,
+      hit_count: 0,
+    }),
+  }).catch(() => {});
+}
 
 /**
  * Wrap a promise with a timeout
@@ -160,7 +263,7 @@ async function handleScanFood(
     throw new Error("Invalid image data. Please try again with a different image.");
   }
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const prompt = `Analyze this image of food. Identify the food item(s) and estimate the nutritional information for a typical serving size.
 
@@ -242,7 +345,7 @@ async function handleGenerateWorkout(
     injuries: sanitizeString(payload.injuries || "", 500),
   };
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const levelDescriptions: Record<number, string> = {
     1: "Complete beginner - focus on form and basic movements",
@@ -412,7 +515,7 @@ async function handleChef(
     maxTime: sanitizeNumber(preferences.maxTime, 60, 5, 480),
   };
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const dietaryNote = sanitizedPrefs.dietary.length
     ? `Dietary restrictions: ${sanitizedPrefs.dietary.join(", ")}. All recipes MUST comply with these restrictions.`
@@ -539,7 +642,7 @@ async function handleGenesis(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.3,
       topK: 40,
@@ -772,7 +875,7 @@ The "suggestions" array should contain 2-3 short follow-up questions or topics t
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -847,7 +950,7 @@ async function handleParseVoiceFood(
   const safeMimeType = validMimeTypes.includes(mimeType) ? mimeType : "audio/mp4";
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: 2048,
@@ -962,7 +1065,7 @@ async function handleWeeklyDigest(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -1067,7 +1170,7 @@ async function handleMealPlan(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -1224,7 +1327,7 @@ async function handleMorningBriefing(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -1362,7 +1465,7 @@ async function handleAdaptiveMacros(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.3,
       topK: 40,
@@ -1428,6 +1531,180 @@ If shouldAdjust is false, set newCalories/newProtein/newCarbs/newFat to the curr
 }
 
 /**
+ * Recipe Import - Extract recipe from a URL and estimate nutrition
+ */
+async function handleRecipeImport(
+  genAI: GoogleGenerativeAI,
+  payload: { url: string }
+): Promise<Record<string, unknown>> {
+  const { url } = payload;
+
+  if (!url || typeof url !== "string") {
+    throw new Error("Please provide a valid recipe URL.");
+  }
+
+  const sanitizedUrl = sanitizeString(url.trim(), 2000);
+
+  // Basic URL validation
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(sanitizedUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      throw new Error("Invalid URL protocol.");
+    }
+  } catch {
+    throw new Error("Please provide a valid URL starting with http:// or https://.");
+  }
+
+  // Fetch the recipe page content so we can pass it to the model
+  let pageContent = "";
+  try {
+    const fetchResponse = await withTimeout(
+      fetch(parsedUrl.toString(), {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; VibeFit/1.0; +https://vibefit.app)",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        redirect: "follow",
+      }),
+      10000,
+      "Recipe Fetch"
+    );
+    if (!fetchResponse.ok) {
+      throw new Error(`Failed to fetch recipe page (HTTP ${fetchResponse.status}).`);
+    }
+    const rawHtml = await fetchResponse.text();
+    // Strip HTML tags, scripts, styles to get text content (keep structured data)
+    pageContent = rawHtml
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 15000); // Limit to ~15K chars to fit in context
+  } catch (fetchErr) {
+    // If fetch fails, fall back to URL-only mode (Gemini may still recognise popular recipes)
+    pageContent = "";
+  }
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    generationConfig: {
+      temperature: 0.3,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 4096,
+    },
+  });
+
+  const contentSection = pageContent
+    ? `Here is the text content extracted from the recipe page at ${sanitizedUrl}:\n\n---\n${pageContent}\n---`
+    : `Recipe URL: ${sanitizedUrl}\n\nNote: The page content could not be fetched. If you recognize this recipe from a well-known site, extract what you know. Otherwise return an error.`;
+
+  const prompt = `You are a professional nutritionist and recipe analyst. Analyze and extract the complete recipe information from the content below.
+
+${contentSection}
+
+Your task:
+1. Extract the recipe name, servings count, and all ingredients with their quantities and units from the page content.
+2. For each ingredient, estimate the calories, protein, carbs, and fat based on standard nutritional databases.
+3. Calculate the total nutrition for the entire recipe.
+
+Return ONLY a valid JSON object (no markdown, no code blocks, just raw JSON) with this EXACT structure:
+{
+  "name": "Recipe Name",
+  "emoji": "relevant food emoji",
+  "servings": number,
+  "ingredients": [
+    {
+      "name": "Ingredient Name",
+      "quantity": "amount (e.g., '2', '1/2', '200')",
+      "unit": "unit (e.g., 'cups', 'g', 'tbsp', 'whole')",
+      "calories": number,
+      "protein": number (grams),
+      "carbs": number (grams),
+      "fat": number (grams)
+    }
+  ],
+  "totals": {
+    "calories": number (sum of all ingredients),
+    "protein": number (sum of all ingredients, grams),
+    "carbs": number (sum of all ingredients, grams),
+    "fat": number (sum of all ingredients, grams)
+  }
+}
+
+Requirements:
+- Extract the EXACT recipe name from the page
+- Extract the EXACT serving count from the page (default to 4 if not specified)
+- List ALL ingredients with accurate quantities and units
+- Nutrition estimates should be based on standard USDA nutritional data
+- The totals must be the sum of all individual ingredient values
+- Use reasonable serving-size assumptions when the recipe is ambiguous
+- If you cannot access or identify a recipe from this URL, return: { "error": "Could not extract a recipe from this URL." }`;
+
+  const result = await withTimeout(model.generateContent(prompt), GEMINI_TIMEOUT_MS, "Recipe Import");
+  const response = await result.response;
+  const text = response.text();
+
+  const parsed = safeParseJSON(text);
+  if (!parsed) {
+    throw new Error("Could not parse recipe data. Please try a different recipe URL.");
+  }
+
+  if (parsed.error) {
+    throw new Error(sanitizeString(parsed.error) || "Could not extract a recipe from this URL.");
+  }
+
+  if (!parsed.name || !parsed.ingredients || !Array.isArray(parsed.ingredients) || parsed.ingredients.length === 0) {
+    throw new Error("Could not identify a valid recipe from this URL. Please try a different recipe page.");
+  }
+
+  const ingredients = Array.isArray(parsed.ingredients) ? parsed.ingredients : [];
+  const totals = parsed.totals && typeof parsed.totals === "object"
+    ? parsed.totals as Record<string, unknown>
+    : null;
+
+  const sanitizedIngredients = ingredients.slice(0, 50).map((ing: Record<string, unknown>) => ({
+    name: sanitizeString(ing?.name, 200) || "Unknown ingredient",
+    quantity: sanitizeString(ing?.quantity, 50) || "1",
+    unit: sanitizeString(ing?.unit, 30) || "",
+    calories: sanitizeNumber(ing?.calories, 0, 0, 10000),
+    protein: sanitizeNumber(ing?.protein, 0, 0, 1000),
+    carbs: sanitizeNumber(ing?.carbs, 0, 0, 1000),
+    fat: sanitizeNumber(ing?.fat, 0, 0, 1000),
+  }));
+
+  // Calculate totals from ingredients if not provided or invalid
+  const calculatedTotals = sanitizedIngredients.reduce(
+    (acc: Record<string, number>, ing: Record<string, number>) => ({
+      calories: acc.calories + ing.calories,
+      protein: acc.protein + ing.protein,
+      carbs: acc.carbs + ing.carbs,
+      fat: acc.fat + ing.fat,
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0 }
+  );
+
+  const finalTotals = totals
+    ? {
+        calories: sanitizeNumber(totals.calories, calculatedTotals.calories, 0, 100000),
+        protein: sanitizeNumber(totals.protein, calculatedTotals.protein, 0, 10000),
+        carbs: sanitizeNumber(totals.carbs, calculatedTotals.carbs, 0, 10000),
+        fat: sanitizeNumber(totals.fat, calculatedTotals.fat, 0, 10000),
+      }
+    : calculatedTotals;
+
+  return {
+    name: sanitizeString(parsed.name, 300) || "Imported Recipe",
+    emoji: sanitizeString(parsed.emoji, 10) || "\uD83C\uDF7D\uFE0F",
+    servings: sanitizeNumber(parsed.servings, 4, 1, 100),
+    ingredients: sanitizedIngredients,
+    totals: finalTotals,
+  };
+}
+
+/**
  * Food Swap - Suggest healthier or more goal-aligned food alternatives
  */
 async function handleFoodSwap(
@@ -1464,7 +1741,7 @@ async function handleFoodSwap(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       temperature: 0.6,
       topK: 40,
@@ -1563,6 +1840,126 @@ Requirements:
   };
 }
 
+/**
+ * Meal Recommend - Suggest meals based on remaining macro budget
+ */
+async function handleMealRecommend(
+  genAI: GoogleGenerativeAI,
+  payload: {
+    remainingCalories: number;
+    remainingProtein: number;
+    remainingCarbs: number;
+    remainingFat: number;
+    mealType: string;
+    recentFoods?: string[];
+    dietaryPreferences?: string[];
+    goal?: string;
+  }
+): Promise<Record<string, unknown>> {
+  const validMealTypes = ["breakfast", "lunch", "dinner", "snacks"];
+  const validGoals = ["lose", "maintain", "gain"];
+
+  const sanitizedParams = {
+    remainingCalories: sanitizeNumber(payload.remainingCalories, 500, 0, 10000),
+    remainingProtein: sanitizeNumber(payload.remainingProtein, 30, 0, 1000),
+    remainingCarbs: sanitizeNumber(payload.remainingCarbs, 50, 0, 1000),
+    remainingFat: sanitizeNumber(payload.remainingFat, 20, 0, 1000),
+    mealType: validMealTypes.includes(String(payload.mealType)) ? payload.mealType : "lunch",
+    recentFoods: Array.isArray(payload.recentFoods)
+      ? payload.recentFoods.slice(0, 20).map((f: string) => sanitizeString(f, 100))
+      : [],
+    dietaryPreferences: Array.isArray(payload.dietaryPreferences)
+      ? payload.dietaryPreferences.slice(0, 10).map((p: string) => sanitizeString(p, 50))
+      : [],
+    goal: validGoals.includes(String(payload.goal)) ? payload.goal : "maintain",
+  };
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    generationConfig: {
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 2048,
+    },
+  });
+
+  const goalDescriptions: Record<string, string> = {
+    lose: "weight loss (prioritize high protein, high fiber, lower calorie density)",
+    maintain: "weight maintenance (balanced and satisfying meals)",
+    gain: "muscle gain (higher calories and protein)",
+  };
+
+  const recentFoodsNote = sanitizedParams.recentFoods.length > 0
+    ? `\nThe user recently ate: ${sanitizedParams.recentFoods.join(", ")}. Suggest DIFFERENT foods to add variety.`
+    : "";
+
+  const dietaryNote = sanitizedParams.dietaryPreferences.length > 0
+    ? `\nDietary preferences/restrictions: ${sanitizedParams.dietaryPreferences.join(", ")}.`
+    : "";
+
+  const prompt = `You are VibeFit AI, a certified nutritionist. Suggest 3-4 meal ideas for ${sanitizedParams.mealType} that fit the user's remaining macro budget.
+
+REMAINING MACROS FOR TODAY:
+- Calories: ${sanitizedParams.remainingCalories} kcal
+- Protein: ${sanitizedParams.remainingProtein}g
+- Carbs: ${sanitizedParams.remainingCarbs}g
+- Fat: ${sanitizedParams.remainingFat}g
+
+Goal: ${goalDescriptions[sanitizedParams.goal]}${recentFoodsNote}${dietaryNote}
+
+Return ONLY a valid JSON object (no markdown, no code blocks, just raw JSON) with this EXACT structure:
+{
+  "recommendations": [
+    {
+      "id": "unique-id",
+      "name": "Meal Name",
+      "emoji": "relevant food emoji",
+      "calories": number,
+      "protein": number (grams),
+      "carbs": number (grams),
+      "fat": number (grams),
+      "prepTime": number (minutes, optional),
+      "reason": "Brief explanation of why this fits (e.g., 'High protein to hit your target')"
+    }
+  ],
+  "coachMessage": "A brief, encouraging message about their remaining budget and these suggestions"
+}
+
+Requirements:
+- 3-4 recommendations that each fit within the remaining macro budget
+- Each meal should be realistic, commonly available, and easy to prepare
+- Nutrition values must be accurate based on standard USDA data
+- Prioritize meals that help the user hit their remaining protein target
+- The coachMessage should reference their specific remaining budget`;
+
+  const result = await withTimeout(model.generateContent(prompt), GEMINI_TIMEOUT_MS, "Meal Recommend");
+  const response = await result.response;
+  const text = response.text();
+
+  const parsed = safeParseJSON(text);
+  if (!parsed) {
+    throw new Error("Could not generate meal recommendations. Please try again.");
+  }
+
+  const recommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
+
+  return {
+    recommendations: recommendations.slice(0, 4).map((rec: Record<string, unknown>, idx: number) => ({
+      id: sanitizeString(rec?.id, 50) || `ai-rec-${idx}-${Date.now()}`,
+      name: sanitizeString(rec?.name, 200) || "Recommended Meal",
+      emoji: sanitizeString(rec?.emoji, 10) || "\uD83C\uDF7D\uFE0F",
+      calories: sanitizeNumber(rec?.calories, 0, 0, 10000),
+      protein: sanitizeNumber(rec?.protein, 0, 0, 1000),
+      carbs: sanitizeNumber(rec?.carbs, 0, 0, 1000),
+      fat: sanitizeNumber(rec?.fat, 0, 0, 1000),
+      prepTime: rec?.prepTime ? sanitizeNumber(rec.prepTime, 0, 0, 480) : undefined,
+      reason: sanitizeString(rec?.reason, 300) || "",
+    })),
+    coachMessage: sanitizeString(parsed.coachMessage, 500) || "Here are my top picks for you:",
+  };
+}
+
 // ============================================================================
 // RATE LIMITING (in-memory, per-isolate)
 // ============================================================================
@@ -1609,11 +2006,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Authenticate the request — verify JWT from Authorization header
+    // Validate user authentication
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
-        JSON.stringify({ error: "Missing authorization" }),
+        JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -1623,12 +2020,112 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
     if (authError || !user) {
       return new Response(
-        JSON.stringify({ error: "Unauthorized. Please sign in." }),
+        JSON.stringify({ error: "Invalid token" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Service-role client for server-side operations (audit, nonce, rate limit)
+    const serviceRoleKeyEarly = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const supabaseService = serviceRoleKeyEarly
+      ? createClient(supabaseUrl, serviceRoleKeyEarly)
+      : null;
+
+    // Timestamp freshness validation (replay attack mitigation)
+    const requestTimestamp = req.headers.get("x-vibefit-timestamp");
+    const requestNonce = req.headers.get("x-vibefit-nonce");
+
+    if (requestTimestamp) {
+      const ts = parseInt(requestTimestamp, 10);
+      if (isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
+        // Log validation failure to audit
+        if (supabaseService) {
+          supabaseService.rpc("log_audit", {
+            p_user_id: user.id,
+            p_action: "auth_timestamp_expired",
+            p_resource_type: "security",
+            p_details: { timestamp: requestTimestamp, delta_ms: isNaN(ts) ? null : Math.abs(Date.now() - ts) },
+          }).catch(() => {});
+        }
+        return new Response(
+          JSON.stringify({ error: "Request expired" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } else {
+      // Log missing signatures to track client adoption during rollout
+      console.warn(`[AI Brain] Missing x-vibefit-timestamp header from user ${user.id}`);
+      if (supabaseService) {
+        supabaseService.rpc("log_audit", {
+          p_user_id: user.id,
+          p_action: "auth_missing_timestamp",
+          p_resource_type: "security",
+          p_details: { warning: "backwards_compat_allowed" },
+        }).catch(() => {});
+      }
+    }
+
+    // Nonce deduplication (replay prevention)
+    if (requestNonce && supabaseService) {
+      try {
+        // Try to insert the nonce — if it already exists, it's a replay
+        const { error: nonceError } = await supabaseService
+          .from("request_nonces")
+          .insert({ nonce: requestNonce, user_id: user.id });
+
+        if (nonceError) {
+          // Duplicate nonce — reject as replay
+          supabaseService.rpc("log_audit", {
+            p_user_id: user.id,
+            p_action: "auth_nonce_replay",
+            p_resource_type: "security",
+            p_details: { nonce: requestNonce },
+          }).catch(() => {});
+          return new Response(
+            JSON.stringify({ error: "Duplicate request detected" }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Periodic nonce cleanup (every 100th request)
+        requestCounter++;
+        if (requestCounter % 100 === 0) {
+          supabaseService.rpc("cleanup_nonces").catch(() => {});
+        }
+      } catch {
+        // If nonce check fails, allow through defensively but log
+        console.warn(`[AI Brain] Nonce check failed for user ${user.id}`);
+      }
+    } else if (requestTimestamp && !requestNonce) {
+      // Timestamp present but no nonce — log for monitoring
+      console.warn(`[AI Brain] Missing x-vibefit-nonce header from user ${user.id}`);
+    }
+
+    // Parse request body early so we can check type for genesis exemption
+    const { type, payload } = await req.json();
+    const startTime = Date.now();
+
+    // Premium AI usage limit check (genesis exempted for onboarding)
+    if (supabaseService && type !== "genesis") {
+      const { data: limitResult, error: limitError } = await supabaseService.rpc(
+        "check_ai_premium_limit",
+        { p_user_id: user.id }
+      );
+      const isPremium = !limitError && limitResult && limitResult.is_premium;
+      if (!limitError && limitResult && limitResult.allowed === false) {
+        return new Response(
+          JSON.stringify({
+            error: "Daily AI limit reached",
+            upgrade_needed: !isPremium,
+            limit: limitResult.limit,
+            used: limitResult.used,
+          }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Rate limit check
@@ -1656,9 +2153,6 @@ Deno.serve(async (req: Request) => {
     // Initialize Gemini
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-    // Parse request body
-    const { type, payload } = await req.json();
-
     if (!type) {
       return new Response(
         JSON.stringify({ error: "Missing request type" }),
@@ -1669,55 +2163,126 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Server-side rate limit check (per-action limits via DB function)
+    if (supabaseService) {
+      try {
+        const { data: rateCheck } = await supabaseService.rpc("check_rate_limit", {
+          p_user_id: user.id,
+          p_action: type,
+          p_max_calls: 30,
+          p_window_seconds: 60,
+        });
+        if (rateCheck && !rateCheck.allowed) {
+          return new Response(
+            JSON.stringify({ error: "Rate limit exceeded" }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } catch {
+        // If rate limit check fails, allow through defensively
+        console.warn(`[AI Brain] Server-side rate limit check failed for user ${user.id}`);
+      }
+    }
+
+    // ---- Cache-aside lookup ----
+    const ttl = CACHE_TTL[type] ?? 0;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    let cacheKey: string | null = null;
+    let cacheHit = false;
+
+    if (ttl > 0 && serviceRoleKey) {
+      cacheKey = await makeCacheKey(type, payload);
+
+      // Check cache
+      const cached = await cacheGet(supabaseUrl, serviceRoleKey, cacheKey);
+      if (cached) {
+        // Fire-and-forget audit log for cached response
+        if (supabaseService) {
+          supabaseService.rpc("log_audit", {
+            p_user_id: user.id,
+            p_action: `ai_${type}`,
+            p_resource_type: "ai_request",
+            p_details: { type, cached: true, duration_ms: Date.now() - startTime },
+          }).catch(() => {});
+        }
+        return new Response(JSON.stringify(cached), {
+          headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "hit" },
+        });
+      }
+
+      // In-flight dedup: if an identical request is already running, wait for it
+      const pending = inflight.get(cacheKey);
+      if (pending) {
+        const deduped = await pending;
+        return new Response(JSON.stringify(deduped), {
+          headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "dedup" },
+        });
+      }
+    }
+
+    // Build a promise for the AI call so we can register it in the inflight map
+    const aiCall = async (): Promise<Record<string, unknown>> => {
+      // Route to appropriate handler
+      switch (type) {
+        case "scan-food":
+          return await handleScanFood(genAI, payload);
+
+        case "generate-workout":
+          return await handleGenerateWorkout(genAI, payload);
+
+        case "chef":
+          return await handleChef(genAI, payload);
+
+        case "genesis":
+          return await handleGenesis(genAI, payload);
+
+        case "chat":
+          return await handleChat(genAI, payload);
+
+        case "parse-voice-food":
+          return await handleParseVoiceFood(genAI, payload);
+
+        case "weekly-digest":
+          return await handleWeeklyDigest(genAI, payload);
+
+        case "adaptive-macros":
+          return await handleAdaptiveMacros(genAI, payload);
+
+        case "meal-plan":
+          return await handleMealPlan(genAI, payload);
+
+        case "morning-briefing":
+          return await handleMorningBriefing(genAI, payload);
+
+        case "food-swap":
+          return await handleFoodSwap(genAI, payload);
+
+        case "recipe-import":
+          return await handleRecipeImport(genAI, payload);
+
+        case "meal-recommend":
+          return await handleMealRecommend(genAI, payload);
+
+        default:
+          throw new Error("__UNKNOWN_TYPE__");
+      }
+    };
+
+    // Register in inflight map if cacheable
+    let aiPromise: Promise<Record<string, unknown>>;
+    if (cacheKey) {
+      aiPromise = aiCall();
+      inflight.set(cacheKey, aiPromise);
+      aiPromise.finally(() => inflight.delete(cacheKey!));
+    } else {
+      aiPromise = aiCall();
+    }
+
     let result: Record<string, unknown>;
-
-    // Route to appropriate handler
-    switch (type) {
-      case "scan-food":
-        result = await handleScanFood(genAI, payload);
-        break;
-
-      case "generate-workout":
-        result = await handleGenerateWorkout(genAI, payload);
-        break;
-
-      case "chef":
-        result = await handleChef(genAI, payload);
-        break;
-
-      case "genesis":
-        result = await handleGenesis(genAI, payload);
-        break;
-
-      case "chat":
-        result = await handleChat(genAI, payload);
-        break;
-
-      case "parse-voice-food":
-        result = await handleParseVoiceFood(genAI, payload);
-        break;
-
-      case "weekly-digest":
-        result = await handleWeeklyDigest(genAI, payload);
-        break;
-
-      case "adaptive-macros":
-        result = await handleAdaptiveMacros(genAI, payload);
-        break;
-
-      case "meal-plan":
-        result = await handleMealPlan(genAI, payload);
-        break;
-
-      case "morning-briefing":
-        result = await handleMorningBriefing(genAI, payload);
-        break;
-
-      case "food-swap":
-        result = await handleFoodSwap(genAI, payload);
-        break;
-
-      default:
+    try {
+      result = await aiPromise;
+    } catch (err) {
+      if (err instanceof Error && err.message === "__UNKNOWN_TYPE__") {
         return new Response(
           JSON.stringify({ error: "Unknown request type" }),
           {
@@ -1725,10 +2290,27 @@ Deno.serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
+      }
+      throw err;
+    }
+
+    // Fire-and-forget cache write for cacheable types
+    if (cacheKey && ttl > 0 && serviceRoleKey) {
+      cacheSet(supabaseUrl, serviceRoleKey, cacheKey, type, result, ttl);
+    }
+
+    // Fire-and-forget audit log for successful AI request
+    if (supabaseService) {
+      supabaseService.rpc("log_audit", {
+        p_user_id: user.id,
+        p_action: `ai_${type}`,
+        p_resource_type: "ai_request",
+        p_details: { type, cached: false, duration_ms: Date.now() - startTime },
+      }).catch(() => {});
     }
 
     return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "miss" },
     });
   } catch (error) {
     console.error("[AI Brain] Error:", error);

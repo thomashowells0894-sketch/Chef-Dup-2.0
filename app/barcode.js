@@ -8,16 +8,21 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Zap, ZapOff, ScanBarcode } from 'lucide-react-native';
+import { ArrowLeft, Zap, ZapOff, ScanBarcode, Search, Users, Flame, Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Gradients } from '../constants/theme';
 import { useFood } from '../context/FoodContext';
-import { hapticSuccess, hapticWarning } from '../lib/haptics';
-import { lookupBarcode } from '../services/barcodeService';
+import { hapticSuccess, hapticWarning, hapticLight } from '../lib/haptics';
+import { lookupBarcode, submitBarcodeData } from '../services/barcodeService';
+import { setCachedBarcode } from '../lib/barcodeCache';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_RECT_W = SCREEN_WIDTH * 0.78;
@@ -32,9 +37,20 @@ export default function BarcodeScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null); // { found, food } or null
   const [showResult, setShowResult] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState('');
+
+  // Quick-entry form state (for not-found fallback)
+  const [entryName, setEntryName] = useState('');
+  const [entryCalories, setEntryCalories] = useState('');
+  const [entryProtein, setEntryProtein] = useState('');
+  const [entryCarbs, setEntryCarbs] = useState('');
+  const [entryFat, setEntryFat] = useState('');
+  const [entryServing, setEntryServing] = useState('1 serving');
+  const [isSaving, setIsSaving] = useState(false);
 
   const lastScannedRef = useRef(null);
   const debounceRef = useRef(false);
+  const calorieInputRef = useRef(null);
 
   // Scan line animation
   const scanLineAnim = useRef(new Animated.Value(0)).current;
@@ -75,6 +91,7 @@ export default function BarcodeScreen() {
       debounceRef.current = true;
       lastScannedRef.current = data;
       setIsLoading(true);
+      setScannedBarcode(data);
 
       await hapticSuccess();
 
@@ -85,11 +102,28 @@ export default function BarcodeScreen() {
 
         if (!response.found) {
           await hapticWarning();
+          // Pre-fill the quick-entry form
+          setEntryName('Scanned Item');
+          setEntryCalories('');
+          setEntryProtein('');
+          setEntryCarbs('');
+          setEntryFat('');
+          setEntryServing('1 serving');
+          // Auto-focus calories input after animation
+          setTimeout(() => calorieInputRef.current?.focus(), 400);
         }
       } catch {
         setResult({ found: false });
         setShowResult(true);
         await hapticWarning();
+        // Pre-fill the quick-entry form
+        setEntryName('Scanned Item');
+        setEntryCalories('');
+        setEntryProtein('');
+        setEntryCarbs('');
+        setEntryFat('');
+        setEntryServing('1 serving');
+        setTimeout(() => calorieInputRef.current?.focus(), 400);
       } finally {
         setIsLoading(false);
         // 2-second debounce window
@@ -134,9 +168,79 @@ export default function BarcodeScreen() {
     debounceRef.current = false;
   }, []);
 
-  const handleAddManually = useCallback(() => {
-    router.replace('/create-food');
-  }, [router]);
+  // Save & Add: save manual entry to barcode cache and add to diary
+  const handleSaveAndAdd = useCallback(async () => {
+    const cal = parseInt(entryCalories, 10);
+    if (!cal || cal <= 0) return;
+
+    setIsSaving(true);
+    await hapticLight();
+
+    const foodData = {
+      name: entryName.trim() || 'Scanned Item',
+      calories: cal,
+      protein: parseFloat(entryProtein) || 0,
+      carbs: parseFloat(entryCarbs) || 0,
+      fat: parseFloat(entryFat) || 0,
+      serving: entryServing.trim() || '1 serving',
+      brand: '',
+    };
+
+    // Cache to both barcode caches so re-scanning finds it instantly
+    if (scannedBarcode) {
+      try {
+        await setCachedBarcode(scannedBarcode, foodData);
+        await submitBarcodeData(scannedBarcode, {
+          ...foodData,
+          fiber: 0,
+          sodium: 0,
+          sugar: 0,
+          image: null,
+          barcode: scannedBarcode,
+        });
+      } catch {
+        // Silent fail - still add to diary
+      }
+    }
+
+    // Add to diary
+    const mealType = getDefaultMealType();
+    const foodEntry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      name: foodData.name,
+      calories: foodData.calories,
+      protein: foodData.protein,
+      carbs: foodData.carbs,
+      fat: foodData.fat,
+      serving: foodData.serving,
+      servingSize: 1,
+      servingUnit: 'serving',
+      barcode: scannedBarcode,
+    };
+
+    addFood(foodEntry, mealType);
+    await hapticSuccess();
+    setIsSaving(false);
+    router.back();
+  }, [entryName, entryCalories, entryProtein, entryCarbs, entryFat, entryServing, scannedBarcode, addFood, getDefaultMealType, router]);
+
+  // Search Instead: navigate to add screen with barcode digits as query
+  const handleSearchInstead = useCallback(() => {
+    hapticLight();
+    router.replace({
+      pathname: '/(tabs)/add',
+      params: { query: scannedBarcode },
+    });
+  }, [router, scannedBarcode]);
+
+  // Submit to Community: navigate to submit-food screen
+  const handleSubmitToCommunity = useCallback(() => {
+    hapticLight();
+    router.push({
+      pathname: '/submit-food',
+      params: { barcode: scannedBarcode, name: entryName.trim() || '' },
+    });
+  }, [router, scannedBarcode, entryName]);
 
   // Permission loading
   if (!permission) {
@@ -342,23 +446,175 @@ export default function BarcodeScreen() {
               </Pressable>
             </View>
           ) : (
-            <View style={styles.sheetContent}>
-              <View style={styles.notFoundIcon}>
-                <ScanBarcode size={36} color={Colors.textTertiary} />
-              </View>
-              <Text style={styles.notFoundTitle}>Product Not Found</Text>
-              <Text style={styles.notFoundSubtitle}>
-                This barcode is not in our database yet.
-              </Text>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={0}
+            >
+              <ScrollView
+                style={styles.fallbackScroll}
+                contentContainerStyle={styles.fallbackScrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Encouraging header */}
+                <View style={styles.fallbackHeader}>
+                  <View style={styles.fallbackIconWrap}>
+                    <Flame size={24} color={Colors.primary} />
+                  </View>
+                  <Text style={styles.fallbackTitle}>
+                    Let's add this food manually
+                  </Text>
+                  <Text style={styles.fallbackSubtitle}>
+                    It only takes a few seconds!
+                  </Text>
+                </View>
 
-              <Pressable style={styles.scanAnotherButton} onPress={handleScanAnother}>
-                <Text style={styles.scanAnotherText}>Try Again</Text>
-              </Pressable>
+                {/* Food name input */}
+                <View style={styles.fallbackField}>
+                  <Text style={styles.fallbackLabel}>Food Name</Text>
+                  <TextInput
+                    style={styles.fallbackInput}
+                    value={entryName}
+                    onChangeText={setEntryName}
+                    placeholder="e.g., Protein Bar"
+                    placeholderTextColor={Colors.textTertiary}
+                    returnKeyType="next"
+                    maxLength={80}
+                  />
+                </View>
 
-              <Pressable style={styles.addManuallyButton} onPress={handleAddManually}>
-                <Text style={styles.addManuallyText}>Add Manually</Text>
-              </Pressable>
-            </View>
+                {/* Calories - prominent large input */}
+                <View style={styles.fallbackCalorieCard}>
+                  <Flame size={20} color={Colors.primary} />
+                  <TextInput
+                    ref={calorieInputRef}
+                    style={styles.fallbackCalorieInput}
+                    value={entryCalories}
+                    onChangeText={setEntryCalories}
+                    placeholder="0"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="numeric"
+                    maxLength={5}
+                    selectTextOnFocus
+                  />
+                  <Text style={styles.fallbackCalorieLabel}>kcal</Text>
+                </View>
+
+                {/* Macros row - optional, smaller inputs */}
+                <View style={styles.fallbackMacroRow}>
+                  <View style={styles.fallbackMacroField}>
+                    <View style={[styles.fallbackMacroDot, { backgroundColor: Colors.protein }]} />
+                    <Text style={styles.fallbackMacroLabel}>Protein</Text>
+                    <TextInput
+                      style={styles.fallbackMacroInput}
+                      value={entryProtein}
+                      onChangeText={setEntryProtein}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="numeric"
+                      maxLength={4}
+                    />
+                    <Text style={styles.fallbackMacroUnit}>g</Text>
+                  </View>
+                  <View style={styles.fallbackMacroField}>
+                    <View style={[styles.fallbackMacroDot, { backgroundColor: Colors.carbs }]} />
+                    <Text style={styles.fallbackMacroLabel}>Carbs</Text>
+                    <TextInput
+                      style={styles.fallbackMacroInput}
+                      value={entryCarbs}
+                      onChangeText={setEntryCarbs}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="numeric"
+                      maxLength={4}
+                    />
+                    <Text style={styles.fallbackMacroUnit}>g</Text>
+                  </View>
+                  <View style={styles.fallbackMacroField}>
+                    <View style={[styles.fallbackMacroDot, { backgroundColor: Colors.fat }]} />
+                    <Text style={styles.fallbackMacroLabel}>Fat</Text>
+                    <TextInput
+                      style={styles.fallbackMacroInput}
+                      value={entryFat}
+                      onChangeText={setEntryFat}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      keyboardType="numeric"
+                      maxLength={4}
+                    />
+                    <Text style={styles.fallbackMacroUnit}>g</Text>
+                  </View>
+                </View>
+
+                {/* Serving size */}
+                <View style={styles.fallbackField}>
+                  <Text style={styles.fallbackLabel}>Serving Size</Text>
+                  <TextInput
+                    style={styles.fallbackInput}
+                    value={entryServing}
+                    onChangeText={setEntryServing}
+                    placeholder="e.g., 1 serving, 1 cup"
+                    placeholderTextColor={Colors.textTertiary}
+                    maxLength={40}
+                  />
+                </View>
+
+                {/* Save & Add button */}
+                <Pressable
+                  style={[
+                    styles.addButton,
+                    (!entryCalories || parseInt(entryCalories, 10) <= 0) && styles.addButtonDisabled,
+                  ]}
+                  onPress={handleSaveAndAdd}
+                  disabled={!entryCalories || parseInt(entryCalories, 10) <= 0 || isSaving}
+                >
+                  <LinearGradient
+                    colors={
+                      entryCalories && parseInt(entryCalories, 10) > 0
+                        ? Gradients.primary
+                        : [Colors.surfaceElevated, Colors.surfaceElevated]
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.addButtonGradient}
+                  >
+                    <Check size={20} color={
+                      entryCalories && parseInt(entryCalories, 10) > 0
+                        ? Colors.background
+                        : Colors.textTertiary
+                    } />
+                    <Text style={[
+                      styles.addButtonText,
+                      (!entryCalories || parseInt(entryCalories, 10) <= 0) && { color: Colors.textTertiary },
+                    ]}>
+                      {isSaving ? 'Saving...' : 'Save & Add'}
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+
+                {/* Secondary actions */}
+                <View style={styles.fallbackActions}>
+                  <Pressable style={styles.fallbackActionLink} onPress={handleSearchInstead}>
+                    <Search size={16} color={Colors.primary} />
+                    <Text style={styles.fallbackActionText}>Search Instead</Text>
+                  </Pressable>
+
+                  <View style={styles.fallbackActionDivider} />
+
+                  <Pressable style={styles.fallbackActionLink} onPress={handleSubmitToCommunity}>
+                    <Users size={16} color={Colors.secondary} />
+                    <Text style={[styles.fallbackActionText, { color: Colors.secondaryText }]}>
+                      Submit to Community
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Scan Another */}
+                <Pressable style={styles.scanAnotherButton} onPress={handleScanAnother}>
+                  <Text style={styles.scanAnotherText}>Scan Another</Text>
+                </Pressable>
+              </ScrollView>
+            </KeyboardAvoidingView>
           )}
         </Animated.View>
       )}
@@ -680,11 +936,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: Spacing.sm,
   },
+  addButtonDisabled: {
+    opacity: 0.6,
+  },
   addButtonGradient: {
+    flexDirection: 'row',
     paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
   },
   addButtonText: {
     fontSize: FontSize.lg,
@@ -716,26 +977,146 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
 
-  // ── Not found ──
-  notFoundIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.surfaceElevated,
+  // ── Quick-entry fallback form ──
+  fallbackScroll: {
+    maxHeight: SCREEN_HEIGHT * 0.55,
+  },
+  fallbackScrollContent: {
+    paddingBottom: Spacing.md,
+  },
+  fallbackHeader: {
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  fallbackIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
-  notFoundTitle: {
-    fontSize: FontSize.xl,
+  fallbackTitle: {
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.text,
-    marginBottom: Spacing.xs,
+    textAlign: 'center',
   },
-  notFoundSubtitle: {
-    fontSize: FontSize.md,
+  fallbackSubtitle: {
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginBottom: Spacing.lg,
+    marginTop: 2,
+  },
+  fallbackField: {
+    marginBottom: Spacing.md,
+  },
+  fallbackLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.xs,
+  },
+  fallbackInput: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    fontSize: FontSize.md,
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  fallbackCalorieCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primarySoft,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    gap: Spacing.sm,
+  },
+  fallbackCalorieInput: {
+    fontSize: 40,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+    textAlign: 'center',
+    minWidth: 80,
+    paddingVertical: Spacing.xs,
+  },
+  fallbackCalorieLabel: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
+  fallbackMacroRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  fallbackMacroField: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  fallbackMacroDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginBottom: 4,
+  },
+  fallbackMacroLabel: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  fallbackMacroInput: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    textAlign: 'center',
+    width: '100%',
+    paddingVertical: 2,
+  },
+  fallbackMacroUnit: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+  },
+  fallbackActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  fallbackActionLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  fallbackActionText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primaryText,
+  },
+  fallbackActionDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
 });

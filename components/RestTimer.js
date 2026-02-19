@@ -1,30 +1,76 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
-import RNAnimated, { FadeInUp, FadeOutDown } from 'react-native-reanimated';
-import { hapticSuccess } from '../lib/haptics';
-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadows } from '../constants/theme';
+/**
+ * RestTimer - Full-screen overlay with circular countdown.
+ *
+ * Features:
+ * - Auto-starts after set completion
+ * - Animated circular progress ring
+ * - Skip button
+ * - Extend +30s button
+ * - Haptic feedback at 3, 2, 1, 0
+ * - Configurable duration presets
+ */
+import React, { useEffect, useRef, useMemo } from 'react';
+import { View, Text, Pressable, StyleSheet, Dimensions } from 'react-native';
+import Animated, { FadeIn, FadeOut, useSharedValue, useAnimatedProps, withTiming, Easing } from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
+import { X, Plus, Timer, SkipForward } from 'lucide-react-native';
+import { hapticLight, hapticHeavy, hapticSuccess } from '../lib/haptics';
+import {
+  Colors,
+  Spacing,
+  FontSize,
+  FontWeight,
+  BorderRadius,
+  Shadows,
+} from '../constants/theme';
 
-const TIMER_SIZE = 100;
-const RING_WIDTH = 4;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const RING_SIZE = Math.min(SCREEN_WIDTH * 0.55, 220);
+const RING_STROKE = 8;
 
-export default function RestTimer({ seconds = 60, onComplete, onSkip, visible }) {
-  const [remaining, setRemaining] = useState(seconds);
-  const progressAnim = useRef(new Animated.Value(1)).current;
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-  // Reset when timer becomes visible or seconds change
+const REST_PRESETS = [60, 90, 120, 180];
+
+export default function RestTimer({
+  visible,
+  seconds = 60,
+  remaining,
+  totalSeconds,
+  onComplete,
+  onSkip,
+  onExtend,
+  // Legacy props (for generate-workout compat)
+  onDismiss,
+}) {
+  const lastHapticRef = useRef(-1);
+  const radius = (RING_SIZE - RING_STROKE) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const center = RING_SIZE / 2;
+
+  // Determine effective values (support both legacy and new API)
+  const effectiveTotal = totalSeconds || seconds;
+  const effectiveRemaining = remaining !== undefined ? remaining : null;
+
+  // Legacy internal timer state
+  const [legacyRemaining, setLegacyRemaining] = React.useState(seconds);
+  const isLegacy = remaining === undefined;
+  const displayRemaining = isLegacy ? legacyRemaining : effectiveRemaining;
+
+  // Reset legacy timer when visible/seconds change
   useEffect(() => {
-    if (visible) {
-      setRemaining(seconds);
-      progressAnim.setValue(1);
+    if (isLegacy && visible) {
+      setLegacyRemaining(seconds);
+      lastHapticRef.current = -1;
     }
-  }, [visible, seconds]);
+  }, [visible, seconds, isLegacy]);
 
-  // Countdown interval
+  // Legacy countdown
   useEffect(() => {
-    if (!visible || remaining <= 0) return;
+    if (!isLegacy || !visible || legacyRemaining <= 0) return;
 
     const interval = setInterval(() => {
-      setRemaining((prev) => {
+      setLegacyRemaining((prev) => {
         const next = prev - 1;
         if (next <= 0) {
           clearInterval(interval);
@@ -37,133 +83,221 @@ export default function RestTimer({ seconds = 60, onComplete, onSkip, visible })
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [visible, remaining <= 0]);
+  }, [visible, legacyRemaining <= 0, isLegacy]);
 
-  // Animate progress ring
+  // Animated progress
+  const animatedProgress = useSharedValue(1);
+
   useEffect(() => {
-    if (!visible || seconds === 0) return;
-    Animated.timing(progressAnim, {
-      toValue: remaining / seconds,
-      duration: 950,
-      useNativeDriver: false,
-    }).start();
-  }, [remaining, visible]);
+    if (!visible || effectiveTotal === 0) return;
+    const progress = (displayRemaining || 0) / effectiveTotal;
+    animatedProgress.value = withTiming(Math.max(0, Math.min(1, progress)), {
+      duration: 900,
+      easing: Easing.linear,
+    });
+  }, [displayRemaining, visible, effectiveTotal]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: circumference * (1 - animatedProgress.value),
+  }));
+
+  // Haptics at 3, 2, 1, 0
+  useEffect(() => {
+    if (!visible) return;
+    const r = displayRemaining || 0;
+    if (r <= 3 && r >= 0 && r !== lastHapticRef.current) {
+      lastHapticRef.current = r;
+      if (r === 0) {
+        hapticSuccess();
+        if (!isLegacy) onComplete?.();
+      } else {
+        hapticHeavy();
+      }
+    }
+  }, [displayRemaining, visible]);
+
+  const formatTime = (s) => {
+    if (s === null || s === undefined) return '0:00';
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  // Determine ring color based on remaining time
+  const ringColor = useMemo(() => {
+    const r = displayRemaining || 0;
+    const total = effectiveTotal || 1;
+    const ratio = r / total;
+    if (ratio > 0.5) return Colors.primary;
+    if (ratio > 0.2) return Colors.warning;
+    return Colors.error;
+  }, [displayRemaining, effectiveTotal]);
+
+  const handleSkip = () => {
+    hapticLight();
+    if (onSkip) {
+      onSkip();
+    } else if (onDismiss) {
+      onDismiss();
+    } else {
+      onComplete?.();
+    }
+  };
+
+  const handleExtend = () => {
+    hapticLight();
+    if (onExtend) {
+      onExtend(30);
+    } else if (isLegacy) {
+      setLegacyRemaining((prev) => prev + 30);
+    }
+  };
 
   if (!visible) return null;
 
-  const formatTime = (s) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    if (mins > 0) return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-    return `${secs}`;
-  };
-
-  // Progress ring via border trick (simplified circular progress)
-  const ringRotation = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
   return (
-    <RNAnimated.View entering={FadeInUp} exiting={FadeOutDown} style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.label}>Rest Timer</Text>
+    <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={styles.overlay}>
+      <View style={styles.backdrop} />
+
+      <View style={styles.content}>
+        {/* Title */}
+        <View style={styles.headerRow}>
+          <Timer size={20} color={Colors.textSecondary} />
+          <Text style={styles.title}>Rest Timer</Text>
+        </View>
 
         {/* Circular countdown */}
-        <View style={styles.timerRing}>
-          {/* Background ring */}
-          <View style={styles.ringBackground} />
-          {/* Progress ring overlay */}
-          <Animated.View
-            style={[
-              styles.ringProgress,
-              { transform: [{ rotate: ringRotation }] },
-            ]}
-          />
-          {/* Center content */}
-          <View style={styles.timerCenter}>
-            <Text style={styles.timerText}>{formatTime(remaining)}</Text>
-            <Text style={styles.timerUnit}>{remaining > 60 ? 'min' : 'sec'}</Text>
+        <View style={[styles.ringContainer, { width: RING_SIZE, height: RING_SIZE }]}>
+          <Svg width={RING_SIZE} height={RING_SIZE}>
+            {/* Background ring */}
+            <Circle
+              cx={center}
+              cy={center}
+              r={radius}
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth={RING_STROKE}
+              fill="none"
+            />
+            {/* Progress ring */}
+            <AnimatedCircle
+              cx={center}
+              cy={center}
+              r={radius}
+              stroke={ringColor}
+              strokeWidth={RING_STROKE}
+              strokeLinecap="round"
+              fill="none"
+              strokeDasharray={circumference}
+              animatedProps={animatedProps}
+              rotation="-90"
+              origin={`${center}, ${center}`}
+            />
+          </Svg>
+          <View style={styles.centerContent} accessibilityLiveRegion="polite">
+            <Text style={styles.timeText}>{formatTime(displayRemaining)}</Text>
+            <Text style={styles.timeSubLabel}>
+              of {formatTime(effectiveTotal)}
+            </Text>
           </View>
         </View>
 
-        <Pressable style={styles.skipButton} onPress={onSkip} hitSlop={12}>
-          <Text style={styles.skipText}>Skip</Text>
-        </Pressable>
+        {/* Action buttons */}
+        <View style={styles.actions}>
+          {/* Extend +30s */}
+          <Pressable style={styles.extendButton} onPress={handleExtend}>
+            <Plus size={18} color={Colors.primary} />
+            <Text style={styles.extendText}>+30s</Text>
+          </Pressable>
+
+          {/* Skip */}
+          <Pressable style={styles.skipButton} onPress={handleSkip}>
+            <SkipForward size={18} color={Colors.text} />
+            <Text style={styles.skipText}>Skip</Text>
+          </Pressable>
+        </View>
       </View>
-    </RNAnimated.View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999,
   },
-  card: {
-    backgroundColor: Colors.surfaceGlass,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: BorderRadius.xl,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    alignItems: 'center',
-    ...Shadows.card,
-  },
-  label: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: Spacing.sm,
-  },
-  timerRing: {
-    width: TIMER_SIZE,
-    height: TIMER_SIZE,
-    borderRadius: TIMER_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  ringBackground: {
+  backdrop: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: TIMER_SIZE / 2,
-    borderWidth: RING_WIDTH,
-    borderColor: Colors.border,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
   },
-  ringProgress: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: TIMER_SIZE / 2,
-    borderWidth: RING_WIDTH,
-    borderColor: Colors.primary,
-    borderRightColor: 'transparent',
-    borderBottomColor: 'transparent',
-  },
-  timerCenter: {
+  content: {
     alignItems: 'center',
+    padding: Spacing.xl,
   },
-  timerText: {
-    fontSize: FontSize.xxxl,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  title: {
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.text,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
   },
-  timerUnit: {
-    fontSize: FontSize.xs,
+  ringContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+  },
+  centerContent: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  timeText: {
+    fontSize: 56,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  timeSubLabel: {
+    fontSize: FontSize.sm,
     color: Colors.textTertiary,
     marginTop: -4,
   },
+  actions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  extendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: Colors.primarySoft,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  extendText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
   skipButton: {
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
   },
   skipText: {
     fontSize: FontSize.md,
-    fontWeight: FontWeight.medium,
-    color: Colors.textTertiary,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
   },
 });

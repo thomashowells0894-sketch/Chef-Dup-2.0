@@ -14,22 +14,149 @@
       "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vibefit.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "VibeFit uses the camera to scan food and barcodes for nutritional tracking.",
+        "NSMicrophoneUsageDescription": "VibeFit uses the microphone for voice food logging.",
+        "NSPhotoLibraryUsageDescription": "VibeFit uses your photo library for progress photos and food journal.",
+        "NSHealthShareUsageDescription": "VibeFit reads your health data to track steps, active calories, weight, and heart rate.",
+        "NSHealthUpdateUsageDescription": "VibeFit writes workout data to Apple Health.",
+        "NSFaceIDUsageDescription": "VibeFit uses Face ID to protect your private health data."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
+      }
     },
     "android": {
+      "package": "com.vibefit.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.BODY_SENSORS",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "plugins": [
+      "@sentry/react-native/expo",
       "expo-router",
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VibeFit uses the camera to scan food and barcodes."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#00D4FF"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "VibeFit uses your photos for progress tracking and food journal."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "VibeFit uses the microphone for voice food logging."
+        }
+      ],
+      [
+        "expo-quick-actions",
+        {
+          "iosActions": [
+            {
+              "id": "quick_cal",
+              "title": "Quick Log",
+              "icon": "symbol:bolt.fill"
+            },
+            {
+              "id": "start_fasting",
+              "title": "Start Fasting",
+              "icon": "symbol:timer"
+            },
+            {
+              "id": "log_water",
+              "title": "Log Water",
+              "icon": "symbol:drop.fill"
+            }
+          ]
+        }
+      ],
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "privacyManifests": {
+              "NSPrivacyAccessedAPITypes": [
+                {
+                  "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+                  "NSPrivacyAccessedAPITypeReasons": [
+                    "CA92.1"
+                  ]
+                },
+                {
+                  "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+                  "NSPrivacyAccessedAPITypeReasons": [
+                    "E174.1"
+                  ]
+                }
+              ],
+              "NSPrivacyCollectedDataTypes": [
+                {
+                  "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeHealthAndFitness",
+                  "NSPrivacyCollectedDataTypeLinked": true,
+                  "NSPrivacyCollectedDataTypeTracking": false,
+                  "NSPrivacyCollectedDataTypePurposes": [
+                    "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+                  ]
+                },
+                {
+                  "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress",
+                  "NSPrivacyCollectedDataTypeLinked": true,
+                  "NSPrivacyCollectedDataTypeTracking": false,
+                  "NSPrivacyCollectedDataTypePurposes": [
+                    "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+                  ]
+                }
+              ],
+              "NSPrivacyTracking": false,
+              "NSPrivacyTrackingDomains": []
+            }
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6a3b33c8-7992-4289-9176-f1b2db3b47f8"
+      }
+    },
+    "owner": "thomashowells0894"
   }
 }
