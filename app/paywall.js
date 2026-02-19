@@ -50,9 +50,9 @@ import { useSubscription } from '../context/SubscriptionContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Legal URLs - Replace with your actual URLs
-const TERMS_URL = 'https://yourapp.com/terms';
-const PRIVACY_URL = 'https://yourapp.com/privacy';
+// Legal URLs
+const TERMS_URL = 'https://thomashowells0894-sketch.github.io/Chef-Dup-2.0/terms.html';
+const PRIVACY_URL = 'https://thomashowells0894-sketch.github.io/Chef-Dup-2.0/privacy-policy.html';
 
 // Premium accent color - Electric Blue
 const ACCENT = Colors.primary;

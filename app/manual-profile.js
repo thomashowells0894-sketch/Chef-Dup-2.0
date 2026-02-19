@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeft } from 'lucide-react-native';
 import { useProfile } from '../context/ProfileContext';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Gradients } from '../constants/theme';
 
@@ -234,7 +234,7 @@ export default function ManualProfile() {
 
         {/* Header */}
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          <ArrowLeft size={24} color={Colors.text} />
         </TouchableOpacity>
 
         <Text style={styles.header}>Profile Setup</Text>

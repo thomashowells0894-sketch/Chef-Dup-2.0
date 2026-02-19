@@ -22,8 +22,8 @@ import {
   Shadows,
 } from '../constants/theme';
 
-export default function StreakRepairCard() {
-  const { brokenStreak, canRepairStreak, repairStreak, currentStreak } = useGamification();
+function StreakRepairCard() {
+  const { brokenStreak, canRepairStreak, repairStreak, currentStreak, streakRepairCost, totalXP } = useGamification();
   const [isRepairing, setIsRepairing] = useState(false);
   const [repaired, setRepaired] = useState(false);
 
@@ -118,6 +118,8 @@ export default function StreakRepairCard() {
           opacity: scaleAnim,
         },
       ]}
+      accessibilityRole="alert"
+      accessibilityLabel={`Streak broken. Your ${brokenStreak.previousStreak}-day streak ended. Repair costs ${streakRepairCost} XP. You have ${totalXP} XP.`}
     >
       <BlurView intensity={25} tint="dark" style={styles.blurContainer}>
         <LinearGradient
@@ -148,11 +150,21 @@ export default function StreakRepairCard() {
               </View>
             </Animated.View>
 
-            {/* Text */}
+            {/* Text — loss aversion framing */}
             <View style={styles.textContainer}>
-              <Text style={styles.title}>Streak Broken!</Text>
+              <Text style={styles.title}>
+                {brokenStreak.previousStreak >= 14
+                  ? `Don't lose ${brokenStreak.previousStreak} days`
+                  : brokenStreak.previousStreak >= 7
+                  ? 'Your streak is cracking'
+                  : 'Streak Broken!'}
+              </Text>
               <Text style={styles.subtitle}>
-                Your {brokenStreak.previousStreak}-day streak ended. Repair it now!
+                {brokenStreak.previousStreak >= 14
+                  ? `${brokenStreak.previousStreak} days of discipline — gone unless you act now.`
+                  : brokenStreak.previousStreak >= 7
+                  ? `Your ${brokenStreak.previousStreak}-day streak is about to shatter. Repair it before midnight.`
+                  : `Your ${brokenStreak.previousStreak}-day streak ended. Repair it now!`}
               </Text>
             </View>
           </View>
@@ -160,11 +172,15 @@ export default function StreakRepairCard() {
           {/* Repair button */}
           <Pressable
             onPress={handleRepair}
-            disabled={isRepairing}
+            disabled={isRepairing || totalXP < streakRepairCost}
             style={styles.buttonWrapper}
+            accessibilityRole="button"
+            accessibilityLabel={`Repair streak for ${streakRepairCost} XP`}
+            accessibilityHint="Restores your streak"
+            accessibilityState={{ disabled: isRepairing || totalXP < streakRepairCost }}
           >
             <LinearGradient
-              colors={isRepairing ? ['#666', '#555'] : ['#FF6B35', '#FF453A']}
+              colors={isRepairing || totalXP < streakRepairCost ? ['#666', '#555'] : ['#FF6B35', '#FF453A']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.repairButton}
@@ -174,7 +190,11 @@ export default function StreakRepairCard() {
               ) : (
                 <>
                   <Sparkles size={18} color="#fff" />
-                  <Text style={styles.buttonText}>Repair Streak</Text>
+                  <Text style={styles.buttonText}>
+                    {totalXP >= streakRepairCost
+                      ? `Repair Streak (${streakRepairCost} XP)`
+                      : `Need ${streakRepairCost} XP`}
+                  </Text>
                 </>
               )}
             </LinearGradient>
@@ -187,6 +207,8 @@ export default function StreakRepairCard() {
     </Animated.View>
   );
 }
+
+export default React.memo(StreakRepairCard);
 
 const styles = StyleSheet.create({
   container: {

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
+import PremiumGate from '../components/PremiumGate';
 import {
   View,
   Text,
@@ -27,12 +29,15 @@ import {
 } from 'lucide-react-native';
 import { hapticLight, hapticImpact, hapticSuccess } from '../lib/haptics';
 import ScreenWrapper from '../components/ScreenWrapper';
+import OptimizedFlatList from '../components/OptimizedFlatList';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Shadows } from '../constants/theme';
 import { chatWithNutritionist } from '../services/ai';
 import { useAIContext } from '../hooks/useAIContext';
-import { useFood } from '../context/FoodContext';
+import { useMeals } from '../context/MealContext';
 import { useFasting } from '../context/FastingContext';
 import { useOffline } from '../context/OfflineContext';
+import { sanitizeChatMessage } from '../lib/validation';
+import { checkAIRateLimit } from '../lib/rateLimiter';
 
 const STORAGE_KEY = '@vibefit_chat_history';
 const MAX_STORED_MESSAGES = 50;
@@ -187,10 +192,10 @@ function MessageBubble({ message, onAddFood, addedFoods }) {
   );
 }
 
-export default function ChatScreen() {
+function ChatScreenInner() {
   const router = useRouter();
   const userContext = useAIContext();
-  const { addFood } = useFood();
+  const { addFood } = useMeals();
   const { recordMealLogged } = useFasting();
   const { isOnline } = useOffline();
   const flatListRef = useRef(null);
@@ -328,11 +333,18 @@ export default function ChatScreen() {
   }, [messages, hasLoadedHistory]);
 
   const sendMessage = useCallback(async (text) => {
-    const trimmed = (text || inputText).trim();
+    const trimmed = sanitizeChatMessage(text || inputText, 1000);
     if (!trimmed || isLoading) return;
 
     if (!isOnline) {
       Alert.alert('No Connection', 'AI chat requires an internet connection.');
+      return;
+    }
+
+    // Client-side rate limiting
+    const rateCheck = checkAIRateLimit('chat');
+    if (!rateCheck.allowed) {
+      Alert.alert('Slow Down', rateCheck.message);
       return;
     }
 
@@ -483,7 +495,7 @@ export default function ChatScreen() {
         </ReAnimated.View>
 
         {/* Messages */}
-        <FlatList
+        <OptimizedFlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
@@ -493,6 +505,9 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesList}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
           onScroll={({ nativeEvent }) => {
             const { contentOffset, layoutMeasurement, contentSize } = nativeEvent;
             const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
@@ -797,3 +812,13 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
 });
+
+export default function ChatScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="ChatScreen">
+      <PremiumGate>
+        <ChatScreenInner {...props} />
+      </PremiumGate>
+    </ScreenErrorBoundary>
+  );
+}

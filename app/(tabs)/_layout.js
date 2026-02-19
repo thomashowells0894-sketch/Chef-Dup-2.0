@@ -7,6 +7,7 @@ import { BlurView } from 'expo-blur';
 import { hapticImpact, hapticLight } from '../../lib/haptics';
 import ReAnimated, { FadeInUp } from 'react-native-reanimated';
 import { Colors, Spacing, BorderRadius, Gradients, Glass } from '../../constants/theme';
+import { trackEvent } from '../../lib/analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -89,6 +90,9 @@ function KineticFAB({ onPress }) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={styles.fabContainer}
+      accessibilityRole="button"
+      accessibilityLabel="Quick add food or exercise"
+      accessibilityHint="Opens the add screen"
     >
       {/* Outer glow ring */}
       <Animated.View
@@ -142,9 +146,11 @@ function KineticFAB({ onPress }) {
   );
 }
 
-// Tab icon with spring animation
+// Tab icon with spring animation + glowing active pill
 function TabBarIcon({ icon: Icon, focused }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const pillOpacity = useRef(new Animated.Value(0)).current;
+  const pillScale = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -153,14 +159,26 @@ function TabBarIcon({ icon: Icon, focused }) {
       tension: 300,
       useNativeDriver: true,
     }).start();
-  }, [focused, scaleAnim]);
+    Animated.timing(pillOpacity, {
+      toValue: focused ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    Animated.spring(pillScale, {
+      toValue: focused ? 1 : 0.8,
+      friction: 8,
+      tension: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [focused, scaleAnim, pillOpacity, pillScale]);
 
   return (
     <Animated.View style={[styles.tabIconWrap, { transform: [{ scale: scaleAnim }] }]}>
+      <Animated.View style={[styles.tabActivePill, { opacity: pillOpacity, transform: [{ scale: pillScale }] }]} />
       <Icon
         size={24}
         color={focused ? Colors.tabBarActive : Colors.tabBarInactive}
-        strokeWidth={focused ? 2.5 : 2}
+        strokeWidth={focused ? 2.5 : 1.8}
       />
       {focused && <View style={styles.tabIndicator} />}
     </Animated.View>
@@ -183,24 +201,25 @@ const TAB_LABELS = {
   profile: 'Profile',
 };
 
-// Floating Glass Dock
+// Floating Glass Dock with frosted blur effect
 function FloatingDock({ state, descriptors, navigation }) {
   return (
     <ReAnimated.View
       entering={FadeInUp.delay(200).springify().mass(0.5).damping(10)}
       style={styles.dockOuter}
     >
-      {/* Blur backdrop */}
+      {/* Frosted glass blur backdrop */}
       {Platform.OS === 'ios' ? (
-        <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill}>
+        <BlurView intensity={100} tint="dark" style={[StyleSheet.absoluteFill, styles.dockBlurClip]}>
           <View style={[StyleSheet.absoluteFill, styles.dockOverlay]} />
         </BlurView>
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.dockFallback]} />
       )}
 
-      {/* Border overlay */}
+      {/* Subtle top border highlight for floating appearance */}
       <View style={styles.dockBorder} />
+      <View style={styles.dockTopHighlight} />
 
       {/* Tab items */}
       <View style={styles.dockRow}>
@@ -216,13 +235,18 @@ function FloatingDock({ state, descriptors, navigation }) {
               canPreventDefault: true,
             });
             if (!focused && !event.defaultPrevented) {
+              // Track tab switch as a navigation event
+              trackEvent('navigation', 'tab_switch', {
+                label: route.name,
+                metadata: { tabName: TAB_LABELS[route.name] || route.name },
+              });
               navigation.navigate(route.name);
             }
           };
 
           if (isFab) {
             return (
-              <View key={route.key} style={styles.fabSlot}>
+              <View key={route.key} style={styles.fabSlot} testID="add-tab">
                 <KineticFAB onPress={onPress} />
               </View>
             );
@@ -231,14 +255,25 @@ function FloatingDock({ state, descriptors, navigation }) {
           const IconComponent = TAB_ICONS[route.name];
           if (!IconComponent) return null;
 
+          const tabTestIds = {
+            index: 'home-tab',
+            diary: 'diary-tab',
+            stats: 'stats-tab',
+            profile: 'profile-tab',
+          };
+
           return (
             <Pressable
               key={route.key}
+              testID={tabTestIds[route.name]}
               onPress={async () => {
                 await hapticLight();
                 onPress();
               }}
               style={styles.dockTab}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
+              accessibilityLabel={TAB_LABELS[route.name] || route.name}
             >
               <TabBarIcon icon={IconComponent} focused={focused} />
             </Pressable>
@@ -255,9 +290,11 @@ export default function TabLayout() {
       tabBar={(props) => <FloatingDock {...props} />}
       screenOptions={{
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Dashboard' }} />
+      <Tabs.Screen name="index" options={{ title: 'Dashboard', lazy: false }} />
       <Tabs.Screen name="diary" options={{ title: 'Diary' }} />
       <Tabs.Screen name="add" options={{ title: '' }} />
       <Tabs.Screen name="stats" options={{ title: 'Stats' }} />
@@ -276,25 +313,42 @@ const styles = StyleSheet.create({
     right: 20,
     height: 70,
     borderRadius: 35,
-    overflow: 'hidden',
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.35,
     shadowRadius: 30,
     elevation: 16,
+    overflow: 'hidden',
+  },
+  dockBlurClip: {
+    borderRadius: 35,
+    overflow: 'hidden',
   },
   dockOverlay: {
-    backgroundColor: 'rgba(10, 10, 14, 0.65)',
+    backgroundColor: 'rgba(10, 10, 14, 0.55)',
+    borderRadius: 35,
+    overflow: 'hidden',
   },
   dockFallback: {
-    backgroundColor: 'rgba(10, 10, 14, 0.95)',
+    backgroundColor: 'rgba(10, 10, 14, 0.92)',
     borderRadius: 35,
+    overflow: 'hidden',
   },
   dockBorder: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 35,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderTopColor: 'rgba(255, 255, 255, 0.30)',
+  },
+  dockTopHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 20,
+    right: 20,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 0.5,
   },
   dockRow: {
     flex: 1,
@@ -312,11 +366,22 @@ const styles = StyleSheet.create({
   tabIconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: 48,
+    height: 40,
+  },
+  tabActivePill: {
+    position: 'absolute',
+    width: 48,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 212, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.15)',
   },
   tabIndicator: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 16,
+    height: 3,
+    borderRadius: 1.5,
     backgroundColor: Colors.primary,
     marginTop: 4,
     alignSelf: 'center',

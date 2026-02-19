@@ -16,8 +16,9 @@ import { ArrowLeft, Check, Flame, Beef, Wheat, Droplets } from 'lucide-react-nat
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Colors, Gradients, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { useMeals } from '../context/MealContext';
 import { hapticSuccess, hapticLight } from '../lib/haptics';
+import { sanitizeFoodName, sanitizeText, validateMacro } from '../lib/validation';
 
 const FOOD_EMOJIS = [
   '\u{1F37D}\u{FE0F}', '\u{1F357}', '\u{1F969}', '\u{1F41F}', '\u{1F95A}', '\u{1F957}',
@@ -74,7 +75,7 @@ function getDefaultMealByTime() {
 export default function CreateFoodScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { addFood } = useFood();
+  const { addFood } = useMeals();
 
   const meal = params.meal || getDefaultMealByTime();
 
@@ -114,7 +115,8 @@ export default function CreateFoodScreen() {
   };
 
   const handleSave = () => {
-    if (!name.trim()) {
+    const sanitizedName = sanitizeFoodName(name, 100);
+    if (!sanitizedName) {
       Alert.alert('Missing Name', 'Please enter a name for this food.');
       return;
     }
@@ -125,13 +127,13 @@ export default function CreateFoodScreen() {
 
     const food = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-      name: name.trim(),
+      name: sanitizedName,
       emoji: selectedEmoji,
-      calories: parseInt(calories) || 0,
-      protein: parseFloat(protein) || 0,
-      carbs: parseFloat(carbs) || 0,
-      fat: parseFloat(fat) || 0,
-      serving: serving.trim() || '1 serving',
+      calories: validateMacro(calories, 10000),
+      protein: validateMacro(protein, 1000),
+      carbs: validateMacro(carbs, 1000),
+      fat: validateMacro(fat, 1000),
+      serving: sanitizeText(serving, 50) || '1 serving',
       servingSize: 1,
       servingUnit: 'serving',
     };
@@ -204,6 +206,7 @@ export default function CreateFoodScreen() {
                 value={name}
                 onChangeText={setName}
                 returnKeyType="next"
+                maxLength={100}
               />
             </View>
           </Animated.View>
@@ -219,6 +222,7 @@ export default function CreateFoodScreen() {
                 value={serving}
                 onChangeText={setServing}
                 returnKeyType="next"
+                maxLength={50}
               />
             </View>
           </Animated.View>
@@ -241,6 +245,7 @@ export default function CreateFoodScreen() {
                   onChangeText={setCalories}
                   keyboardType="numeric"
                   returnKeyType="next"
+                  maxLength={5}
                 />
                 <Text style={styles.nutritionUnit}>kcal</Text>
               </View>
@@ -259,6 +264,7 @@ export default function CreateFoodScreen() {
                   onChangeText={setProtein}
                   keyboardType="decimal-pad"
                   returnKeyType="next"
+                  maxLength={6}
                 />
                 <Text style={styles.nutritionUnit}>g</Text>
               </View>
@@ -277,6 +283,7 @@ export default function CreateFoodScreen() {
                   onChangeText={setCarbs}
                   keyboardType="decimal-pad"
                   returnKeyType="next"
+                  maxLength={6}
                 />
                 <Text style={styles.nutritionUnit}>g</Text>
               </View>
@@ -295,6 +302,7 @@ export default function CreateFoodScreen() {
                   onChangeText={setFat}
                   keyboardType="decimal-pad"
                   returnKeyType="done"
+                  maxLength={6}
                 />
                 <Text style={styles.nutritionUnit}>g</Text>
               </View>

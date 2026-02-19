@@ -30,6 +30,7 @@ import {
   BorderRadius,
   Shadows,
 } from '../constants/theme';
+import { Sentry } from '../lib/sentry';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -56,8 +57,7 @@ class ErrorBoundary extends React.Component {
 
     this.setState({ errorInfo });
 
-    // In production, you would send this to an error reporting service
-    // Example: Sentry.captureException(error, { extra: errorInfo });
+    Sentry.captureException(error, { extra: { componentStack: errorInfo?.componentStack } });
   }
 
   handleRetry = () => {

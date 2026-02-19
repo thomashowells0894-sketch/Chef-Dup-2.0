@@ -11,13 +11,13 @@ import {
 import { X, Trash2, Coffee, UtensilsCrossed, Moon, Cookie } from 'lucide-react-native';
 import { hapticLight, hapticWarning } from '../lib/haptics';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
-import { useFood } from '../context/FoodContext';
+import { useCurrentDayMeals, useMealTotals, useMealActions } from '../context/MealContext';
 
 const MEAL_CONFIG = {
-  breakfast: { icon: Coffee, label: 'Breakfast', color: '#FFD60A' },
-  lunch: { icon: UtensilsCrossed, label: 'Lunch', color: '#30D158' },
-  dinner: { icon: Moon, label: 'Dinner', color: '#BF5AF2' },
-  snacks: { icon: Cookie, label: 'Snacks', color: '#FF9F0A' },
+  breakfast: { icon: Coffee, label: 'Breakfast', color: Colors.mealBreakfast },
+  lunch: { icon: UtensilsCrossed, label: 'Lunch', color: Colors.mealLunch },
+  dinner: { icon: Moon, label: 'Dinner', color: Colors.mealDinner },
+  snacks: { icon: Cookie, label: 'Snacks', color: Colors.mealSnacks },
 };
 
 function MealSection({ mealType, items, onRemove }) {
@@ -65,7 +65,9 @@ function MealSection({ mealType, items, onRemove }) {
 }
 
 export default function CaloriesModal({ visible, onClose }) {
-  const { meals, totals, goals, remaining, removeFood } = useFood();
+  const { meals } = useCurrentDayMeals();
+  const { totals, goals, remaining } = useMealTotals();
+  const { removeFood } = useMealActions();
 
   const handleClose = async () => {
     await hapticLight();
@@ -99,7 +101,7 @@ export default function CaloriesModal({ visible, onClose }) {
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.container}>
+      <View style={styles.container} accessibilityViewIsModal={true} accessibilityLabel="Calorie goal editor">
         <View style={styles.header}>
           <Text style={styles.title}>Today's Food Log</Text>
           <Pressable style={styles.closeButton} onPress={handleClose}>

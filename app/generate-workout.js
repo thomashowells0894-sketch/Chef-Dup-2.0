@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import {
   View,
   Text,
@@ -44,13 +45,19 @@ import {
   BorderRadius,
 } from '../constants/theme';
 import { generateWorkout } from '../services/ai';
-import { useFood } from '../context/FoodContext';
+import { suggestSupersets } from '../lib/workoutEngine';
+import { useMeals } from '../context/MealContext';
 import { useOffline } from '../context/OfflineContext';
 import PremiumGate from '../components/PremiumGate';
 import SetLogger from '../components/SetLogger';
 import RestTimer from '../components/RestTimer';
 import PRCelebration from '../components/PRCelebration';
+import WorkoutRatingModal from '../components/WorkoutRatingModal';
 import usePersonalRecords from '../hooks/usePersonalRecords';
+import useWorkoutHistory from '../hooks/useWorkoutHistory';
+import useWorkoutTemplates from '../hooks/useWorkoutTemplates';
+import useWorkoutRatings from '../hooks/useWorkoutRatings';
+import useRecovery from '../hooks/useRecovery';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -335,11 +342,206 @@ function SimpleExerciseCard({ exercise }) {
   );
 }
 
+// Recovery Status Card
+function RecoveryStatusCard({ score, dataSource, readinessLabel }) {
+  if (score === 0) return null;
+
+  const { label, color, recommendation } = readinessLabel;
+
+  let statusIcon = Heart;
+  let statusMessage = '';
+  let borderColor = color + '40';
+
+  if (score < 40) {
+    statusMessage = 'Recovery is low. Consider rest or light yoga.';
+    statusIcon = AlertCircle;
+    borderColor = '#FF525240';
+  } else if (score < 60) {
+    statusMessage = 'Moderate recovery. Reduce intensity 20%.';
+    borderColor = '#FF980040';
+  } else if (score >= 80) {
+    statusMessage = 'Peak recovery. Push for PRs today!';
+    borderColor = '#00E67640';
+  } else {
+    statusMessage = recommendation;
+  }
+
+  return (
+    <View style={[recoveryStyles.container, { borderColor }]}>
+      <View style={recoveryStyles.headerRow}>
+        <View style={[recoveryStyles.iconContainer, { backgroundColor: color + '20' }]}>
+          <Heart size={16} color={color} />
+        </View>
+        <View style={recoveryStyles.headerText}>
+          <Text style={recoveryStyles.title}>Recovery Status</Text>
+          {dataSource === 'biometric-enhanced' && (
+            <View style={recoveryStyles.biometricBadge}>
+              <Text style={recoveryStyles.biometricBadgeText}>HRV</Text>
+            </View>
+          )}
+        </View>
+        <View style={[recoveryStyles.scoreBadge, { backgroundColor: color + '20' }]}>
+          <Text style={[recoveryStyles.scoreText, { color }]}>{score}</Text>
+          <Text style={[recoveryStyles.scoreLabel, { color: color + 'CC' }]}>{label}</Text>
+        </View>
+      </View>
+
+      {/* Score bar */}
+      <View style={recoveryStyles.barBackground}>
+        <View style={[recoveryStyles.barFill, { width: `${score}%`, backgroundColor: color }]} />
+      </View>
+
+      {/* Message */}
+      <Text style={recoveryStyles.message}>{statusMessage}</Text>
+
+      {dataSource === 'self-reported' && (
+        <Text style={recoveryStyles.sourceHint}>Based on self-reported data</Text>
+      )}
+    </View>
+  );
+}
+
+const recoveryStyles = StyleSheet.create({
+  container: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.sm,
+  },
+  headerText: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  title: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  biometricBadge: {
+    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  biometricBadgeText: {
+    fontSize: 9,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
+  scoreBadge: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  scoreText: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+  },
+  scoreLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.medium,
+  },
+  barBackground: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 3,
+    marginBottom: Spacing.sm,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  message: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  sourceHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    marginTop: Spacing.xs,
+    fontStyle: 'italic',
+  },
+});
+
+// Recovery Banner — color-coded by recovery score
+function RecoveryBanner({ score, isLoading }) {
+  if (isLoading || score === 0) return null;
+
+  let backgroundColor, textColor, message;
+  if (score > 70) {
+    backgroundColor = 'rgba(16, 185, 129, 0.15)';
+    textColor = '#10B981';
+    message = 'Recovery: Great \u2014 go all out';
+  } else if (score >= 40) {
+    backgroundColor = 'rgba(251, 191, 36, 0.15)';
+    textColor = '#FBBF24';
+    message = 'Recovery: Moderate \u2014 consider lighter weights';
+  } else {
+    backgroundColor = 'rgba(239, 68, 68, 0.15)';
+    textColor = '#EF4444';
+    message = 'Recovery: Low \u2014 rest day recommended';
+  }
+
+  return (
+    <View style={[bannerStyles.container, { backgroundColor }]}>
+      <Heart size={16} color={textColor} />
+      <Text style={[bannerStyles.text, { color: textColor }]}>{message}</Text>
+      <Text style={[bannerStyles.score, { color: textColor }]}>{score}</Text>
+    </View>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  text: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+  },
+  score: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+  },
+});
+
 function GenerateWorkoutScreenContent() {
   const router = useRouter();
-  const { addExercise } = useFood();
+  const { addExercise } = useMeals();
   const { isOnline } = useOffline();
   const scrollViewRef = useRef(null);
+  const { getReadinessScore, getReadinessLabel, dataSource, getDetailedReadiness, isLoading: recoveryLoading } = useRecovery();
+
+  // Recovery data
+  const recoveryScore = useMemo(() => getReadinessScore(), [getReadinessScore]);
+  const recoveryLabel = useMemo(() => getReadinessLabel(recoveryScore), [getReadinessLabel, recoveryScore]);
+  const recoveryDetails = useMemo(() => getDetailedReadiness(), [getDetailedReadiness]);
 
   // Form state
   const [goal, setGoal] = useState('hypertrophy');
@@ -353,6 +555,7 @@ function GenerateWorkoutScreenContent() {
   const [step, setStep] = useState(1); // 1: Goal, 2: Details, 3: Results
   const [isGenerating, setIsGenerating] = useState(false);
   const [workout, setWorkout] = useState(null);
+  const [supersetSuggestions, setSupersetSuggestions] = useState([]);
 
   // Exercise tracking state
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(null);
@@ -360,6 +563,8 @@ function GenerateWorkoutScreenContent() {
   const [restSeconds, setRestSeconds] = useState(60);
   const [prInfo, setPrInfo] = useState(null);
   const { checkAndUpdatePR } = usePersonalRecords();
+  const { addWorkout } = useWorkoutHistory();
+  const { saveAsTemplate } = useWorkoutTemplates();
 
   const selectedGoal = GOALS.find((g) => g.id === goal);
   const goalColor = selectedGoal?.color || Colors.primary;
@@ -408,10 +613,19 @@ function GenerateWorkoutScreenContent() {
         equipment: selectedEquipment,
         targetMuscles: MUSCLE_GROUPS.find((m) => m.id === targetMuscles)?.label || 'Full Body',
         injuries: injuries.trim() || null,
+        recoveryScore: recoveryScore > 0 ? recoveryScore : undefined,
       };
 
       const result = await generateWorkout(params);
       setWorkout(result);
+
+      // Generate superset suggestions from exercise IDs in main_set
+      const exerciseIds = (result.main_set || []).map((ex) =>
+        (ex.name || '').toLowerCase().replace(/\s+/g, '-')
+      );
+      const suggestions = suggestSupersets(exerciseIds);
+      setSupersetSuggestions(suggestions);
+
       setStep(3);
       await hapticSuccess();
 
@@ -443,10 +657,34 @@ function GenerateWorkoutScreenContent() {
 
       await addExercise(workoutSummary, workout.duration, workout.estimated_calories);
 
+      // Save full workout to history
+      await addWorkout({
+        name: workout.title,
+        emoji: selectedGoal?.emoji,
+        type: goal,
+        duration: workout.duration,
+        calories: workout.estimated_calories,
+        exercises: workout.main_set,
+        notes: workout.coach_notes,
+      });
+
       Alert.alert(
         'Workout Saved!',
         `Your ${workout.duration}-minute ${selectedGoal?.label} session has been logged.`,
-        [{ text: 'Let\'s Go!', onPress: () => router.replace('/') }]
+        [
+          {
+            text: 'Save as Template',
+            onPress: async () => {
+              await saveAsTemplate(
+                { title: workout.title, main_set: workout.main_set, duration: workout.duration, estimated_calories: workout.estimated_calories, coach_notes: workout.coach_notes },
+                workout.title,
+                selectedGoal?.emoji || '💪'
+              );
+              Alert.alert('Template Saved!', 'You can reuse this workout anytime from Workout Templates.', [{ text: 'OK', onPress: () => router.replace('/') }]);
+            },
+          },
+          { text: 'Done', onPress: () => router.replace('/') },
+        ]
       );
     } catch (error) {
       if (__DEV__) console.error('Error saving workout:', error);
@@ -456,6 +694,7 @@ function GenerateWorkoutScreenContent() {
 
   const handleRegenerate = () => {
     setWorkout(null);
+    setSupersetSuggestions([]);
     handleGenerate();
   };
 
@@ -528,6 +767,7 @@ function GenerateWorkoutScreenContent() {
           {/* Step 1: Goal Selection */}
           {step === 1 && (
             <>
+              <RecoveryBanner score={recoveryScore} isLoading={recoveryLoading} />
               <Text style={styles.stepTitle}>What's your goal?</Text>
               <Text style={styles.stepSubtitle}>
                 Choose your training focus for today
@@ -549,10 +789,20 @@ function GenerateWorkoutScreenContent() {
           {/* Step 2: Details */}
           {step === 2 && (
             <>
+              <RecoveryBanner score={recoveryScore} isLoading={recoveryLoading} />
               <Text style={styles.stepTitle}>Customize your session</Text>
               <Text style={styles.stepSubtitle}>
                 Fine-tune your {selectedGoal?.label} workout
               </Text>
+
+              {/* Recovery Status Card */}
+              {recoveryScore > 0 && (
+                <RecoveryStatusCard
+                  score={recoveryScore}
+                  dataSource={recoveryDetails.dataSource}
+                  readinessLabel={recoveryLabel}
+                />
+              )}
 
               {/* Level Slider */}
               <View style={styles.section}>
@@ -797,6 +1047,46 @@ function GenerateWorkoutScreenContent() {
                 </View>
               </CollapsibleSection>
 
+              {/* Superset Suggestions */}
+              {supersetSuggestions.length > 0 && (
+                <View style={styles.proTipsSection}>
+                  <View style={styles.proTipsHeader}>
+                    <Zap size={18} color={Colors.warning} />
+                    <Text style={styles.proTipsTitle}>Superset Suggestions</Text>
+                  </View>
+                  <Text style={[styles.supersetRest, { marginBottom: Spacing.sm }]}>
+                    Pair these exercises back-to-back to save time and boost intensity
+                  </Text>
+                  {supersetSuggestions.map((group) => (
+                    <View key={group.id} style={styles.supersetContainer}>
+                      <View style={styles.supersetBadge}>
+                        <Text style={styles.supersetBadgeText}>
+                          {group.type === 'triset' ? 'Tri-Set' : 'Superset'}
+                        </Text>
+                      </View>
+                      {group.exercises.map((exId, idx) => (
+                        <React.Fragment key={exId}>
+                          <Text style={styles.supersetExercise}>
+                            {exId.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                          </Text>
+                          {idx < group.exercises.length - 1 && (
+                            <Text style={styles.supersetRest}>
+                              {'\u26A1'} No rest
+                            </Text>
+                          )}
+                        </React.Fragment>
+                      ))}
+                      <Text style={styles.supersetRest}>
+                        Rest {group.restAfterGroup}s after round
+                      </Text>
+                      <View style={[styles.supersetBadge, { marginTop: 4 }]}>
+                        <Text style={styles.supersetBadgeText}>{group.rounds} rounds</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {/* Pro Tips */}
               {workout.pro_tips?.length > 0 && (
                 <View style={styles.proTipsSection}>
@@ -832,6 +1122,39 @@ function GenerateWorkoutScreenContent() {
                   </LinearGradient>
                 </Pressable>
               </View>
+
+              {/* Start Workout Session Button */}
+              <Pressable
+                style={styles.startSessionButton}
+                onPress={() => {
+                  hapticHeavy();
+                  router.push({
+                    pathname: '/workout-session',
+                    params: {
+                      workout: JSON.stringify({
+                        title: workout.title,
+                        name: workout.title,
+                        emoji: selectedGoal?.emoji || '',
+                        type: goal,
+                        main_set: workout.main_set,
+                        duration: workout.duration,
+                        estimated_calories: workout.estimated_calories,
+                      }),
+                    },
+                  });
+                }}
+              >
+                <LinearGradient
+                  colors={Gradients.electric}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.startSessionGradient}
+                >
+                  <Dumbbell size={22} color="#fff" />
+                  <Text style={styles.startSessionText}>Start Workout Session</Text>
+                  <ChevronRight size={20} color="rgba(255,255,255,0.7)" />
+                </LinearGradient>
+              </Pressable>
             </>
           )}
 
@@ -896,7 +1219,7 @@ function GenerateWorkoutScreenContent() {
 }
 
 // Premium-gated export - redirects non-subscribers to paywall
-export default function GenerateWorkoutScreen() {
+function GenerateWorkoutScreenInner() {
   return (
     <PremiumGate>
       <GenerateWorkoutScreenContent />
@@ -1551,7 +1874,66 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: '#fff',
   },
+  startSessionButton: {
+    borderRadius: BorderRadius.xl,
+    overflow: 'hidden',
+    marginTop: Spacing.sm,
+  },
+  startSessionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md + 4,
+    paddingHorizontal: Spacing.lg,
+  },
+  startSessionText: {
+    flex: 1,
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: '#fff',
+    textAlign: 'center',
+  },
+  // Superset Suggestions
+  supersetContainer: {
+    marginVertical: Spacing.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.warning,
+    paddingLeft: Spacing.md,
+    gap: Spacing.xs,
+  },
+  supersetBadge: {
+    backgroundColor: Colors.warning + '22',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  supersetBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.warning,
+    textTransform: 'uppercase',
+  },
+  supersetExercise: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  supersetRest: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
   bottomSpacer: {
     height: 120,
   },
 });
+
+export default function GenerateWorkoutScreen(props) {
+  return (
+    <ScreenErrorBoundary screenName="GenerateWorkoutScreen">
+      <GenerateWorkoutScreenInner {...props} />
+    </ScreenErrorBoundary>
+  );
+}
