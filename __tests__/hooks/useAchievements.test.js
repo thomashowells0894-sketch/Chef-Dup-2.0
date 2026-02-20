@@ -59,14 +59,14 @@ describe('useAchievements - initial state', () => {
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
 
     // There are 22 achievement definitions in the source
-    expect(result.current.totalCount).toBe(22);
+    expect(result.current.totalCount).toBe(24);
   });
 
   it('should populate achievements array with all definitions', async () => {
     const { result } = renderHook(() => useAchievements());
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
 
-    expect(result.current.achievements).toHaveLength(22);
+    expect(result.current.achievements).toHaveLength(24);
     result.current.achievements.forEach((a) => {
       expect(a).toHaveProperty('id');
       expect(a).toHaveProperty('title');
@@ -290,8 +290,8 @@ describe('useAchievements - getUnlocked / getLocked', () => {
     const locked = result.current.getLocked();
 
     expect(unlocked).toHaveLength(2);
-    expect(locked).toHaveLength(20);
-    expect(unlocked.length + locked.length).toBe(22);
+    expect(locked).toHaveLength(22);
+    expect(unlocked.length + locked.length).toBe(24);
   });
 
   it('getUnlocked should only return achievements with isUnlocked true', async () => {

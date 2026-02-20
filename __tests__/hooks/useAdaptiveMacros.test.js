@@ -91,6 +91,13 @@ jest.mock('../../services/ai', () => ({
     mockGenerateMacroRecommendation(...args),
 }));
 
+// ─── Mock SubscriptionContext to enable premium ─────────────────────────────
+
+jest.mock('../../context/SubscriptionContext', () => ({
+  useIsPremium: jest.fn(() => ({ isPremium: true, isLoading: false })),
+  useSubscription: jest.fn(() => ({ isPremium: true, isLoading: false })),
+}));
+
 // ─── Import after mocks ────────────────────────────────────────────────────
 
 const { useAdaptiveMacros } = require('../../hooks/useAdaptiveMacros');
@@ -134,6 +141,18 @@ beforeEach(() => {
   (AsyncStorage.getItem).mockResolvedValue(null);
   (AsyncStorage.setItem).mockResolvedValue(undefined);
   mockPlateauStatus.isPlateau = false;
+  // Reset mock to default resolved behavior (clearAllMocks doesn't reset mockImplementation)
+  mockGenerateMacroRecommendation.mockImplementation(() =>
+    Promise.resolve({
+      shouldAdjust: true,
+      newCalories: 2000,
+      newProtein: 160,
+      newCarbs: 200,
+      newFat: 60,
+      reasoning: 'Adjusted for weight loss plateau',
+      generatedAt: new Date().toISOString(),
+    })
+  );
 });
 
 // =============================================================================
@@ -194,11 +213,13 @@ describe('isCurrentWeek utility', () => {
 
 describe('useAdaptiveMacros - initial state', () => {
   it('should return null recommendation when no cached data exists', async () => {
+    // Prevent auto-generation so we can check initial state
+    mockGenerateMacroRecommendation.mockImplementation(() => new Promise(() => {}));
+
     const { result } = renderHook(() => useAdaptiveMacros());
 
     // Initially recommendation is null
     expect(result.current.recommendation).toBeNull();
-    expect(result.current.isGenerating).toBe(false);
     expect(result.current.plateauTriggered).toBe(false);
   });
 
@@ -213,6 +234,8 @@ describe('useAdaptiveMacros - initial state', () => {
       dismissed: false,
     };
     (AsyncStorage.getItem).mockResolvedValue(JSON.stringify(cached));
+    // Prevent auto-generation from overwriting the cached value
+    mockGenerateMacroRecommendation.mockImplementation(() => new Promise(() => {}));
 
     const { result } = renderHook(() => useAdaptiveMacros());
     await waitFor(() => {

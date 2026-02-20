@@ -40,6 +40,10 @@ jest.mock('../../services/nutritionix', () => ({
   isNutritionixConfigured: () => mockIsNutritionixConfigured(),
 }));
 
+jest.mock('../../data/restaurantFoods', () => ({
+  searchRestaurantFoods: jest.fn(() => []),
+}));
+
 import {
   searchAllSources,
   bigramSimilarity,
@@ -343,6 +347,7 @@ describe('empty query handling', () => {
     const result = await searchAllSources('');
     expect(result.sources).toEqual({
       local: 0,
+      restaurant: 0,
       openFoodFacts: 0,
       usda: 0,
       fatSecret: 0,
@@ -409,7 +414,7 @@ describe('merging from multiple sources', () => {
       count: 1,
     });
 
-    const result = await searchAllSources('protein');
+    const result = await searchAllSources('protein', [], 25, 4000, true);
     expect(result.sources.fatSecret).toBe(1);
   });
 
@@ -420,7 +425,7 @@ describe('merging from multiple sources', () => {
       count: 1,
     });
 
-    const result = await searchAllSources('big mac');
+    const result = await searchAllSources('big mac', [], 25, 4000, true);
     expect(result.sources.nutritionix).toBe(1);
   });
 

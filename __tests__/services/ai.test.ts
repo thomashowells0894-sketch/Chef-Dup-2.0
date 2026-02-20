@@ -20,6 +20,7 @@ import {
   generateWeeklyDigest,
   generateMealPlan,
   suggestFoodSwaps,
+  setAIPremiumStatus,
 } from '../../services/ai';
 import { supabase } from '../../lib/supabase';
 import { checkAIRateLimit } from '../../lib/rateLimiter';
@@ -30,6 +31,7 @@ const mockRateLimit = checkAIRateLimit as jest.Mock;
 describe('AI Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setAIPremiumStatus(true);
     mockRateLimit.mockReturnValue({ allowed: true, retryAfterMs: 0, message: '' });
   });
 

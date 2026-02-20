@@ -70,5 +70,68 @@ jest.mock('@sentry/react-native', () => ({
   ReactNativeTracing: jest.fn(),
 }));
 
+// Mock react-native-reanimated
+jest.mock('react-native-reanimated', () => {
+  const Reanimated = require('react-native-reanimated/mock');
+  Reanimated.default.call = () => {};
+  return Reanimated;
+});
+
+// Mock expo-crypto
+jest.mock('expo-crypto', () => {
+  let counter = 0;
+  return {
+    randomUUID: jest.fn(() => `mock-uuid-${++counter}-${Date.now()}`),
+    digestStringAsync: jest.fn((_algo: string, data: string) => {
+      // Return a deterministic hex string based on input
+      let hash = 0;
+      for (let i = 0; i < data.length; i++) {
+        const char = data.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0;
+      }
+      return Promise.resolve(Math.abs(hash).toString(16).padStart(64, '0'));
+    }),
+    CryptoDigestAlgorithm: {
+      SHA256: 'SHA-256',
+      SHA512: 'SHA-512',
+    },
+  };
+});
+
+// Mock SubscriptionContext
+jest.mock('./context/SubscriptionContext', () => ({
+  useSubscription: jest.fn(() => ({
+    isInitialized: true,
+    isPremium: false,
+    isLoading: false,
+    purchaseInProgress: false,
+    offerings: null,
+    packages: [],
+    monthlyPackage: undefined,
+    annualPackage: undefined,
+    annualSavings: 0,
+    customerInfo: null,
+    subscriptionInfo: null,
+    isTrialing: false,
+    trialEndDate: null,
+    hasExpiredTrial: false,
+    subscriptionType: 'none',
+    purchaseDate: null,
+    checkFeature: jest.fn(() => false),
+    purchasePackage: jest.fn(() => Promise.resolve({ success: false })),
+    restorePurchases: jest.fn(() => Promise.resolve({ success: false })),
+  })),
+  useIsPremium: jest.fn(() => ({
+    isPremium: false,
+    isLoading: false,
+  })),
+  SubscriptionProvider: ({ children }: { children: React.ReactNode }) => children,
+  PRODUCT_IDS: {
+    MONTHLY: 'vibefit_premium_monthly',
+    YEARLY: 'vibefit_premium_yearly',
+  },
+}));
+
 // Set global __DEV__
 (global as Record<string, unknown>).__DEV__ = true;
