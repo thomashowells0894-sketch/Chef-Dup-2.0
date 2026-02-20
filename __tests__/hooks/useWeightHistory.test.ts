@@ -32,16 +32,15 @@ import { useWeightHistory } from '../../hooks/useWeightHistory';
 const WAIT_OPTIONS = { timeout: 5000 };
 
 /**
- * Render the hook and flush the async useEffect initialization.
- * This avoids "act()" warnings from state updates in useEffect.
+ * Render the hook and wait for async useEffect initialization to complete.
  */
 async function renderAndInit(setupMocks?: () => void) {
   if (setupMocks) setupMocks();
-  let hookResult: ReturnType<typeof renderHook<ReturnType<typeof useWeightHistory>>>;
-  await act(async () => {
-    hookResult = renderHook(() => useWeightHistory());
+  const hookResult = renderHook(() => useWeightHistory());
+  await waitFor(() => {
+    expect(hookResult.result.current.isLoading).toBe(false);
   });
-  return hookResult!;
+  return hookResult;
 }
 
 beforeEach(() => {

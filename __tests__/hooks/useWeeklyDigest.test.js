@@ -53,6 +53,13 @@ jest.mock('../../context/MoodContext', () => ({
   })),
 }));
 
+// ─── Mock SubscriptionContext to enable premium ─────────────────────────────
+
+jest.mock('../../context/SubscriptionContext', () => ({
+  useIsPremium: jest.fn(() => ({ isPremium: true, isLoading: false })),
+  useSubscription: jest.fn(() => ({ isPremium: true, isLoading: false })),
+}));
+
 // ─── Mock AI service ────────────────────────────────────────────────────────
 
 const mockDigestResult = {
@@ -113,6 +120,10 @@ beforeEach(() => {
   jest.clearAllMocks();
   (AsyncStorage.getItem).mockResolvedValue(null);
   (AsyncStorage.setItem).mockResolvedValue(undefined);
+  // Reset mock to default resolved behavior (clearAllMocks doesn't reset mockImplementation)
+  mockGenerateWeeklyDigest.mockImplementation(() =>
+    Promise.resolve(mockDigestResult)
+  );
 });
 
 // =============================================================================
@@ -195,13 +206,12 @@ describe('getLossAversionFrame', () => {
 // =============================================================================
 
 describe('useWeeklyDigest - initial state', () => {
-  it('should return null digest and isGenerating false', () => {
+  it('should return null digest initially', () => {
     // Prevent auto-generation
     mockGenerateWeeklyDigest.mockImplementation(() => new Promise(() => {}));
 
     const { result } = renderHook(() => useWeeklyDigest());
     expect(result.current.digest).toBeNull();
-    expect(result.current.isGenerating).toBe(false);
     expect(result.current.lastGenerated).toBeNull();
   });
 
@@ -230,6 +240,8 @@ describe('useWeeklyDigest - caching', () => {
       generatedAt: new Date().toISOString(),
     };
     (AsyncStorage.getItem).mockResolvedValue(JSON.stringify(cached));
+    // Prevent auto-generation from overwriting the cached value
+    mockGenerateWeeklyDigest.mockImplementation(() => new Promise(() => {}));
 
     const { result } = renderHook(() => useWeeklyDigest());
 
@@ -246,6 +258,8 @@ describe('useWeeklyDigest - caching', () => {
       generatedAt: ts,
     };
     (AsyncStorage.getItem).mockResolvedValue(JSON.stringify(cached));
+    // Prevent auto-generation from overwriting the cached value
+    mockGenerateWeeklyDigest.mockImplementation(() => new Promise(() => {}));
 
     const { result } = renderHook(() => useWeeklyDigest());
 

@@ -126,13 +126,15 @@ describe('Encrypted Storage', () => {
 
   describe('Key Derivation', () => {
     it('uses SecureStore for key management', async () => {
-      // The key module caches after first load, so we verify it was called
-      // at some point during the test suite (the very first setEncryptedItem
-      // call triggers the key fetch).
-      await setEncryptedItem('test', 'value');
-      // SecureStore should have been called for key retrieval at least once
-      // across the test suite lifecycle
-      expect(mockSecureGetItem).toHaveBeenCalled();
+      // Reset modules to clear the key cache from previous test runs
+      jest.resetModules();
+      const SecureStoreRefresh = require('expo-secure-store');
+      const freshMockSecureGetItem = SecureStoreRefresh.getItemAsync as jest.Mock;
+      freshMockSecureGetItem.mockResolvedValue('test-encryption-key-1234567890abcdef');
+      const { setEncryptedItem: freshSetEncryptedItem } = require('../../lib/encryptedStorage');
+      await freshSetEncryptedItem('test', 'value');
+      // SecureStore should have been called for key retrieval
+      expect(freshMockSecureGetItem).toHaveBeenCalled();
     });
   });
 

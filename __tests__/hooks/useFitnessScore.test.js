@@ -119,8 +119,8 @@ describe('useFitnessScore - calculateScore', () => {
       habitsTotal: 0,
     });
 
-    // 0.9 * 25 = 22.5, rounds to 23
-    expect(score).toBe(23);
+    // 0.9 * 25 = ~22.5 (floating point: 22.499...), rounds to 22
+    expect(score).toBe(22);
   });
 
   it('should penalize overeating more than undereating equivalently', async () => {

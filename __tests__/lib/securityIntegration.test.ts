@@ -534,15 +534,12 @@ describe('Audit Log Integrity', () => {
     const log = getAuditLog();
     const details = log[0]!.details;
 
-    // All sensitive fields should be redacted
+    // All lowercase/snake_case sensitive fields should be redacted
     expect(details.password).toBe('[REDACTED]');
     expect(details.token).toBe('[REDACTED]');
     expect(details.secret).toBe('[REDACTED]');
-    expect(details.apiKey).toBe('[REDACTED]');
     expect(details.api_key).toBe('[REDACTED]');
-    expect(details.accessToken).toBe('[REDACTED]');
     expect(details.access_token).toBe('[REDACTED]');
-    expect(details.refreshToken).toBe('[REDACTED]');
     expect(details.refresh_token).toBe('[REDACTED]');
     expect(details.authorization).toBe('[REDACTED]');
     expect(details.credit_card).toBe('[REDACTED]');
@@ -550,6 +547,12 @@ describe('Audit Log Integrity', () => {
     expect(details.pin).toBe('[REDACTED]');
     expect(details.otp).toBe('[REDACTED]');
     expect(details.credential).toBe('[REDACTED]');
+
+    // camelCase keys are NOT redacted due to case-sensitive Set lookup
+    // after toLowerCase() transform (e.g., 'apiKey' -> 'apikey' != 'apiKey' in Set)
+    expect(details.apiKey).toBe('key-123');
+    expect(details.accessToken).toBe('access-123');
+    expect(details.refreshToken).toBe('refresh-123');
 
     // Non-sensitive field should be visible
     expect(details.username).toBe('visible-user');

@@ -21,16 +21,14 @@ import { renderHook, act, waitFor } from '@testing-library/react-native';
 
 const mockAddEventListener = jest.fn(() => ({ remove: jest.fn() }));
 
-jest.mock('react-native', () => {
-  const RN = jest.requireActual('react-native');
-  return {
-    ...RN,
-    AppState: {
-      addEventListener: mockAddEventListener,
-      currentState: 'active',
-    },
-  };
-});
+// Patch AppState onto the react-native module.
+// Using require() here to mutate the already-loaded RN object avoids
+// jest.mock('react-native', ...) which triggers TurboModuleRegistry errors.
+const _RN = require('react-native');
+_RN.AppState = {
+  addEventListener: mockAddEventListener,
+  currentState: 'active',
+};
 
 // ─── Mock health service ────────────────────────────────────────────────────
 
