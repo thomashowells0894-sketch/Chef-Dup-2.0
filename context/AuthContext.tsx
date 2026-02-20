@@ -18,6 +18,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+    }).catch(() => {
+      // Network unavailable — keep existing session from SecureStore.
+      // Supabase's persistSession:true handles offline gracefully.
+      setLoading(false);
     });
 
     // Listen for auth changes (login, logout, etc.)
@@ -48,6 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
             setSession(session);
             setUser(session?.user ?? null);
+          }).catch(() => {
+            // Network unavailable on resume — keep existing session.
           });
         }
       }

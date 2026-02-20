@@ -131,7 +131,7 @@ const FoodItem = memo(function FoodItem({ item, onRemove, mealType, openSwipeabl
           <Pressable
             style={styles.removeButton}
             onPress={handleRemove}
-            hitSlop={8}
+            hitSlop={10}
             accessibilityLabel={`Remove ${item.name}`}
             accessibilityRole="button"
           >
@@ -217,6 +217,7 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
             accessibilityRole="button"
             accessibilityLabel={`Add food to ${config.label}`}
             accessibilityHint="Opens food search to add to this meal"
+            hitSlop={6}
           >
             <ReAnimated.View
               style={[

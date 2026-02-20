@@ -573,12 +573,17 @@ function DashboardScreenInner() {
     prevCaloriesRef.current = totals.calories;
   }, [totals.calories]);
 
+  const isNavigatingRef = useRef(false);
+
   const handleAddFood = useCallback(async (mealType) => {
+    if (isNavigatingRef.current) return;
+    isNavigatingRef.current = true;
     await hapticLight();
     router.push({
       pathname: '/add',
       params: { meal: mealType },
     });
+    setTimeout(() => { isNavigatingRef.current = false; }, 1000);
   }, [router]);
 
   const handleRemoveFood = useCallback((logId, mealType) => {
