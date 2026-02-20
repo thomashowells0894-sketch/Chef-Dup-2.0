@@ -859,48 +859,72 @@ export function GamificationProvider({ children }: { children: React.ReactNode }
 
   // ---- Auto-save ----
 
+  const pendingGamificationDataRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isHydrated) return;
 
+    const data = JSON.stringify({
+      totalXP,
+      currentStreak,
+      lastActiveDate,
+      activeDates,
+      hasStreakFreeze,
+      lastFreeFreezeDate,
+      dailyXPEarned,
+      dailyXPDate,
+    });
+    pendingGamificationDataRef.current = data;
+
     const timeoutId = setTimeout(() => {
-      AsyncStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          totalXP,
-          currentStreak,
-          lastActiveDate,
-          activeDates,
-          hasStreakFreeze,
-          lastFreeFreezeDate,
-          dailyXPEarned,
-          dailyXPDate,
-        })
-      ).catch((error: any) => {
+      pendingGamificationDataRef.current = null;
+      AsyncStorage.setItem(STORAGE_KEY, data).catch((error: any) => {
         if (__DEV__) console.error('Failed to save gamification state:', error.message);
       });
     }, 1000);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      // Flush: if data was pending, save immediately
+      if (pendingGamificationDataRef.current) {
+        AsyncStorage.setItem(STORAGE_KEY, pendingGamificationDataRef.current).catch((error: any) => {
+          if (__DEV__) console.error('Failed to flush gamification state:', error.message);
+        });
+        pendingGamificationDataRef.current = null;
+      }
+    };
   }, [totalXP, currentStreak, lastActiveDate, activeDates, hasStreakFreeze, lastFreeFreezeDate, dailyXPEarned, dailyXPDate, isHydrated]);
 
   // ---- Save weekly challenges ----
 
+  const pendingWeeklyChallengeDataRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isHydrated || weeklyChallenges.length === 0) return;
 
+    const data = JSON.stringify({
+      weekStart: getWeekStartString(),
+      challenges: weeklyChallenges,
+    });
+    pendingWeeklyChallengeDataRef.current = data;
+
     const timeoutId = setTimeout(() => {
-      AsyncStorage.setItem(
-        WEEKLY_CHALLENGE_KEY,
-        JSON.stringify({
-          weekStart: getWeekStartString(),
-          challenges: weeklyChallenges,
-        })
-      ).catch((error: any) => {
+      pendingWeeklyChallengeDataRef.current = null;
+      AsyncStorage.setItem(WEEKLY_CHALLENGE_KEY, data).catch((error: any) => {
         if (__DEV__) console.error('Failed to save weekly challenges:', error.message);
       });
     }, 500);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      // Flush: if data was pending, save immediately
+      if (pendingWeeklyChallengeDataRef.current) {
+        AsyncStorage.setItem(WEEKLY_CHALLENGE_KEY, pendingWeeklyChallengeDataRef.current).catch((error: any) => {
+          if (__DEV__) console.error('Failed to flush weekly challenges:', error.message);
+        });
+        pendingWeeklyChallengeDataRef.current = null;
+      }
+    };
   }, [weeklyChallenges, isHydrated]);
 
   // ---- Toast ----
