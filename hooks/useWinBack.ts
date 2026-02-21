@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSubscription } from '../context/SubscriptionContext';
 
-const WINBACK_KEY = '@vibefit_winback';
+const WINBACK_KEY = '@fueliq_winback';
 const WINBACK_COOLDOWN = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 interface WinBackOffer {

@@ -1,5 +1,5 @@
 /**
- * Wellness Journal Screen - VibeFit
+ * Wellness Journal Screen - FuelIQ
  *
  * Features:
  * - Daily prompt displayed as InsightCard

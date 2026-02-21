@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Community Foods Migration
+-- FuelIQ Community Foods Migration
 -- Date: 2026-02-14
 -- Purpose: Create tables for user-contributed food database, allowing users
 --          to submit, vote on, and report community foods. Includes RLS

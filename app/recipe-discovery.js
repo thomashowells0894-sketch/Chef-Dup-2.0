@@ -1,5 +1,5 @@
 /**
- * VibeFit - Recipe Discovery Screen
+ * FuelIQ - Recipe Discovery Screen
  *
  * Browse 60+ curated recipes with category tabs, tag filters,
  * search, sorting, expandable cards, and add-to-diary functionality.

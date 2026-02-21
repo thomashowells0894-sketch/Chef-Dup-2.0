@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const ALERT_KEY = '@vibefit_health_alerts';
+const ALERT_KEY = '@fueliq_health_alerts';
 
 interface HealthData {
   heartRate?: number;

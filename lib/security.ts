@@ -1,5 +1,5 @@
 /**
- * VibeFit Enterprise Security Module
+ * FuelIQ Enterprise Security Module
  * Comprehensive security utilities for data protection, privacy, and compliance.
  */
 import * as SecureStore from 'expo-secure-store';
@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
 // ENCRYPTION & SECURE STORAGE
 // ============================================================================
 
-const SECURE_PREFIX: string = 'vibefit_secure_';
+const SECURE_PREFIX: string = 'fueliq_secure_';
 
 /**
  * Store sensitive data in secure storage (Keychain/Keystore)
@@ -243,7 +243,7 @@ setInterval(() => globalRateLimiter.cleanup(), 300000);
 /**
  * Privacy settings management
  */
-const PRIVACY_KEY: string = 'vibefit_privacy_settings';
+const PRIVACY_KEY: string = 'fueliq_privacy_settings';
 
 interface PrivacySettings {
   analyticsEnabled: boolean;
@@ -404,9 +404,9 @@ async function deleteAllUserData(supabase: SupabaseClient, userId: string): Prom
   try {
     const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
     const allKeys: readonly string[] = await AsyncStorage.getAllKeys();
-    const vibefitKeys: string[] = allKeys.filter((k: string) => k.startsWith('@vibefit_'));
-    if (vibefitKeys.length > 0) {
-      await AsyncStorage.multiRemove(vibefitKeys);
+    const fueliqKeys: string[] = allKeys.filter((k: string) => k.startsWith('@fueliq_'));
+    if (fueliqKeys.length > 0) {
+      await AsyncStorage.multiRemove(fueliqKeys);
     }
     results.asyncStorage = 'deleted';
   } catch {
@@ -415,13 +415,13 @@ async function deleteAllUserData(supabase: SupabaseClient, userId: string): Prom
 
   // Clear SecureStore keys
   const secureKeys: string[] = [
-    'vibefit_privacy_settings',
-    'vibefit_secure_pin',
-    'vibefit_secure_app_lock',
+    'fueliq_privacy_settings',
+    'fueliq_secure_pin',
+    'fueliq_secure_app_lock',
     'app_lock_settings',
-    'vibefit_pin_hash',
-    'vibefit_pin_salt',
-    'vibefit_pin_lockout',
+    'fueliq_pin_hash',
+    'fueliq_pin_salt',
+    'fueliq_pin_lockout',
   ];
   for (const key of secureKeys) {
     try {

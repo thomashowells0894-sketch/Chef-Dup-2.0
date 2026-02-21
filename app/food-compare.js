@@ -60,7 +60,7 @@ import { hapticLight, hapticSuccess } from '../lib/haptics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SLOT_WIDTH = (SCREEN_WIDTH - Spacing.md * 3) / 2;
-const STORAGE_KEY = '@vibefit_recent_comparisons';
+const STORAGE_KEY = '@fueliq_recent_comparisons';
 
 // ---------------------------------------------------------------------------
 // Built-in food database (40 common foods)

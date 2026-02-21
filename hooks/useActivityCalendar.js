@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, eachMonthOfInterval, startOfYear, endOfYear } from 'date-fns';
 
-const STORAGE_KEY = '@vibefit_activity_scores';
+const STORAGE_KEY = '@fueliq_activity_scores';
 
 /**
  * useActivityCalendar
@@ -17,9 +17,9 @@ const STORAGE_KEY = '@vibefit_activity_scores';
  *   3 - Met macros + logged exercise
  *   4 - Perfect day (macros, exercise, water goal, and fasting complete)
  *
- * Data is persisted in AsyncStorage under @vibefit_activity_scores.
+ * Data is persisted in AsyncStorage under @fueliq_activity_scores.
  * Each time the hook mounts, it also tries to enrich today's entry by reading
- * from sibling AsyncStorage keys used across VibeFit.
+ * from sibling AsyncStorage keys used across FuelIQ.
  */
 export default function useActivityCalendar() {
   const [scores, setScores] = useState({});
@@ -356,12 +356,12 @@ export default function useActivityCalendar() {
 async function enrichFromStorage(setScores) {
   try {
     const keys = [
-      '@vibefit_workout_history',
-      '@vibefit_weight_history',
-      '@vibefit_sleep_history',
-      '@vibefit_fasting_history',
-      '@vibefit_water_history',
-      '@vibefit_habits_log',
+      '@fueliq_workout_history',
+      '@fueliq_weight_history',
+      '@fueliq_sleep_history',
+      '@fueliq_fasting_history',
+      '@fueliq_water_history',
+      '@fueliq_habits_log',
     ];
 
     const results = await AsyncStorage.multiGet(keys);
@@ -379,7 +379,7 @@ async function enrichFromStorage(setScores) {
       let changed = false;
 
       // Workout history
-      const workouts = storageMap['@vibefit_workout_history'];
+      const workouts = storageMap['@fueliq_workout_history'];
       if (Array.isArray(workouts)) {
         workouts.forEach(w => {
           const dateStr = w.date ? w.date.slice(0, 10) : null;
@@ -398,7 +398,7 @@ async function enrichFromStorage(setScores) {
       }
 
       // Fasting history
-      const fasts = storageMap['@vibefit_fasting_history'];
+      const fasts = storageMap['@fueliq_fasting_history'];
       if (Array.isArray(fasts)) {
         fasts.forEach(f => {
           const dateStr = f.date ? f.date.slice(0, 10) : null;
@@ -416,7 +416,7 @@ async function enrichFromStorage(setScores) {
       }
 
       // Sleep history
-      const sleep = storageMap['@vibefit_sleep_history'];
+      const sleep = storageMap['@fueliq_sleep_history'];
       if (Array.isArray(sleep)) {
         sleep.forEach(s => {
           const dateStr = s.date ? s.date.slice(0, 10) : null;
@@ -434,7 +434,7 @@ async function enrichFromStorage(setScores) {
       }
 
       // Weight history
-      const weights = storageMap['@vibefit_weight_history'];
+      const weights = storageMap['@fueliq_weight_history'];
       if (Array.isArray(weights)) {
         weights.forEach(w => {
           const dateStr = w.date ? w.date.slice(0, 10) : null;
@@ -449,7 +449,7 @@ async function enrichFromStorage(setScores) {
       }
 
       // Water history
-      const water = storageMap['@vibefit_water_history'];
+      const water = storageMap['@fueliq_water_history'];
       if (Array.isArray(water)) {
         water.forEach(w => {
           const dateStr = w.date ? w.date.slice(0, 10) : null;
@@ -467,7 +467,7 @@ async function enrichFromStorage(setScores) {
       }
 
       // Habits log
-      const habits = storageMap['@vibefit_habits_log'];
+      const habits = storageMap['@fueliq_habits_log'];
       if (habits && typeof habits === 'object') {
         Object.entries(habits).forEach(([dateStr, data]) => {
           if (!dateStr || dateStr.length !== 10) return;

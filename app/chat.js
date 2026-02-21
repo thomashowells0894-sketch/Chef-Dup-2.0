@@ -39,7 +39,7 @@ import { useOffline } from '../context/OfflineContext';
 import { sanitizeChatMessage } from '../lib/validation';
 import { checkAIRateLimit } from '../lib/rateLimiter';
 
-const STORAGE_KEY = '@vibefit_chat_history';
+const STORAGE_KEY = '@fueliq_chat_history';
 const MAX_STORED_MESSAGES = 50;
 
 function generateId() {
@@ -487,7 +487,7 @@ function ChatScreenInner() {
             <View style={styles.headerIcon}>
               <Sparkles size={18} color={Colors.primary} />
             </View>
-            <Text style={styles.headerTitle}>VibeFit AI</Text>
+            <Text style={styles.headerTitle}>FuelIQ AI</Text>
           </View>
           <Pressable style={styles.newChatButton} onPress={handleNewConversation}>
             <RotateCcw size={18} color={Colors.textSecondary} />

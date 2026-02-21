@@ -91,7 +91,7 @@ export interface SmartSearchState {
 // Search Preferences
 // ---------------------------------------------------------------------------
 
-const PREFS_KEY = '@vibefit_search_prefs';
+const PREFS_KEY = '@fueliq_search_prefs';
 
 interface SearchPrefs {
   lastFilter: QuickFilter;

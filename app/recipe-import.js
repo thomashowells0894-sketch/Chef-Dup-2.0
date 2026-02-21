@@ -1,5 +1,5 @@
 /**
- * VibeFit - Recipe URL Import Screen
+ * FuelIQ - Recipe URL Import Screen
  *
  * Paste a recipe URL and let AI extract the recipe name, ingredients,
  * nutrition info, and per-serving macros. Review, edit, then save or

@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "VibeFit",
-    "slug": "vibefit",
+    "name": "FuelIQ",
+    "slug": "fueliq",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "vibefit",
+    "scheme": "fueliq",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.vibefit.app",
+      "bundleIdentifier": "com.fueliq.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "VibeFit uses the camera to scan food and barcodes for nutritional tracking.",
-        "NSMicrophoneUsageDescription": "VibeFit uses the microphone for voice food logging.",
-        "NSPhotoLibraryUsageDescription": "VibeFit uses your photo library for progress photos and food journal.",
-        "NSHealthShareUsageDescription": "VibeFit reads your health data to track steps, active calories, weight, and heart rate.",
-        "NSHealthUpdateUsageDescription": "VibeFit writes workout data to Apple Health.",
-        "NSFaceIDUsageDescription": "VibeFit uses Face ID to protect your private health data."
+        "NSCameraUsageDescription": "FuelIQ uses the camera to scan food and barcodes for nutritional tracking.",
+        "NSMicrophoneUsageDescription": "FuelIQ uses the microphone for voice food logging.",
+        "NSPhotoLibraryUsageDescription": "FuelIQ uses your photo library for progress photos and food journal.",
+        "NSHealthShareUsageDescription": "FuelIQ reads your health data to track steps, active calories, weight, and heart rate.",
+        "NSHealthUpdateUsageDescription": "FuelIQ writes workout data to Apple Health.",
+        "NSFaceIDUsageDescription": "FuelIQ uses Face ID to protect your private health data."
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
@@ -30,7 +30,7 @@
       }
     },
     "android": {
-      "package": "com.vibefit.app",
+      "package": "com.fueliq.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
@@ -62,7 +62,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "VibeFit uses the camera to scan food and barcodes."
+          "cameraPermission": "FuelIQ uses the camera to scan food and barcodes."
         }
       ],
       [
@@ -75,13 +75,13 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "VibeFit uses your photos for progress tracking and food journal."
+          "photosPermission": "FuelIQ uses your photos for progress tracking and food journal."
         }
       ],
       [
         "expo-av",
         {
-          "microphonePermission": "VibeFit uses the microphone for voice food logging."
+          "microphonePermission": "FuelIQ uses the microphone for voice food logging."
         }
       ],
       [

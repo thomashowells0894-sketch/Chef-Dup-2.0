@@ -45,7 +45,7 @@ async function prefetchFoodSearch() {
   try {
     // Warm the food search cache with recent/frequent foods
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const cached = await AsyncStorage.getItem('@vibefit_recent_foods');
+    const cached = await AsyncStorage.getItem('@fueliq_recent_foods');
     if (cached) {
       queryCache.set('recent_foods', JSON.parse(cached));
     }
@@ -57,7 +57,7 @@ async function prefetchDiaryData() {
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     // Pre-warm today's date key
     const today = new Date().toISOString().split('T')[0];
-    const cached = await AsyncStorage.getItem(`@vibefit_meals_${today}`);
+    const cached = await AsyncStorage.getItem(`@fueliq_meals_${today}`);
     if (cached) {
       queryCache.set(`diary_${today}`, JSON.parse(cached));
     }
@@ -67,7 +67,7 @@ async function prefetchDiaryData() {
 async function prefetchSettings() {
   try {
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const settings = await AsyncStorage.getItem('@vibefit_notification_settings');
+    const settings = await AsyncStorage.getItem('@fueliq_notification_settings');
     if (settings) {
       queryCache.set('notification_settings', JSON.parse(settings));
     }

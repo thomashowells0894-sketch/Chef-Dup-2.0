@@ -1,5 +1,5 @@
 /**
- * VibeFit Purchases Service - RevenueCat Integration
+ * FuelIQ Purchases Service - RevenueCat Integration
  *
  * Standalone service for subscription management.
  * Designed to be crash-proof - any failure defaults to Free plan.

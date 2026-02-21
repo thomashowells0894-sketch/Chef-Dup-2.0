@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@vibefit_breathing_history';
+const STORAGE_KEY = '@fueliq_breathing_history';
 const MAX_SESSIONS = 365;
 
 export function useBreathing() {

@@ -316,7 +316,7 @@ describe('useWeeklyDigest - generateDigest', () => {
 
     // Should persist to AsyncStorage
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      '@vibefit_weekly_digest',
+      '@fueliq_weekly_digest',
       expect.any(String)
     );
   });

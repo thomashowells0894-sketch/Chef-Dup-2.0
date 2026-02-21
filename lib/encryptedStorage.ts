@@ -12,7 +12,7 @@ import * as SecureStore from 'expo-secure-store';
 
 declare const __DEV__: boolean;
 
-const ENCRYPTION_KEY_ID: string = 'vibefit_storage_enc_key';
+const ENCRYPTION_KEY_ID: string = 'fueliq_storage_enc_key';
 const KEY_LENGTH: number = 64;
 const IV_LENGTH: number = 12; // 96 bits — recommended for AES-GCM
 const AES_PREFIX: string = 'aes:';
@@ -84,7 +84,7 @@ async function getAESKey(): Promise<CryptoKey | null> {
     );
 
     // Use a fixed salt derived from app identifier (not secret, just uniqueness)
-    const salt = encoder.encode('vibefit-storage-v2-salt');
+    const salt = encoder.encode('fueliq-storage-v2-salt');
 
     // Derive AES-256-GCM key using PBKDF2 with 100,000 iterations
     const cryptoKey = await crypto.subtle.deriveKey(

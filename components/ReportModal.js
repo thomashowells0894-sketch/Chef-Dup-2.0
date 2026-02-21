@@ -1,6 +1,6 @@
 /**
  * ReportModal - Content reporting modal with reason selection
- * Glass card styling matching the VibeFit premium theme
+ * Glass card styling matching the FuelIQ premium theme
  */
 import React, { useState, useCallback } from 'react';
 import {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays, parseISO } from 'date-fns';
 
-const STORAGE_KEY = '@vibefit_meal_timing';
+const STORAGE_KEY = '@fueliq_meal_timing';
 
 export default function useMealTiming() {
   const [mealTimes, setMealTimes] = useState([]);

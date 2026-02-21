@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Social Enhancements Migration
+-- FuelIQ Social Enhancements Migration
 -- Date: 2026-02-13
 -- Purpose: Add reactions (replacing simple likes), team challenges, friend
 --          activity log, and leaderboard opt-in. Includes RLS policies,

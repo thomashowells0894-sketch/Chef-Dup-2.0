@@ -64,7 +64,7 @@ const VictoryCard = forwardRef(({
             <Text style={styles.dateText}>{dateString}</Text>
           </View>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>VibeFit</Text>
+            <Text style={styles.logoText}>FuelIQ</Text>
           </View>
         </View>
 
@@ -148,7 +148,7 @@ const VictoryCard = forwardRef(({
           <View style={styles.footerLine} />
           <View style={styles.footerContent}>
             <Trophy size={14} color="#888" />
-            <Text style={styles.footerText}>VibeFit - AI Fitness</Text>
+            <Text style={styles.footerText}>FuelIQ - AI Fitness</Text>
           </View>
         </View>
       </LinearGradient>

@@ -1,5 +1,5 @@
 /**
- * VibeFit AI Brain - Supabase Edge Function
+ * FuelIQ AI Brain - Supabase Edge Function
  *
  * Server-side AI gateway that securely processes all Gemini API requests.
  * The API key is stored as a secret and never exposed to the client.
@@ -24,7 +24,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // CORS headers for cross-origin requests
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-vibefit-timestamp, x-vibefit-nonce",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-fueliq-timestamp, x-fueliq-nonce",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -811,7 +811,7 @@ async function handleChat(
     ? `\n\nCURRENT USER DATA:\n${contextParts.join("\n")}`
     : "";
 
-  const systemPrompt = `You are VibeFit AI, a certified nutritionist and wellness coach built into the VibeFit fitness app. You are friendly, knowledgeable, motivating, and concise.${contextString}
+  const systemPrompt = `You are FuelIQ AI, a certified nutritionist and wellness coach built into the FuelIQ fitness app. You are friendly, knowledgeable, motivating, and concise.${contextString}
 
 GUIDELINES:
 - Give personalized advice based on the user's current data when available
@@ -1074,7 +1074,7 @@ async function handleWeeklyDigest(
     },
   });
 
-  const systemPrompt = "You are VibeFit AI, analyzing a user's weekly fitness data. Generate a personalized coaching summary.";
+  const systemPrompt = "You are FuelIQ AI, analyzing a user's weekly fitness data. Generate a personalized coaching summary.";
 
   const prompt = `${systemPrompt}
 
@@ -1193,7 +1193,7 @@ async function handleMealPlan(
     ? "Optimize for muscle gain: high protein, higher carbs around training, calorie-dense meals."
     : "Optimize for balanced nutrition: moderate macros, variety, and sustainability.";
 
-  const systemPrompt = "You are VibeFit AI, a certified nutritionist. Generate a personalized meal plan based on the user's macro targets, dietary preferences, and fitness goals.";
+  const systemPrompt = "You are FuelIQ AI, a certified nutritionist. Generate a personalized meal plan based on the user's macro targets, dietary preferences, and fitness goals.";
 
   const prompt = `${systemPrompt}
 
@@ -1336,7 +1336,7 @@ async function handleMorningBriefing(
     },
   });
 
-  const systemPrompt = "You are VibeFit AI, a certified nutritionist and fitness coach. Generate a personalized morning briefing to help the user start their day with focus and motivation.";
+  const systemPrompt = "You are FuelIQ AI, a certified nutritionist and fitness coach. Generate a personalized morning briefing to help the user start their day with focus and motivation.";
 
   const prompt = `${systemPrompt}
 
@@ -1474,7 +1474,7 @@ async function handleAdaptiveMacros(
     },
   });
 
-  const systemPrompt = "You are VibeFit AI, a precision nutrition coach. Analyze this user's weekly data and recommend specific macro adjustments.";
+  const systemPrompt = "You are FuelIQ AI, a precision nutrition coach. Analyze this user's weekly data and recommend specific macro adjustments.";
 
   const prompt = `${systemPrompt}
 
@@ -1562,7 +1562,7 @@ async function handleRecipeImport(
     const fetchResponse = await withTimeout(
       fetch(parsedUrl.toString(), {
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; VibeFit/1.0; +https://vibefit.app)",
+          "User-Agent": "Mozilla/5.0 (compatible; FuelIQ/1.0; +https://fueliq.app)",
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         redirect: "follow",
@@ -1750,7 +1750,7 @@ async function handleFoodSwap(
     },
   });
 
-  const systemPrompt = "You are VibeFit AI, a certified nutritionist. Given a food item, suggest 3 healthier or more goal-aligned alternatives. Each swap should be a realistic, commonly available food that someone could easily substitute. Focus on practical swaps that taste good and serve a similar role in a meal.";
+  const systemPrompt = "You are FuelIQ AI, a certified nutritionist. Given a food item, suggest 3 healthier or more goal-aligned alternatives. Each swap should be a realistic, commonly available food that someone could easily substitute. Focus on practical swaps that taste good and serve a similar role in a meal.";
 
   const prompt = `${systemPrompt}
 
@@ -1898,7 +1898,7 @@ async function handleMealRecommend(
     ? `\nDietary preferences/restrictions: ${sanitizedParams.dietaryPreferences.join(", ")}.`
     : "";
 
-  const prompt = `You are VibeFit AI, a certified nutritionist. Suggest 3-4 meal ideas for ${sanitizedParams.mealType} that fit the user's remaining macro budget.
+  const prompt = `You are FuelIQ AI, a certified nutritionist. Suggest 3-4 meal ideas for ${sanitizedParams.mealType} that fit the user's remaining macro budget.
 
 REMAINING MACROS FOR TODAY:
 - Calories: ${sanitizedParams.remainingCalories} kcal
@@ -2035,8 +2035,8 @@ Deno.serve(async (req: Request) => {
       : null;
 
     // Timestamp freshness validation (replay attack mitigation)
-    const requestTimestamp = req.headers.get("x-vibefit-timestamp");
-    const requestNonce = req.headers.get("x-vibefit-nonce");
+    const requestTimestamp = req.headers.get("x-fueliq-timestamp");
+    const requestNonce = req.headers.get("x-fueliq-nonce");
 
     if (requestTimestamp) {
       const ts = parseInt(requestTimestamp, 10);
@@ -2057,7 +2057,7 @@ Deno.serve(async (req: Request) => {
       }
     } else {
       // Log missing signatures to track client adoption during rollout
-      console.warn(`[AI Brain] Missing x-vibefit-timestamp header from user ${user.id}`);
+      console.warn(`[AI Brain] Missing x-fueliq-timestamp header from user ${user.id}`);
       if (supabaseService) {
         supabaseService.rpc("log_audit", {
           p_user_id: user.id,
@@ -2101,7 +2101,7 @@ Deno.serve(async (req: Request) => {
       }
     } else if (requestTimestamp && !requestNonce) {
       // Timestamp present but no nonce — log for monitoring
-      console.warn(`[AI Brain] Missing x-vibefit-nonce header from user ${user.id}`);
+      console.warn(`[AI Brain] Missing x-fueliq-nonce header from user ${user.id}`);
     }
 
     // Parse request body early so we can check type for genesis exemption

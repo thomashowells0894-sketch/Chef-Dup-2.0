@@ -2,13 +2,13 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const SETTINGS_KEY: string = '@vibefit_notification_settings';
+const SETTINGS_KEY: string = '@fueliq_notification_settings';
 
 // ============================================================================
 // Frequency Capping (#14)
 // ============================================================================
 
-const FREQUENCY_CAP_KEY = '@vibefit_notification_frequency';
+const FREQUENCY_CAP_KEY = '@fueliq_notification_frequency';
 const MAX_NOTIFICATIONS_PER_DAY = 8;
 
 async function checkFrequencyCap(): Promise<boolean> {
@@ -65,11 +65,11 @@ const STREAK_MESSAGES: Record<string, string[]> = {
     "14-day streak! The science says you've built a real habit.",
   ],
   milestone_30: [
-    "30 DAYS! {name}, you're in the top 3% of all VibeFit users",
+    "30 DAYS! {name}, you're in the top 3% of all FuelIQ users",
     "One month of consistency! {name}, this is remarkable.",
   ],
   milestone_100: [
-    "100 DAYS! {name}, you're a VibeFit legend. This streak is unprecedented.",
+    "100 DAYS! {name}, you're a FuelIQ legend. This streak is unprecedented.",
   ],
 };
 

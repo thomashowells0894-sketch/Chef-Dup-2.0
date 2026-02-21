@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSubscription } from '../context/SubscriptionContext';
 
-const NUDGE_KEY = '@vibefit_annual_nudge';
+const NUDGE_KEY = '@fueliq_annual_nudge';
 const OPTIMAL_NUDGE_DAYS = [25, 27, 29]; // Days into monthly subscription
 
 export function useAnnualNudge() {

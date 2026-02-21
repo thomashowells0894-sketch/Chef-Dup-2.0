@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_workout_history';
+const STORAGE_KEY = '@fueliq_workout_history';
 const MAX_ENTRIES = 200;
 
 interface WorkoutSet {

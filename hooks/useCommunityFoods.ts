@@ -84,7 +84,7 @@ export type VoteType = 'up' | 'down';
 // CONSTANTS
 // ============================================================================
 
-const CACHE_PREFIX = '@vibefit_community_foods_';
+const CACHE_PREFIX = '@fueliq_community_foods_';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SEARCH_PAGE_SIZE = 20;
 const XP_REWARD_SUBMISSION = 15;

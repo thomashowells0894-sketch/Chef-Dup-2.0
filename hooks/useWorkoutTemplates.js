@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@vibefit_workout_templates';
+const STORAGE_KEY = '@fueliq_workout_templates';
 const MAX_TEMPLATES = 50;
 
 export default function useWorkoutTemplates() {

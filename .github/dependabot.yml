@@ -9,7 +9,7 @@ updates:
     labels:
       - dependencies
     reviewers:
-      - vibefit/core-team
+      - fueliq/core-team
     groups:
       expo:
         patterns:

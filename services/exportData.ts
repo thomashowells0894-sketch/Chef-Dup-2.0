@@ -122,7 +122,7 @@ export async function exportFoodDiaryCSV(dayData: Record<string, DayRecord>, dat
     const csvContent: string = csvHeader + csvRows;
     const startLabel: string = format(start, 'yyyy-MM-dd');
     const endLabel: string = format(end, 'yyyy-MM-dd');
-    const fileName: string = `VibeFit_FoodDiary_${startLabel}_to_${endLabel}.csv`;
+    const fileName: string = `FuelIQ_FoodDiary_${startLabel}_to_${endLabel}.csv`;
     const filePath: string = `${FileSystem.cacheDirectory}${fileName}`;
 
     await FileSystem.writeAsStringAsync(filePath, csvContent, {
@@ -408,7 +408,7 @@ export async function exportWeeklySummaryPDF(weekData: WeekData, profile: UserPr
 </head>
 <body>
   <div class="header">
-    <h1>Vibe<span class="accent">Fit</span> Weekly Report</h1>
+    <h1>Fuel<span class="accent">IQ</span> Weekly Report</h1>
     <div class="date-range">${dateRangeLabel}</div>
     <div class="generated">Generated ${format(new Date(), 'MMM d, yyyy h:mm a')}</div>
   </div>
@@ -482,7 +482,7 @@ export async function exportWeeklySummaryPDF(weekData: WeekData, profile: UserPr
   </div>
 
   <div class="footer">
-    VibeFit &mdash; Your AI-powered fitness companion
+    FuelIQ &mdash; Your AI-powered fitness companion
   </div>
 </body>
 </html>`;
@@ -498,7 +498,7 @@ export async function exportWeeklySummaryPDF(weekData: WeekData, profile: UserPr
     // Move to a friendlier filename
     const startDate: string = dates[0] || format(new Date(), 'yyyy-MM-dd');
     const endDate: string = dates[dates.length - 1] || format(new Date(), 'yyyy-MM-dd');
-    const pdfFileName: string = `VibeFit_WeeklyReport_${startDate}_to_${endDate}.pdf`;
+    const pdfFileName: string = `FuelIQ_WeeklyReport_${startDate}_to_${endDate}.pdf`;
     const newUri: string = `${FileSystem.cacheDirectory}${pdfFileName}`;
 
     await FileSystem.moveAsync({ from: uri, to: newUri });

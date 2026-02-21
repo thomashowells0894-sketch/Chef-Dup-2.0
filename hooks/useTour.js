@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@vibefit_tours_seen';
+const STORAGE_KEY = '@fueliq_tours_seen';
 
 export default function useTour() {
   const [seenTours, setSeenTours] = useState({});

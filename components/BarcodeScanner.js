@@ -67,7 +67,7 @@ export default function BarcodeScanner({ visible, onClose, onBarcodeScanned }) {
             </View>
             <Text style={styles.permissionTitle}>Camera Access Required</Text>
             <Text style={styles.permissionText}>
-              VibeFit needs camera access to scan barcodes on food products.
+              FuelIQ needs camera access to scan barcodes on food products.
             </Text>
             <Pressable style={styles.permissionButton} onPress={requestPermission}>
               <Text style={styles.permissionButtonText}>Grant Permission</Text>

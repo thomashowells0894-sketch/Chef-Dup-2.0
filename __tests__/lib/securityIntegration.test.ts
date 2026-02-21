@@ -89,38 +89,38 @@ describe('Request Signing Verification', () => {
 
   it('signRequest returns all required headers', async () => {
     const headers = await signRequest('POST', 'https://api.example.com/data', '{"key":"value"}');
-    expect(headers).toHaveProperty('x-vibefit-timestamp');
-    expect(headers).toHaveProperty('x-vibefit-signature');
-    expect(headers).toHaveProperty('x-vibefit-nonce');
+    expect(headers).toHaveProperty('x-fueliq-timestamp');
+    expect(headers).toHaveProperty('x-fueliq-signature');
+    expect(headers).toHaveProperty('x-fueliq-nonce');
   });
 
   it('signature is a non-empty hex string', async () => {
     const headers = await signRequest('GET', 'https://api.example.com/test', null);
-    expect(headers['x-vibefit-signature']).toMatch(/^[a-f0-9]+$/);
-    expect(headers['x-vibefit-signature'].length).toBeGreaterThan(0);
+    expect(headers['x-fueliq-signature']).toMatch(/^[a-f0-9]+$/);
+    expect(headers['x-fueliq-signature'].length).toBeGreaterThan(0);
   });
 
   it('different requests produce different signatures', async () => {
     const h1 = await signRequest('GET', 'https://api.example.com/a', null);
     const h2 = await signRequest('GET', 'https://api.example.com/b', null);
-    expect(h1['x-vibefit-signature']).not.toBe(h2['x-vibefit-signature']);
+    expect(h1['x-fueliq-signature']).not.toBe(h2['x-fueliq-signature']);
   });
 
   it('different methods produce different signatures', async () => {
     const h1 = await signRequest('GET', 'https://api.example.com/test', null);
     const h2 = await signRequest('POST', 'https://api.example.com/test', null);
-    expect(h1['x-vibefit-signature']).not.toBe(h2['x-vibefit-signature']);
+    expect(h1['x-fueliq-signature']).not.toBe(h2['x-fueliq-signature']);
   });
 
   it('each request gets a unique nonce', async () => {
     const h1 = await signRequest('GET', 'https://api.example.com/test', null);
     const h2 = await signRequest('GET', 'https://api.example.com/test', null);
-    expect(h1['x-vibefit-nonce']).not.toBe(h2['x-vibefit-nonce']);
+    expect(h1['x-fueliq-nonce']).not.toBe(h2['x-fueliq-nonce']);
   });
 
   it('timestamp is valid for just-created request', async () => {
     const headers = await signRequest('GET', 'https://api.example.com/test', null);
-    expect(isTimestampValid(headers['x-vibefit-timestamp'])).toBe(true);
+    expect(isTimestampValid(headers['x-fueliq-timestamp'])).toBe(true);
   });
 
   it('timestamp validation rejects old timestamps', () => {

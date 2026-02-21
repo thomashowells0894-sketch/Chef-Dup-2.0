@@ -1,4 +1,4 @@
-// VibeFit Leaderboard - Categories and types
+// FuelIQ Leaderboard - Categories and types
 // Simulated/fake users have been removed. The leaderboard now shows only
 // real users fetched from Supabase. If there are no real users, the
 // leaderboard will show an empty state instead of fabricated data.

@@ -4,8 +4,8 @@ import { isValidArray } from '../lib/validation';
 import { getEncryptedItem, setEncryptedItem, removeEncryptedItem } from '../lib/encryptedStorage';
 import type { WeightEntry } from '../types';
 
-const STORAGE_KEY = '@vibefit_weight_history';
-const GOAL_STORAGE_KEY = '@vibefit_weight_goal';
+const STORAGE_KEY = '@fueliq_weight_history';
+const GOAL_STORAGE_KEY = '@fueliq_weight_goal';
 const MAX_ENTRIES = 365;
 
 interface MonthlyTrendEntry {

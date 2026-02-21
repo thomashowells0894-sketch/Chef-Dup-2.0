@@ -7,7 +7,7 @@ import { useMood } from '../context/MoodContext';
 import { useIsPremium } from '../context/SubscriptionContext';
 import { generateWeeklyDigest } from '../services/ai';
 
-const STORAGE_KEY = '@vibefit_weekly_digest';
+const STORAGE_KEY = '@fueliq_weekly_digest';
 
 /**
  * Get the ISO week number for a given date.

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_favorite_foods';
+const STORAGE_KEY = '@fueliq_favorite_foods';
 const MAX_FAVORITES = 50;
 
 interface FavoriteFood {

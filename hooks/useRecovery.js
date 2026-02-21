@@ -9,8 +9,8 @@ import {
   isNativeHealthAvailable,
 } from '../services/healthService';
 
-const STORAGE_KEY = '@vibefit_recovery';
-const BIOMETRIC_HISTORY_KEY = '@vibefit_recovery_biometrics';
+const STORAGE_KEY = '@fueliq_recovery';
+const BIOMETRIC_HISTORY_KEY = '@fueliq_recovery_biometrics';
 const MAX_ENTRIES = 365;
 const BASELINE_DAYS = 30;
 

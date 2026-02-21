@@ -10,22 +10,22 @@
         "simulator": true
       },
       "env": {
-        "SENTRY_ORG": "vibefit",
-        "SENTRY_PROJECT": "vibefit-mobile"
+        "SENTRY_ORG": "fueliq",
+        "SENTRY_PROJECT": "fueliq-mobile"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "SENTRY_ORG": "vibefit",
-        "SENTRY_PROJECT": "vibefit-mobile"
+        "SENTRY_ORG": "fueliq",
+        "SENTRY_PROJECT": "fueliq-mobile"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "SENTRY_ORG": "vibefit",
-        "SENTRY_PROJECT": "vibefit-mobile"
+        "SENTRY_ORG": "fueliq",
+        "SENTRY_PROJECT": "fueliq-mobile"
       }
     }
   },

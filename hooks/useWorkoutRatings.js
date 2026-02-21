@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_workout_ratings';
+const STORAGE_KEY = '@fueliq_workout_ratings';
 const MAX_ENTRIES = 200;
 
 export default function useWorkoutRatings() {

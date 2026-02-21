@@ -202,7 +202,7 @@ describe('useAchievements - checkAchievements', () => {
     });
 
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      '@vibefit_achievements',
+      '@fueliq_achievements',
       expect.stringContaining('first_streak_3')
     );
   });

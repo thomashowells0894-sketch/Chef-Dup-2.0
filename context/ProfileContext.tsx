@@ -12,7 +12,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { MacroSet } from '../types';
 
-const PROFILE_CACHE_KEY = '@vibefit_profile_cache';
+const PROFILE_CACHE_KEY = '@fueliq_profile_cache';
 
 interface ActivityLevelInfo {
   label: string;

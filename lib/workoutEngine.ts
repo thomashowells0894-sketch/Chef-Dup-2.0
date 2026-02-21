@@ -1,5 +1,5 @@
 /**
- * VibeFit Advanced Workout Engine
+ * FuelIQ Advanced Workout Engine
  * Progressive overload tracking, 1RM calculations, volume analysis,
  * periodization, muscle group heatmaps, and workout scoring.
  */

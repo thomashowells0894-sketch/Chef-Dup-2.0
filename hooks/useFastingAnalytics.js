@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays } from 'date-fns';
 
-const STORAGE_KEY = '@vibefit_fasting_history';
+const STORAGE_KEY = '@fueliq_fasting_history';
 
 export default function useFastingAnalytics() {
   const [history, setHistory] = useState([]);

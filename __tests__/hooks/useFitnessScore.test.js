@@ -442,7 +442,7 @@ describe('useFitnessScore - saveScore', () => {
 
     await waitFor(() => {
       expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-        '@vibefit_fitness_score',
+        '@fueliq_fitness_score',
         expect.any(String)
       );
     });

@@ -1,7 +1,7 @@
 import { by, device, element, expect, waitFor } from 'detox';
 
 export const TEST_USER = {
-  email: 'e2e-test@vibefit.app',
+  email: 'e2e-test@fueliq.app',
   password: 'TestPass123!',
 };
 

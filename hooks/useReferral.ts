@@ -39,9 +39,9 @@ export interface ReferralReward {
 // Constants
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = '@vibefit_referral';
-const APP_STORE_URL = 'https://apps.apple.com/app/vibefit/id0000000000';
-const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.vibefit.app';
+const STORAGE_KEY = '@fueliq_referral';
+const APP_STORE_URL = 'https://apps.apple.com/app/fueliq/id0000000000';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.fueliq.app';
 
 /** Rewards earned at specific referral milestones */
 const MILESTONE_REWARDS: ReferralReward[] = [
@@ -102,7 +102,7 @@ function buildReferralLink(inviteCode: string): string {
 function buildShareUrl(inviteCode: string): string {
   // In production, this would be a Firebase Dynamic Link or Branch.io link
   // that handles deferred deep linking. For now, use direct deep link.
-  return `https://vibefit.app/invite/${inviteCode}`;
+  return `https://fueliq.app/invite/${inviteCode}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,8 +161,8 @@ export function useReferral(userId?: string) {
 
     try {
       await Share.share({
-        message: `Join me on VibeFit! AI-powered fitness tracking that actually works. Use my invite code ${stats.inviteCode} for bonus rewards.\n\n${shareUrl}\n\nDownload: ${storeUrl}`,
-        title: 'Join VibeFit',
+        message: `Join me on FuelIQ! AI-powered fitness tracking that actually works. Use my invite code ${stats.inviteCode} for bonus rewards.\n\n${shareUrl}\n\nDownload: ${storeUrl}`,
+        title: 'Join FuelIQ',
       });
     } catch {
       // User cancelled or share failed
@@ -179,7 +179,7 @@ export function useReferral(userId?: string) {
         return stats.inviteCode;
       case 'sms': {
         const smsBody = encodeURIComponent(
-          `Check out VibeFit! Use my code ${stats.inviteCode}: ${shareUrl}`
+          `Check out FuelIQ! Use my code ${stats.inviteCode}: ${shareUrl}`
         );
         const smsUrl = Platform.OS === 'ios'
           ? `sms:&body=${smsBody}`
@@ -189,7 +189,7 @@ export function useReferral(userId?: string) {
       }
       case 'whatsapp': {
         const waText = encodeURIComponent(
-          `Join me on VibeFit! Use my invite code ${stats.inviteCode} for bonus rewards: ${shareUrl}`
+          `Join me on FuelIQ! Use my invite code ${stats.inviteCode} for bonus rewards: ${shareUrl}`
         );
         await Linking.openURL(`whatsapp://send?text=${waText}`).catch(() => {});
         break;

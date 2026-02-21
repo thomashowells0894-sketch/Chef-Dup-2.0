@@ -13,7 +13,7 @@ import { useProfile } from '../context/ProfileContext';
 import { hapticSuccess, hapticLight } from '../lib/haptics';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_progress_photos';
+const STORAGE_KEY = '@fueliq_progress_photos';
 const MAX_PHOTOS = 100;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

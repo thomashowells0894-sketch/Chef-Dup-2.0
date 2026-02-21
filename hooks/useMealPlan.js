@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from '../context/ProfileContext';
 import { generateMealPlan } from '../services/ai';
 
-const STORAGE_KEY = '@vibefit_meal_plan';
+const STORAGE_KEY = '@fueliq_meal_plan';
 
 /**
  * Get the ISO week number for a given date.
@@ -56,7 +56,7 @@ export function useMealPlan() {
   useEffect(() => {
     (async () => {
       try {
-        const saved = await AsyncStorage.getItem('@vibefit_household_size');
+        const saved = await AsyncStorage.getItem('@fueliq_household_size');
         if (saved) setHouseholdSize(parseInt(saved, 10) || 1);
       } catch {}
     })();
@@ -67,7 +67,7 @@ export function useMealPlan() {
     const clamped = Math.max(1, Math.min(8, size));
     setHouseholdSize(clamped);
     try {
-      await AsyncStorage.setItem('@vibefit_household_size', String(clamped));
+      await AsyncStorage.setItem('@fueliq_household_size', String(clamped));
     } catch {}
   }, []);
 

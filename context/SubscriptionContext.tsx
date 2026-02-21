@@ -111,8 +111,8 @@ const PREMIUM_ENTITLEMENT = 'premium';
 
 // Product identifiers
 export const PRODUCT_IDS = {
-  MONTHLY: 'vibefit_premium_monthly',
-  YEARLY: 'vibefit_premium_yearly',
+  MONTHLY: 'fueliq_premium_monthly',
+  YEARLY: 'fueliq_premium_yearly',
 };
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {

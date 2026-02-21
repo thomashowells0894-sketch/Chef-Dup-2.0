@@ -383,7 +383,7 @@ export async function searchProducts(query: string, page: number = 1, pageSize: 
 
     const response: Response = await pinnedFetch(`${SEARCH_API}?${params}`, {
       headers: {
-        'User-Agent': 'VibeFit/1.0.0 (https://vibefit.app)',
+        'User-Agent': 'FuelIQ/1.0.0 (https://fueliq.app)',
       },
       signal: controller.signal,
     });
@@ -485,7 +485,7 @@ export async function searchProductsGlobal(query: string, pageSize: number = 25,
     });
 
     const response: Response = await pinnedFetch(`${SEARCH_API}?${params}`, {
-      headers: { 'User-Agent': 'VibeFit/1.0.0 (https://vibefit.app)' },
+      headers: { 'User-Agent': 'FuelIQ/1.0.0 (https://fueliq.app)' },
       signal: controller.signal,
     });
 
@@ -570,10 +570,10 @@ export async function searchProductsWithUKPreference(query: string, pageSize: nu
     // Fetch both UK and global results in parallel
     const [ukResponse, globalResponse] = await Promise.all([
       fetch(`${SEARCH_API}?${ukParams}`, {
-        headers: { 'User-Agent': 'VibeFit/1.0.0 (https://vibefit.app)' },
+        headers: { 'User-Agent': 'FuelIQ/1.0.0 (https://fueliq.app)' },
       }).catch(() => null),
       fetch(`${SEARCH_API}?${globalParams}`, {
-        headers: { 'User-Agent': 'VibeFit/1.0.0 (https://vibefit.app)' },
+        headers: { 'User-Agent': 'FuelIQ/1.0.0 (https://fueliq.app)' },
       }),
     ]);
 
@@ -666,7 +666,7 @@ export async function fetchProductByBarcode(barcode: string): Promise<ProductRes
 
     const response: Response = await pinnedFetch(`${API_BASE}/${sanitizedBarcode}.json`, {
       headers: {
-        'User-Agent': 'VibeFit/1.0.0 (https://vibefit.app)',
+        'User-Agent': 'FuelIQ/1.0.0 (https://fueliq.app)',
       },
       signal: controller.signal,
     });

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMealTotals } from '../context/MealContext';
 import { useGamification } from '../context/GamificationContext';
 
-const CHALLENGE_KEY = '@vibefit_dynamic_challenges';
+const CHALLENGE_KEY = '@fueliq_dynamic_challenges';
 
 interface DailyChallenge {
   id: string;

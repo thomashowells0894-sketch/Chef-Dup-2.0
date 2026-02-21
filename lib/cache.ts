@@ -1,5 +1,5 @@
 /**
- * VibeFit Advanced Cache System
+ * FuelIQ Advanced Cache System
  * High-performance caching with TTL, LRU eviction, and memory management.
  *
  * Uses Map insertion order for O(1) LRU tracking instead of
@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const DEFAULT_TTL: number = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_ITEMS: number = 200;
-const CACHE_PREFIX: string = '@vibefit_cache_';
+const CACHE_PREFIX: string = '@fueliq_cache_';
 
 interface CacheEntry<V = unknown> {
   value: V;
@@ -244,8 +244,8 @@ class BatchQueue<T, R> {
 // IMAGE CACHE — Per-key storage instead of one giant JSON blob
 // ============================================================================
 
-const IMAGE_CACHE_PREFIX: string = '@vibefit_img_';
-const IMAGE_CACHE_INDEX_KEY: string = '@vibefit_img_index';
+const IMAGE_CACHE_PREFIX: string = '@fueliq_img_';
+const IMAGE_CACHE_INDEX_KEY: string = '@fueliq_img_index';
 const MAX_IMAGE_CACHE_SIZE: number = 50;
 
 /**

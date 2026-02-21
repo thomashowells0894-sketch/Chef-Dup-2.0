@@ -105,7 +105,7 @@
     "copyAllYesterday": "Kopieer alles van gisteren",
     "emptyTitle": "Nog geen maaltijden geregistreerd",
     "emptySubtitle": "Begin met registreren om je maaltijden hier te zien, of kopieer van gisteren.",
-    "shareDayStats": "Mijn VibeFit-stats vandaag: {{calories}} cal gegeten, {{protein}}g eiwit. {{remaining}} resterend! #VibeFit",
+    "shareDayStats": "Mijn FuelIQ-stats vandaag: {{calories}} cal gegeten, {{protein}}g eiwit. {{remaining}} resterend! #FuelIQ",
     "macroProtein": "E",
     "macroCarbs": "K",
     "macroFat": "V",
@@ -438,7 +438,7 @@
     "avgProtein": "Gemiddeld eiwit"
   },
   "onboarding": {
-    "welcome": "Welkom bij VibeFit",
+    "welcome": "Welkom bij FuelIQ",
     "getStarted": "Aan de slag",
     "setupProfile": "Stel je profiel in",
     "setGoals": "Stel je doelen in",

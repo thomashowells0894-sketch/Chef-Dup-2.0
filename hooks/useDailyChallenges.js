@@ -9,7 +9,7 @@
  * - XP rewards scale with difficulty
  * - Timer showing time remaining to complete
  *
- * AsyncStorage key: @vibefit_daily_challenges
+ * AsyncStorage key: @fueliq_daily_challenges
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -19,7 +19,7 @@ import { useFasting } from '../context/FastingContext';
 import { useHealthKit } from './useHealthKit';
 import { useGamification } from '../context/GamificationContext';
 
-const STORAGE_KEY = '@vibefit_daily_challenges';
+const STORAGE_KEY = '@fueliq_daily_challenges';
 const BASE_CHALLENGES_PER_DAY = 3;
 const BASE_XP_PER_CHALLENGE = 25;
 const BONUS_ALL_COMPLETE_XP = 50;

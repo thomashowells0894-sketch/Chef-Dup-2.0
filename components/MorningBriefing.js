@@ -27,8 +27,8 @@ import { useFasting } from '../context/FastingContext';
 import { useIsPremium } from '../context/SubscriptionContext';
 import { generateMorningBriefing } from '../services/ai';
 
-const STORAGE_KEY_DISMISSED = '@vibefit_morning_briefing_dismissed';
-const STORAGE_KEY_CACHE = '@vibefit_morning_briefing_cache';
+const STORAGE_KEY_DISMISSED = '@fueliq_morning_briefing_dismissed';
+const STORAGE_KEY_CACHE = '@fueliq_morning_briefing_cache';
 
 // Get today's date key
 function getTodayKey() {

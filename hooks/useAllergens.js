@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@vibefit_allergens';
+const STORAGE_KEY = '@fueliq_allergens';
 
 const COMMON_ALLERGENS = [
   { name: 'Dairy', emoji: '\uD83E\uDD5B', keywords: ['dairy', 'milk', 'cheese', 'butter', 'cream', 'yogurt', 'whey', 'casein'] },

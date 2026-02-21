@@ -1,5 +1,5 @@
 /**
- * VibeFit Comprehensive Exercise Library
+ * FuelIQ Comprehensive Exercise Library
  * 200+ exercises with detailed instructions, muscle targeting,
  * difficulty levels, and equipment requirements.
  */

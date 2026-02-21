@@ -1,5 +1,5 @@
 /**
- * VibeFit Elite AI Coaching System
+ * FuelIQ Elite AI Coaching System
  * Personalized training periodization, injury prevention, deload recommendations,
  * plateau-breaking strategies, and long-term programming intelligence.
  */
