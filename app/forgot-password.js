@@ -32,7 +32,7 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: 'vibefit://update-password',
+        redirectTo: 'fueliq://update-password',
       });
 
       if (error) {

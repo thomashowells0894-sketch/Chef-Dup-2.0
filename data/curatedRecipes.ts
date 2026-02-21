@@ -1,5 +1,5 @@
 /**
- * VibeFit - Curated Recipe Library
+ * FuelIQ - Curated Recipe Library
  *
  * 200+ hand-crafted recipes across breakfast, lunch, dinner, snack,
  * dessert and smoothie categories. Realistic nutrition values,

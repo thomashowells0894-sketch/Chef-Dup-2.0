@@ -105,7 +105,7 @@
     "copyAllYesterday": "Kopiera allt från igår",
     "emptyTitle": "Inga måltider loggade ännu",
     "emptySubtitle": "Börja logga för att se dina måltider här, eller kopiera från igår.",
-    "shareDayStats": "Mina VibeFit-stats idag: {{calories}} kal ätna, {{protein}}g protein. {{remaining}} kvar! #VibeFit",
+    "shareDayStats": "Mina FuelIQ-stats idag: {{calories}} kal ätna, {{protein}}g protein. {{remaining}} kvar! #FuelIQ",
     "macroProtein": "P",
     "macroCarbs": "K",
     "macroFat": "F",
@@ -438,7 +438,7 @@
     "avgProtein": "Snitt protein"
   },
   "onboarding": {
-    "welcome": "Välkommen till VibeFit",
+    "welcome": "Välkommen till FuelIQ",
     "getStarted": "Kom igång",
     "setupProfile": "Ställ in din profil",
     "setGoals": "Sätt dina mål",

@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Core Table RLS Migration
+-- FuelIQ Core Table RLS Migration
 -- Date: 2026-02-12
 -- Purpose: Add Row Level Security to core user data tables (profiles,
 --          food_logs, workouts, weight_history, recipes, recipe_ingredients).

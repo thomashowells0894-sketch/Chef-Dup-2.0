@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Social & Community Features Migration
+-- FuelIQ Social & Community Features Migration
 -- Date: 2026-02-09
 -- Purpose: Create all tables needed for social feed, challenges, friendships,
 --          journaling, and public profiles. Includes RLS policies, indexes,

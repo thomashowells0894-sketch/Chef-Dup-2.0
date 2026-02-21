@@ -1,5 +1,5 @@
 /**
- * VibeFit Performance Monitor
+ * FuelIQ Performance Monitor
  * Tracks render times, API latencies, memory usage, and frame drops.
  *
  * Uses a circular buffer for O(1) insertion without array resizing.

@@ -396,7 +396,7 @@ function SettingsScreenInner() {
         {/* Replay Feature Tour */}
         <Text style={[styles.sectionHeader, { marginTop: Spacing.md }]}>App Tour</Text>
         <Text style={styles.description}>
-          Revisit the guided tour to rediscover all VibeFit features.
+          Revisit the guided tour to rediscover all FuelIQ features.
         </Text>
 
         <View style={styles.toggleGroup}>

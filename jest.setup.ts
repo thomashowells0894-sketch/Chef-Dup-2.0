@@ -128,8 +128,8 @@ jest.mock('./context/SubscriptionContext', () => ({
   })),
   SubscriptionProvider: ({ children }: { children: React.ReactNode }) => children,
   PRODUCT_IDS: {
-    MONTHLY: 'vibefit_premium_monthly',
-    YEARLY: 'vibefit_premium_yearly',
+    MONTHLY: 'fueliq_premium_monthly',
+    YEARLY: 'fueliq_premium_yearly',
   },
 }));
 

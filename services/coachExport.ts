@@ -123,7 +123,7 @@ export async function exportCoachReportAsCSV(data: CoachExportData): Promise<str
     ];
 
     const csvContent = lines.join('\n');
-    const filePath = `${FileSystem.documentDirectory}vibefit-coach-report.csv`;
+    const filePath = `${FileSystem.documentDirectory}fueliq-coach-report.csv`;
     await FileSystem.writeAsStringAsync(filePath, csvContent);
 
     if (await Sharing.isAvailableAsync()) {

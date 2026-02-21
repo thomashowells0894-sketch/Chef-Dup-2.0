@@ -105,7 +105,7 @@
     "copyAllYesterday": "昨日の全てをコピー",
     "emptyTitle": "まだ食事が記録されていません",
     "emptySubtitle": "食事を記録してここに表示するか、昨日の記録をコピーしましょう。",
-    "shareDayStats": "今日のVibeFit統計：{{calories}}cal摂取、タンパク質{{protein}}g。残り{{remaining}}！#VibeFit",
+    "shareDayStats": "今日のFuelIQ統計：{{calories}}cal摂取、タンパク質{{protein}}g。残り{{remaining}}！#FuelIQ",
     "macroProtein": "P",
     "macroCarbs": "C",
     "macroFat": "F",
@@ -438,7 +438,7 @@
     "avgProtein": "平均タンパク質"
   },
   "onboarding": {
-    "welcome": "VibeFitへようこそ",
+    "welcome": "FuelIQへようこそ",
     "getStarted": "始めましょう",
     "setupProfile": "プロフィールを設定",
     "setGoals": "目標を設定",

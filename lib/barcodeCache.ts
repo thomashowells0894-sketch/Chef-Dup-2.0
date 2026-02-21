@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BARCODE_CACHE_KEY = '@vibefit_barcode_cache';
+const BARCODE_CACHE_KEY = '@fueliq_barcode_cache';
 const MAX_CACHED = 200;
 
 interface CachedBarcode {

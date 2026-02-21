@@ -72,18 +72,18 @@ export interface AllWidgetData {
 // Constants
 // ---------------------------------------------------------------------------
 
-const WIDGET_DATA_KEY = '@vibefit_widget_data';
+const WIDGET_DATA_KEY = '@fueliq_widget_data';
 
 /**
  * iOS App Group identifier for sharing data with WidgetKit extensions.
  * Must match the App Group configured in Xcode and app.json.
  */
-export const IOS_APP_GROUP = 'group.com.vibefit.app';
+export const IOS_APP_GROUP = 'group.com.fueliq.app';
 
 /**
  * Android SharedPreferences file name for widget data.
  */
-export const ANDROID_WIDGET_PREFS = 'com.vibefit.app.widget_data';
+export const ANDROID_WIDGET_PREFS = 'com.fueliq.app.widget_data';
 
 // ---------------------------------------------------------------------------
 // Streak Tier Calculation

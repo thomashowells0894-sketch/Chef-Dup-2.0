@@ -439,7 +439,7 @@ describe('data persistence', () => {
 
     await waitFor(() => {
       expect(mockSetEncryptedItem).toHaveBeenCalledWith(
-        '@vibefit_sleep_history',
+        '@fueliq_sleep_history',
         expect.any(Array),
       );
     }, WAIT_OPTIONS);

@@ -1,5 +1,5 @@
 /**
- * VibeFit Dashboard - Premium Dark Mode
+ * FuelIQ Dashboard - Premium Dark Mode
  *
  * Features:
  * - Deep black background with Electric Blue accents
@@ -497,14 +497,14 @@ function DashboardScreenInner() {
 
     (async () => {
       try {
-        const shown = await AsyncStorage.getItem('@vibefit_streak_milestones_shown');
+        const shown = await AsyncStorage.getItem('@fueliq_streak_milestones_shown');
         const shownSet = new Set(shown ? JSON.parse(shown) : []);
         if (shownSet.has(currentStreak)) return;
 
         // Mark as shown before triggering to prevent race conditions
         shownSet.add(currentStreak);
         await AsyncStorage.setItem(
-          '@vibefit_streak_milestones_shown',
+          '@fueliq_streak_milestones_shown',
           JSON.stringify([...shownSet]),
         );
 

@@ -1,5 +1,5 @@
 /**
- * VibeFit Wellness & Recovery Engine
+ * FuelIQ Wellness & Recovery Engine
  * Sleep scoring, recovery readiness, stress management,
  * meditation tracking, and holistic wellness scoring.
  */

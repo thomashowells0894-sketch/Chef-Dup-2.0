@@ -205,7 +205,7 @@ export default function LevelUpModal({ visible, level, levelName, previousLevel,
     await hapticSuccess();
     try {
       await Share.share({
-        message: `I just reached Level ${level} (${title}) in VibeFit! ${perk ? `Unlocked: ${perk}` : ''}`,
+        message: `I just reached Level ${level} (${title}) in FuelIQ! ${perk ? `Unlocked: ${perk}` : ''}`,
       });
     } catch {
       // Share cancelled

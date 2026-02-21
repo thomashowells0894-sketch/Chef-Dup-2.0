@@ -38,8 +38,8 @@ declare const __DEV__: boolean;
 
 const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const BASELINE_DAYS = 14;
-const BASELINE_STORAGE_KEY = '@vibefit_health_baselines';
-const SNAPSHOT_CACHE_KEY = '@vibefit_health_snapshot_cache';
+const BASELINE_STORAGE_KEY = '@fueliq_health_baselines';
+const SNAPSHOT_CACHE_KEY = '@fueliq_health_snapshot_cache';
 
 // ---------------------------------------------------------------------------
 // Anomaly thresholds

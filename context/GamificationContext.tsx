@@ -468,8 +468,8 @@ interface ToastContextValue {
 const GamificationContext = createContext<GamificationContextValue | null>(null);
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-const STORAGE_KEY = '@vibefit_gamification';
-const WEEKLY_CHALLENGE_KEY = '@vibefit_weekly_challenges';
+const STORAGE_KEY = '@fueliq_gamification';
+const WEEKLY_CHALLENGE_KEY = '@fueliq_weekly_challenges';
 
 // ============================================================================
 // HELPERS

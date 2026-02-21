@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DISCLOSURE_KEY = '@vibefit_feature_disclosure';
+const DISCLOSURE_KEY = '@fueliq_feature_disclosure';
 
 interface FeatureDisclosure {
   discoveredFeatures: string[];

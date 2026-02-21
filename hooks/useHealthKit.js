@@ -1,7 +1,7 @@
 /**
  * useHealthKit Hook
  *
- * Manages health data integration state for VibeFit.
+ * Manages health data integration state for FuelIQ.
  * Handles connection, disconnection, data fetching, and
  * automatic refresh while the app is in the foreground.
  */

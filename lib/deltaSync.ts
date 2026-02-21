@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const SYNC_ANCHOR_KEY = '@vibefit_health_sync_anchor';
+const SYNC_ANCHOR_KEY = '@fueliq_health_sync_anchor';
 
 interface SyncAnchor {
   lastSyncTimestamp: number;

@@ -1,5 +1,5 @@
 /**
- * Goal Timeline & Weight Projection Screen - VibeFit
+ * Goal Timeline & Weight Projection Screen - FuelIQ
  *
  * Weight-specific goal projection with:
  * - Progress Hero Card with gradient border

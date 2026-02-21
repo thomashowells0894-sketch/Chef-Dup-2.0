@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, addDays, differenceInDays } from 'date-fns';
 
-const STORAGE_KEY = '@vibefit_goal_timeline';
+const STORAGE_KEY = '@fueliq_goal_timeline';
 
 export default function useGoalTimeline() {
   const [goals, setGoals] = useState([]);

@@ -1,5 +1,5 @@
 /**
- * VibeFit Biometric Intelligence Platform
+ * FuelIQ Biometric Intelligence Platform
  * Heart rate zones, GPS route tracking, real-time biometric dashboard,
  * smart notifications based on biometrics, and connected device management.
  */

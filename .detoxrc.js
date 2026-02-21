@@ -13,8 +13,8 @@ module.exports = {
   apps: {
     'ios.debug': {
       type: 'ios.app',
-      binaryPath: 'ios/build/Build/Products/Debug-iphonesimulator/vibefit.app',
-      build: 'xcodebuild -workspace ios/vibefit.xcworkspace -scheme vibefit -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build',
+      binaryPath: 'ios/build/Build/Products/Debug-iphonesimulator/fueliq.app',
+      build: 'xcodebuild -workspace ios/fueliq.xcworkspace -scheme fueliq -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build',
     },
     'android.debug': {
       type: 'android.apk',

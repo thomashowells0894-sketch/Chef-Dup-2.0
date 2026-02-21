@@ -31,7 +31,7 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-const CACHE_KEY = '@vibefit_adaptive_tdee';
+const CACHE_KEY = '@fueliq_adaptive_tdee';
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const LOOKBACK_DAYS = 90;
 

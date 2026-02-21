@@ -105,7 +105,7 @@
     "copyAllYesterday": "कल का सब कॉपी करें",
     "emptyTitle": "अभी तक कोई भोजन दर्ज नहीं हुआ",
     "emptySubtitle": "यहां अपने भोजन देखने के लिए दर्ज करना शुरू करें, या कल से कॉपी करें।",
-    "shareDayStats": "आज के VibeFit आंकड़े: {{calories}} कैल खाए, {{protein}}ग्राम प्रोटीन। {{remaining}} शेष! #VibeFit",
+    "shareDayStats": "आज के FuelIQ आंकड़े: {{calories}} कैल खाए, {{protein}}ग्राम प्रोटीन। {{remaining}} शेष! #FuelIQ",
     "macroProtein": "प्रो",
     "macroCarbs": "का",
     "macroFat": "व",
@@ -438,7 +438,7 @@
     "avgProtein": "औसत प्रोटीन"
   },
   "onboarding": {
-    "welcome": "VibeFit में आपका स्वागत है",
+    "welcome": "FuelIQ में आपका स्वागत है",
     "getStarted": "शुरू करें",
     "setupProfile": "अपनी प्रोफाइल सेट करें",
     "setGoals": "अपने लक्ष्य तय करें",

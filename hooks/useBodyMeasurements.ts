@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { isValidArray } from '../lib/validation';
 import { getEncryptedItem, setEncryptedItem } from '../lib/encryptedStorage';
 
-const STORAGE_KEY = '@vibefit_body_measurements';
-const UNIT_KEY = '@vibefit_body_measurements_unit';
+const STORAGE_KEY = '@fueliq_body_measurements';
+const UNIT_KEY = '@fueliq_body_measurements_unit';
 
 const BODY_PARTS: string[] = ['chest', 'waist', 'hips', 'leftArm', 'rightArm', 'leftThigh', 'rightThigh', 'neck'];
 

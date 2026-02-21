@@ -1,5 +1,5 @@
 /**
- * VibeFit AI Service - Server-Side Gateway
+ * FuelIQ AI Service - Server-Side Gateway
  *
  * All AI processing is now handled by a Supabase Edge Function.
  * This client-side service acts as a thin wrapper that invokes
@@ -145,7 +145,7 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries: number = 2,
 async function invokeAIBrain(type: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   // Premium gate: block all AI calls for free users (genesis exempted for onboarding)
   if (!_isPremium && type !== 'genesis') {
-    throw new Error('This feature requires VibeFit Pro.');
+    throw new Error('This feature requires FuelIQ Pro.');
   }
 
   // Client-side rate limiting (fast-fail guard — not a security boundary)

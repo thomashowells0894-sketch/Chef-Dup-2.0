@@ -518,7 +518,7 @@ function AddScreenInner() {
     if (!isPremium) {
       Alert.alert(
         'Pro Feature',
-        'Voice food logging requires VibeFit Pro. Upgrade to unlock AI-powered voice logging and more.',
+        'Voice food logging requires FuelIQ Pro. Upgrade to unlock AI-powered voice logging and more.',
         [
           { text: 'Not Now', style: 'cancel' },
           { text: 'Upgrade', onPress: () => router.push('/paywall') },

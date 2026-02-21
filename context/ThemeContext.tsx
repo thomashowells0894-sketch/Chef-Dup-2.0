@@ -3,7 +3,7 @@ import { useColorScheme, ColorSchemeName } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors as DarkColors, LightColors as ThemeLightColors, Shadows as DarkShadows, LightShadows } from '../constants/theme';
 
-const STORAGE_KEY = '@vibefit_theme_preference';
+const STORAGE_KEY = '@fueliq_theme_preference';
 
 type ThemePreference = 'dark' | 'light' | 'system';
 

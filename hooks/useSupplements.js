@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJSONParse, isValidArray, isValidObject } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_supplements';
-const LOG_KEY = '@vibefit_supplements_log';
+const STORAGE_KEY = '@fueliq_supplements';
+const LOG_KEY = '@fueliq_supplements_log';
 const MAX_SUPPLEMENTS = 20;
 
 const DEFAULT_SUPPLEMENTS = [

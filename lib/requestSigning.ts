@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-const SIGNING_KEY_ALIAS = 'vibefit_signing_key';
+const SIGNING_KEY_ALIAS = 'fueliq_signing_key';
 const REPLAY_WINDOW_MS = 300 * 1000; // 5 minutes
 const CLOCK_SKEW_TOLERANCE_MS = 30 * 1000; // ±30 seconds clock skew tolerance
 const NONCE_CACHE_MAX_SIZE = 1000;
@@ -142,9 +142,9 @@ export async function signRequest(
   url: string,
   body?: string | null
 ): Promise<{
-  'x-vibefit-timestamp': string;
-  'x-vibefit-signature': string;
-  'x-vibefit-nonce': string;
+  'x-fueliq-timestamp': string;
+  'x-fueliq-signature': string;
+  'x-fueliq-nonce': string;
 }> {
   const key = await getSigningKey();
   const timestamp = Date.now().toString();
@@ -163,9 +163,9 @@ export async function signRequest(
   const signature = await hmacSHA256(key, canonical);
 
   return {
-    'x-vibefit-timestamp': timestamp,
-    'x-vibefit-signature': signature,
-    'x-vibefit-nonce': nonce,
+    'x-fueliq-timestamp': timestamp,
+    'x-fueliq-signature': signature,
+    'x-fueliq-nonce': nonce,
   };
 }
 
@@ -221,9 +221,9 @@ export function createSignedFetch(originalFetch: typeof fetch): typeof fetch {
       const sigHeaders = await signRequest(method, url, body);
 
       const headers = new Headers(init?.headers);
-      headers.set('x-vibefit-timestamp', sigHeaders['x-vibefit-timestamp']);
-      headers.set('x-vibefit-signature', sigHeaders['x-vibefit-signature']);
-      headers.set('x-vibefit-nonce', sigHeaders['x-vibefit-nonce']);
+      headers.set('x-fueliq-timestamp', sigHeaders['x-fueliq-timestamp']);
+      headers.set('x-fueliq-signature', sigHeaders['x-fueliq-signature']);
+      headers.set('x-fueliq-nonce', sigHeaders['x-fueliq-nonce']);
 
       return originalFetch(input, { ...init, headers });
     } catch {

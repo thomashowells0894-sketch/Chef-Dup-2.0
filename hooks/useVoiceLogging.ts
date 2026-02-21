@@ -46,7 +46,7 @@ export function useVoiceLogging(
       if (status !== 'granted') {
         Alert.alert(
           'Microphone Access',
-          'VibeFit needs microphone access to log food by voice. Please enable it in Settings.',
+          'FuelIQ needs microphone access to log food by voice. Please enable it in Settings.',
         );
         return;
       }

@@ -1,5 +1,5 @@
 /**
- * Performance utilities for VibeFit
+ * Performance utilities for FuelIQ
  */
 
 declare const __DEV__: boolean;

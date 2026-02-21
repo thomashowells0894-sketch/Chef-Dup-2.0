@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY: string = '@vibefit_dashboard_layout';
+const STORAGE_KEY: string = '@fueliq_dashboard_layout';
 
 // Default dashboard cards configuration
 interface CardConfig {

@@ -1,5 +1,5 @@
 /**
- * Pre-built multi-week structured workout programs for VibeFit.
+ * Pre-built multi-week structured workout programs for FuelIQ.
  * Each program contains weeks -> days -> exercises with progressive overload.
  */
 

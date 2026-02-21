@@ -77,7 +77,7 @@ interface MoodContextValue {
 
 const MoodContext = createContext<MoodContextValue | null>(null);
 
-const STORAGE_KEY = '@vibefit_mood_logs';
+const STORAGE_KEY = '@fueliq_mood_logs';
 const MAX_LOGS = 100; // Keep last 100 logs
 
 // Digestion status options

@@ -105,7 +105,7 @@
     "copyAllYesterday": "Copiar Todo de Ayer",
     "emptyTitle": "Aún no se han registrado comidas",
     "emptySubtitle": "Empieza a registrar para ver tus comidas aquí, o copia las de ayer.",
-    "shareDayStats": "Estadísticas de VibeFit de hoy: {{calories}} cal consumidas, {{protein}}g de proteína. ¡{{remaining}} restantes! #VibeFit",
+    "shareDayStats": "Estadísticas de FuelIQ de hoy: {{calories}} cal consumidas, {{protein}}g de proteína. ¡{{remaining}} restantes! #FuelIQ",
     "macroProtein": "P",
     "macroCarbs": "C",
     "macroFat": "G",
@@ -438,7 +438,7 @@
     "avgProtein": "Proteína Promedio"
   },
   "onboarding": {
-    "welcome": "Bienvenido a VibeFit",
+    "welcome": "Bienvenido a FuelIQ",
     "getStarted": "Comenzar",
     "setupProfile": "Configura tu Perfil",
     "setGoals": "Establece tus Objetivos",

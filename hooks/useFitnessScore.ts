@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
 
-const STORAGE_KEY = '@vibefit_fitness_score';
+const STORAGE_KEY = '@fueliq_fitness_score';
 
 interface ScoreHistoryEntry {
   date: string;

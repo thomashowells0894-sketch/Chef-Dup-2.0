@@ -37,7 +37,7 @@ interface OfflineContextValue {
 
 const OfflineContext = createContext<OfflineContextValue | null>(null);
 
-const QUEUE_KEY = '@vibefit_offline_queue';
+const QUEUE_KEY = '@fueliq_offline_queue';
 
 /**
  * Calculate exponential backoff delay with jitter.

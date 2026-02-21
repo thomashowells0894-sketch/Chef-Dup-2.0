@@ -22,7 +22,7 @@ import type {
 
 const FastingContext = createContext<FastingContextValue | null>(null);
 
-const STORAGE_KEY = '@vibefit_fasting';
+const STORAGE_KEY = '@fueliq_fasting';
 
 // Default fasting duration in hours
 const DEFAULT_FAST_DURATION = 16;
@@ -229,7 +229,7 @@ export function FastingProvider({ children }: { children: React.ReactNode }) {
     // Record to fasting history for analytics (encrypted)
     try {
       const durationHours = Math.round((progress.elapsedHours + progress.elapsedMinutes / 60) * 10) / 10;
-      const historyArr = await getEncryptedItem('@vibefit_fasting_history', []) as any[];
+      const historyArr = await getEncryptedItem('@fueliq_fasting_history', []) as any[];
       const updatedHistory = Array.isArray(historyArr) ? historyArr : [];
       updatedHistory.unshift({
         date: new Date().toISOString(),
@@ -237,7 +237,7 @@ export function FastingProvider({ children }: { children: React.ReactNode }) {
         targetHours: fastDuration,
         completed: progress.isComplete,
       });
-      await setEncryptedItem('@vibefit_fasting_history', updatedHistory.slice(0, 365));
+      await setEncryptedItem('@fueliq_fasting_history', updatedHistory.slice(0, 365));
     } catch (e) {}
 
     return progress; // Return final progress for stats

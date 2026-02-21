@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Enterprise Security & Scale Migration
+-- FuelIQ Enterprise Security & Scale Migration
 -- Date: 2026-01-11
 -- Purpose: Add indexes for 100M+ scale and harden RLS policies
 -- ============================================================================

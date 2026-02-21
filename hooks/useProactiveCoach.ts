@@ -26,7 +26,7 @@ export interface ProactiveCoachOptions {
   } | null;
 }
 
-const PROACTIVE_KEY = '@vibefit_proactive_dismissed';
+const PROACTIVE_KEY = '@fueliq_proactive_dismissed';
 const EVAL_INTERVAL_MS = 60_000; // Re-evaluate every 60s, not every render
 
 /**

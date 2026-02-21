@@ -219,7 +219,7 @@ export default function LockScreen({
           <View style={styles.logoCircle}>
             <Shield size={32} color={Colors.primary} />
           </View>
-          <Text style={styles.appTitle}>VibeFit</Text>
+          <Text style={styles.appTitle}>FuelIQ</Text>
           <Text style={styles.lockSubtitle}>
             {isLockedOut
               ? 'Too many attempts'

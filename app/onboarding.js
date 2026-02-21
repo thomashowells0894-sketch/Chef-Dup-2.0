@@ -367,7 +367,7 @@ export default function OnboardingScreen() {
       <ReAnimated.View
         entering={FadeInDown.springify().damping(12).delay(100)}
       >
-        <Text style={styles.stepTitle}>What VibeFit Can Do</Text>
+        <Text style={styles.stepTitle}>What FuelIQ Can Do</Text>
         <Text style={styles.stepSubtitle}>
           Powered by AI to make tracking effortless
         </Text>

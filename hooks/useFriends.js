@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const FRIEND_STREAKS_KEY = '@vibefit_friend_streaks';
+const FRIEND_STREAKS_KEY = '@fueliq_friend_streaks';
 
 export function useFriends() {
   const { user } = useAuth();

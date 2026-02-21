@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays } from 'date-fns';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_water_history';
+const STORAGE_KEY = '@fueliq_water_history';
 
 /**
  * useWaterHistory - AsyncStorage-based hook for tracking daily water history.

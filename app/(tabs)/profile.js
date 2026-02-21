@@ -786,39 +786,39 @@ function ProfileScreenInner() {
 
       // 6. Clear all local AsyncStorage data
       await AsyncStorage.multiRemove([
-        '@vibefit_gamification',
-        '@vibefit_fasting',
-        '@vibefit_recipes',
-        '@vibefit_offline_queue',
-        '@vibefit_mood_logs',
-        '@vibefit_dashboard_layout',
-        '@vibefit_chat_history',
-        '@vibefit_last_briefing_date',
-        '@vibefit_profile_cache',
-        '@vibefit_achievements',
-        '@vibefit_sleep_history',
-        '@vibefit_supplements',
-        '@vibefit_supplements_log',
-        '@vibefit_water_history',
-        '@vibefit_favorite_foods',
-        '@vibefit_meal_plan',
-        '@vibefit_personal_records',
-        '@vibefit_adaptive_macros',
-        '@vibefit_daily_challenges',
-        '@vibefit_weekly_digest',
-        '@vibefit_workout_history',
-        '@vibefit_body_measurements',
-        '@vibefit_body_measurements_unit',
-        '@vibefit_weight_history',
-        '@vibefit_weight_goal',
-        '@vibefit_workout_templates',
-        '@vibefit_breathing_history',
-        '@vibefit_fasting_history',
-        '@vibefit_habits',
-        '@vibefit_habits_log',
-        '@vibefit_activity_scores',
-        '@vibefit_recovery',
-        '@vibefit_allergens',
+        '@fueliq_gamification',
+        '@fueliq_fasting',
+        '@fueliq_recipes',
+        '@fueliq_offline_queue',
+        '@fueliq_mood_logs',
+        '@fueliq_dashboard_layout',
+        '@fueliq_chat_history',
+        '@fueliq_last_briefing_date',
+        '@fueliq_profile_cache',
+        '@fueliq_achievements',
+        '@fueliq_sleep_history',
+        '@fueliq_supplements',
+        '@fueliq_supplements_log',
+        '@fueliq_water_history',
+        '@fueliq_favorite_foods',
+        '@fueliq_meal_plan',
+        '@fueliq_personal_records',
+        '@fueliq_adaptive_macros',
+        '@fueliq_daily_challenges',
+        '@fueliq_weekly_digest',
+        '@fueliq_workout_history',
+        '@fueliq_body_measurements',
+        '@fueliq_body_measurements_unit',
+        '@fueliq_weight_history',
+        '@fueliq_weight_goal',
+        '@fueliq_workout_templates',
+        '@fueliq_breathing_history',
+        '@fueliq_fasting_history',
+        '@fueliq_habits',
+        '@fueliq_habits_log',
+        '@fueliq_activity_scores',
+        '@fueliq_recovery',
+        '@fueliq_allergens',
       ]);
 
       // 7. Sign out
@@ -888,7 +888,7 @@ function ProfileScreenInner() {
                 {name ? name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) : 'VF'}
               </Text>
             </View>
-            <Text style={styles.avatarName}>{name || 'VibeFit User'}</Text>
+            <Text style={styles.avatarName}>{name || 'FuelIQ User'}</Text>
             <Text style={styles.avatarSubtitle}>
               {isProfileComplete ? 'Profile configured' : 'Complete your profile below'}
             </Text>
@@ -1157,7 +1157,7 @@ function ProfileScreenInner() {
                   </View>
 
                   {/* Version */}
-                  <Text style={styles.version}>VibeFit v1.0.0</Text>
+                  <Text style={styles.version}>FuelIQ v1.0.0</Text>
                   <View style={styles.bottomSpacer} />
                 </>
               }

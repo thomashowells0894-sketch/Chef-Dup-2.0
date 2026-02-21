@@ -8,7 +8,7 @@ import { generateMacroRecommendation } from '../services/ai';
 import { useAdaptiveTDEE } from './useAdaptiveTDEE';
 import { usePredictiveAnalytics } from './usePredictiveAnalytics';
 
-const STORAGE_KEY = '@vibefit_adaptive_macros';
+const STORAGE_KEY = '@fueliq_adaptive_macros';
 
 /**
  * Get the ISO week number for a given date.

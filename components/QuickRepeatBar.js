@@ -6,7 +6,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constant
 import { hapticLight } from '../lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const RECENT_MEALS_KEY = '@vibefit_quick_repeat';
+const RECENT_MEALS_KEY = '@fueliq_quick_repeat';
 const MAX_RECENT = 5;
 
 export function recordMealForRepeat(food) {
