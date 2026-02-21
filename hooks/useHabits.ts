@@ -3,8 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays } from 'date-fns';
 import { safeJSONParse, isValidArray, isValidObject } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_habits';
-const LOG_KEY = '@vibefit_habits_log';
+const STORAGE_KEY = '@fueliq_habits';
+const LOG_KEY = '@fueliq_habits_log';
 
 interface Habit {
   id: string;

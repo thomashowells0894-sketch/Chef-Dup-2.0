@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Security Hardening Migration
+-- FuelIQ Security Hardening Migration
 -- Date: 2026-02-11
 -- Purpose: Fix overly permissive RLS policies on social_posts and
 --          challenge_participants. Posts are now only visible to the author's

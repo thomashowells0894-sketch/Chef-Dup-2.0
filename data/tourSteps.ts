@@ -7,7 +7,7 @@ interface TourStep {
 
 export const DASHBOARD_TOUR: TourStep[] = [
   {
-    title: 'Welcome to VibeFit!',
+    title: 'Welcome to FuelIQ!',
     description: 'Your AI-powered fitness companion. Let me show you around.',
     emoji: '\ud83d\udc4b',
     color: '#00D4FF',
@@ -50,7 +50,7 @@ export const DASHBOARD_TOUR: TourStep[] = [
   },
   {
     title: 'You\'re All Set!',
-    description: 'Start logging your first meal and watch VibeFit work its magic.',
+    description: 'Start logging your first meal and watch FuelIQ work its magic.',
     emoji: '\ud83d\ude80',
     color: '#00E676',
   },

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@vibefit_frequent_foods';
+const STORAGE_KEY = '@fueliq_frequent_foods';
 const MAX_ITEMS = 100;
 
 /**

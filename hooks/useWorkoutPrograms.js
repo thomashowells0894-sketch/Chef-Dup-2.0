@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProgramById, getTotalDays } from '../data/workoutPrograms';
 
-const STORAGE_KEY = '@vibefit_active_program';
+const STORAGE_KEY = '@fueliq_active_program';
 
 /**
  * Hook for managing active workout program progress.

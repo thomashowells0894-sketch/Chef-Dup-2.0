@@ -1,5 +1,5 @@
 /**
- * VibeFit Verify Subscription - Supabase Edge Function
+ * FuelIQ Verify Subscription - Supabase Edge Function
  *
  * Server-side subscription verification via RevenueCat REST API.
  * Replaces insecure client-side `profiles.update({ is_premium })` with

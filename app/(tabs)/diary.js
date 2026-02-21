@@ -428,7 +428,7 @@ function DiaryScreenInner() {
     hapticLight();
     try {
       await Share.share({
-        message: `Today's VibeFit stats: ${totals.calories} cal eaten, ${totals.protein}g protein. ${remaining.calories} remaining! #VibeFit`,
+        message: `Today's FuelIQ stats: ${totals.calories} cal eaten, ${totals.protein}g protein. ${remaining.calories} remaining! #FuelIQ`,
       });
     } catch (e) {
       // user dismissed the share sheet — nothing to do

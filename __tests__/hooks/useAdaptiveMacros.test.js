@@ -381,7 +381,7 @@ describe('useAdaptiveMacros - applyRecommendation', () => {
 
     // The dismissed version should be persisted
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      '@vibefit_adaptive_macros',
+      '@fueliq_adaptive_macros',
       expect.stringContaining('"dismissed":true')
     );
   });
@@ -447,7 +447,7 @@ describe('useAdaptiveMacros - dismissRecommendation', () => {
 
     expect(result.current.recommendation).toBeNull();
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      '@vibefit_adaptive_macros',
+      '@fueliq_adaptive_macros',
       expect.stringContaining('"dismissed":true')
     );
   });
@@ -466,7 +466,7 @@ describe('useAdaptiveMacros - dismissRecommendation', () => {
     // setItem should only have been called by the auto-generate (which never resolves)
     // so dismiss should NOT have called setItem
     const setItemCalls = (AsyncStorage.setItem).mock.calls.filter(
-      (call) => call[0] === '@vibefit_adaptive_macros'
+      (call) => call[0] === '@fueliq_adaptive_macros'
     );
     expect(setItemCalls).toHaveLength(0);
   });

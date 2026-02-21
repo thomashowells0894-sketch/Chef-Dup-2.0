@@ -1,4 +1,4 @@
-// VibeFit Premium Theme - Apple Design Award Level
+// FuelIQ Premium Theme - Apple Design Award Level
 // Dark mode with Electric Blue & Sunset Orange accents
 
 export const Colors = {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from '../context/ProfileContext';
 
-const STORAGE_KEY = '@vibefit_calorie_cycling';
+const STORAGE_KEY = '@fueliq_calorie_cycling';
 
 // Day type constants
 export const DAY_TYPES = {

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const LOG_TIMES_KEY = '@vibefit_log_times';
+const LOG_TIMES_KEY = '@fueliq_log_times';
 const MAX_ENTRIES = 100;
 
 interface LogTimeEntry {

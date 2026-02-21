@@ -192,7 +192,7 @@ export default function AuthScreen() {
   const performOAuth = async (provider) => {
     try {
       const redirectUrl = makeRedirectUri({
-        scheme: 'vibefit',
+        scheme: 'fueliq',
         path: 'auth/callback',
       });
 
@@ -248,7 +248,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: 'vibefit://auth/reset-password',
+        redirectTo: 'fueliq://auth/reset-password',
       });
 
       if (error) {
@@ -360,7 +360,7 @@ export default function AuthScreen() {
         >
           <View style={styles.logoRow}>
             <Sparkles size={28} color={Colors.primary} />
-            <Text style={styles.logo}>VibeFit</Text>
+            <Text style={styles.logo}>FuelIQ</Text>
           </View>
           <Text style={styles.tagline}>Your fitness journey starts here</Text>
         </ReAnimated.View>

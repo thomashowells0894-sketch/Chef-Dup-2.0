@@ -57,7 +57,7 @@ export function useAppLockEnhanced() {
   }, [settings]);
 
   const unlock = useCallback(async () => {
-    const result = await authenticateWithBiometrics('Unlock VibeFit');
+    const result = await authenticateWithBiometrics('Unlock FuelIQ');
     if (result.success) {
       setIsLocked(false);
       recordActivity();

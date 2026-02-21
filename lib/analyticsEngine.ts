@@ -1,5 +1,5 @@
 /**
- * VibeFit Predictive Analytics Engine
+ * FuelIQ Predictive Analytics Engine
  * Advanced algorithms for trend analysis, plateau detection,
  * body composition estimation, and personalized insights.
  */

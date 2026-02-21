@@ -32,7 +32,7 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constant
 import { useProfile } from '../context/ProfileContext';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 
-const STORAGE_KEY = '@vibefit_glp1';
+const STORAGE_KEY = '@fueliq_glp1';
 
 const GLP1_MEDICATIONS = [
   { id: 'semaglutide_025', name: 'Semaglutide', brand: 'Ozempic / Wegovy', dose: '0.25mg', week: '1-4', color: '#00D4FF' },
@@ -281,7 +281,7 @@ export default function GLP1SupportScreen() {
             <GlassCard style={styles.onboardCard}>
               <Text style={styles.onboardTitle}>GLP-1 Medication Support</Text>
               <Text style={styles.onboardDesc}>
-                Taking Ozempic, Wegovy, Mounjaro, or Zepbound? VibeFit can optimize your nutrition for GLP-1 therapy — higher protein targets, easy-to-digest meal suggestions, side effect tracking, and dose titration monitoring.
+                Taking Ozempic, Wegovy, Mounjaro, or Zepbound? FuelIQ can optimize your nutrition for GLP-1 therapy — higher protein targets, easy-to-digest meal suggestions, side effect tracking, and dose titration monitoring.
               </Text>
               <Pressable
                 style={styles.enableButton}

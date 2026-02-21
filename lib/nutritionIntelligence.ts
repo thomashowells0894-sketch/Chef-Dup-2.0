@@ -1,5 +1,5 @@
 /**
- * VibeFit Nutrition Intelligence Engine
+ * FuelIQ Nutrition Intelligence Engine
  * Micronutrient tracking, glycemic index, meal timing optimization,
  * ingredient substitution, and nutrition periodization.
  */

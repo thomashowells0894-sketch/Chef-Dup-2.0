@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const CYCLE_KEY = '@vibefit_cycle_data';
+const CYCLE_KEY = '@fueliq_cycle_data';
 
 interface CyclePhase {
   name: 'menstrual' | 'follicular' | 'ovulatory' | 'luteal';

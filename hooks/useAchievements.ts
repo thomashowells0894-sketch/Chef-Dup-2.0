@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AchievementDefinition, AchievementContext, Achievement, UnlockedAchievement } from '../types';
 
-const STORAGE_KEY = '@vibefit_achievements';
+const STORAGE_KEY = '@fueliq_achievements';
 
 // Achievement definitions
 const ACHIEVEMENT_DEFINITIONS: AchievementDefinition[] = [

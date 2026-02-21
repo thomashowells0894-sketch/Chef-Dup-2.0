@@ -1,5 +1,5 @@
 /**
- * VibeFit Client-Side Rate Limiter
+ * FuelIQ Client-Side Rate Limiter
  *
  * Prevents excessive API calls (especially to AI endpoints) by
  * enforcing per-key cooldown periods. This protects both the user

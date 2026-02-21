@@ -25,7 +25,7 @@ const USDA_API_BASE: string = 'https://api.nal.usda.gov/fdc/v1';
 const USDA_API_KEY: string = process.env.EXPO_PUBLIC_USDA_API_KEY || 'DEMO_KEY';
 
 const TIMEOUT_MS: number = 4000;
-const BARCODE_CACHE_KEY = '@vibefit_barcode_cache';
+const BARCODE_CACHE_KEY = '@fueliq_barcode_cache';
 const MAX_CACHED_BARCODES = 200;
 
 // Use pinned fetch for all external API calls
@@ -279,7 +279,7 @@ async function lookupOFP(barcode: string): Promise<BarcodeFoodData | null> {
   try {
     const response: Response = await pinnedFetch(`${OFP_API_BASE}/${barcode}.json`, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'VibeFit/1.0 (fitness-app)' },
+      headers: { 'User-Agent': 'FuelIQ/1.0 (fitness-app)' },
     });
 
     clearTimeout(timeoutId);

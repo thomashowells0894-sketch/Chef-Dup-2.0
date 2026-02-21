@@ -1,5 +1,5 @@
 /**
- * ShareCardModal - Premium social sharing modal for VibeFit
+ * ShareCardModal - Premium social sharing modal for FuelIQ
  *
  * Renders a preview of the share card in a full-screen modal, then lets
  * the user share an image via the native share sheet or save to device.

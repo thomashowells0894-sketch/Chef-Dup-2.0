@@ -1,5 +1,5 @@
 /**
- * VibeFit Insight Generator
+ * FuelIQ Insight Generator
  * Transforms raw analytics data into human-readable, actionable insights.
  */
 

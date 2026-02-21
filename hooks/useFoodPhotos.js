@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
-const STORAGE_KEY = '@vibefit_food_photos';
+const STORAGE_KEY = '@fueliq_food_photos';
 const MAX_ENTRIES = 500;
 
 export function useFoodPhotos() {

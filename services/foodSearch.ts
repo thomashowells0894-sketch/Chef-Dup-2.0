@@ -73,8 +73,8 @@ export interface NormalizedServing {
 // Constants
 // ---------------------------------------------------------------------------
 
-const RECENT_SEARCHES_KEY = '@vibefit_recent_searches';
-const TRENDING_TERMS_KEY = '@vibefit_trending_terms';
+const RECENT_SEARCHES_KEY = '@fueliq_recent_searches';
+const TRENDING_TERMS_KEY = '@fueliq_trending_terms';
 const MAX_RECENT_SEARCHES = 50;
 const MAX_TRENDING_TERMS = 30;
 

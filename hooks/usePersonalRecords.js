@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@vibefit_personal_records';
+const STORAGE_KEY = '@fueliq_personal_records';
 
 export default function usePersonalRecords() {
   const [records, setRecords] = useState({});

@@ -30,8 +30,8 @@ import {
   generateBiometricAlerts,
 } from '../lib/biometrics';
 
-const BIOMETRIC_HR_KEY = '@vibefit_biometric_hr_history';
-const BIOMETRIC_HRV_KEY = '@vibefit_biometric_hrv_history';
+const BIOMETRIC_HR_KEY = '@fueliq_biometric_hr_history';
+const BIOMETRIC_HRV_KEY = '@fueliq_biometric_hrv_history';
 const BASELINE_DAYS = 14;
 
 export function useBiometricDashboard() {

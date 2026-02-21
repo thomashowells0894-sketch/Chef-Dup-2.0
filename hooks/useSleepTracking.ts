@@ -5,7 +5,7 @@ import { getSleepAnalysis } from '../services/healthService';
 import type { SleepEntry } from '../types';
 import type { SleepAnalysisResult } from '../services/healthService';
 
-const STORAGE_KEY = '@vibefit_sleep_history';
+const STORAGE_KEY = '@fueliq_sleep_history';
 const MAX_ENTRIES = 365;
 
 /**

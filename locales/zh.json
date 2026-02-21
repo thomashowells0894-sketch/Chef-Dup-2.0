@@ -105,7 +105,7 @@
     "copyAllYesterday": "复制昨天全部记录",
     "emptyTitle": "还没有记录饮食",
     "emptySubtitle": "开始记录以在此查看你的饮食，或复制昨天的记录。",
-    "shareDayStats": "今日VibeFit统计：摄入{{calories}}卡，蛋白质{{protein}}g。剩余{{remaining}}！#VibeFit",
+    "shareDayStats": "今日FuelIQ统计：摄入{{calories}}卡，蛋白质{{protein}}g。剩余{{remaining}}！#FuelIQ",
     "macroProtein": "蛋",
     "macroCarbs": "碳",
     "macroFat": "脂",
@@ -438,7 +438,7 @@
     "avgProtein": "平均蛋白质"
   },
   "onboarding": {
-    "welcome": "欢迎使用 VibeFit",
+    "welcome": "欢迎使用 FuelIQ",
     "getStarted": "开始使用",
     "setupProfile": "设置个人资料",
     "setGoals": "设定目标",

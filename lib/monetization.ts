@@ -1,5 +1,5 @@
 /**
- * VibeFit Monetization & Growth Engine
+ * FuelIQ Monetization & Growth Engine
  * Tiered subscriptions, referral system, retention hooks,
  * A/B testing framework, and lifetime value optimization.
  */
@@ -115,7 +115,7 @@ interface PaywallTrigger {
 export const SUBSCRIPTION_TIERS: SubscriptionTiers = {
   free: {
     id: 'free',
-    name: 'VibeFit Free',
+    name: 'FuelIQ Free',
     price: 0,
     period: null,
     features: [
@@ -137,7 +137,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTiers = {
   },
   pro: {
     id: 'pro',
-    name: 'VibeFit Pro',
+    name: 'FuelIQ Pro',
     monthlyPrice: 9.99,
     yearlyPrice: 79.99,
     features: [
@@ -163,7 +163,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTiers = {
   },
   elite: {
     id: 'elite',
-    name: 'VibeFit Elite',
+    name: 'FuelIQ Elite',
     monthlyPrice: 19.99,
     yearlyPrice: 149.99,
     features: [
@@ -190,7 +190,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTiers = {
 // REFERRAL SYSTEM
 // ============================================================================
 
-const REFERRAL_KEY: string = '@vibefit_referral';
+const REFERRAL_KEY: string = '@fueliq_referral';
 
 const REFERRAL_REWARDS: ReferralRewards = {
   referrer: { xp: 500, freeProDays: 7 },
@@ -199,7 +199,7 @@ const REFERRAL_REWARDS: ReferralRewards = {
     { count: 3, reward: '1 month free Pro', xpBonus: 1000 },
     { count: 5, reward: '1 month free Elite', xpBonus: 2000 },
     { count: 10, reward: '3 months free Elite', xpBonus: 5000 },
-    { count: 25, reward: 'Lifetime VibeFit Elite', xpBonus: 10000 },
+    { count: 25, reward: 'Lifetime FuelIQ Elite', xpBonus: 10000 },
   ],
 };
 
@@ -213,10 +213,10 @@ async function getReferralStats(userId: string): Promise<ReferralStats> {
 }
 
 async function generateReferralCode(userId: string): Promise<string> {
-  if (!userId) return 'VIBEFIT';
+  if (!userId) return 'FUELIQ';
   const bytes = await Crypto.getRandomBytesAsync(6);
   const code = Array.from(bytes).map(b => b.toString(36)).join('').toUpperCase().slice(0, 8);
-  return `VIBE${code}`;
+  return `FUEL${code}`;
 }
 
 async function processReferral(referrerId: string, refereeId: string): Promise<ProcessReferralResult> {
@@ -244,7 +244,7 @@ async function processReferral(referrerId: string, refereeId: string): Promise<P
 // A/B TESTING FRAMEWORK
 // ============================================================================
 
-const AB_TEST_KEY: string = '@vibefit_ab_tests';
+const AB_TEST_KEY: string = '@fueliq_ab_tests';
 
 const ACTIVE_TESTS: Record<string, ABTest> = {
   onboarding_flow: { variants: ['classic', 'ai_genesis', 'guided_wizard'], weights: [0.33, 0.34, 0.33] },
@@ -293,10 +293,10 @@ async function trackABTestEvent(testName: string, event: string, metadata: Recor
 // RETENTION HOOKS
 // ============================================================================
 
-const RETENTION_EVENTS_KEY: string = '@vibefit_retention';
+const RETENTION_EVENTS_KEY: string = '@fueliq_retention';
 
 const RETENTION_TRIGGERS: Record<string, RetentionTrigger> = {
-  day1: { action: 'welcome_notification', message: 'Welcome to VibeFit! Log your first meal to get started.' },
+  day1: { action: 'welcome_notification', message: 'Welcome to FuelIQ! Log your first meal to get started.' },
   day3: { action: 'streak_reminder', message: 'You\'re building momentum! Keep your streak alive today.' },
   day7: { action: 'weekly_celebration', message: 'One week in! Check out your weekly digest.' },
   day14: { action: 'feature_discovery', message: 'Did you know? You can scan food with AI for instant tracking.' },

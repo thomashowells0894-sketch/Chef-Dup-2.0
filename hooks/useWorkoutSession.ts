@@ -82,7 +82,7 @@ export interface WorkoutSummary {
 // Constants
 // ---------------------------------------------------------------------------
 
-const AUTOSAVE_KEY = '@vibefit_active_workout';
+const AUTOSAVE_KEY = '@fueliq_active_workout';
 const AUTOSAVE_INTERVAL = 10_000; // 10 seconds
 
 // MET values for calorie estimation by workout type

@@ -1,5 +1,5 @@
 /**
- * Accessibility helpers for VibeFit
+ * Accessibility helpers for FuelIQ
  * Provides consistent a11y props across the app
  */
 

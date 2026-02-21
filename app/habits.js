@@ -1,5 +1,5 @@
 /**
- * Habits Tracker Screen - VibeFit
+ * Habits Tracker Screen - FuelIQ
  *
  * Features:
  * - Today's progress card with circular progress ring

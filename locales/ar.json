@@ -106,7 +106,7 @@
     "copyAllYesterday": "نسخ الكل من الأمس",
     "emptyTitle": "لم يتم تسجيل وجبات بعد",
     "emptySubtitle": "ابدأ بالتسجيل لرؤية وجباتك هنا، أو انسخ من الأمس.",
-    "shareDayStats": "إحصائيات VibeFit اليوم: {{calories}} سعرة مستهلكة، {{protein}} غرام بروتين. {{remaining}} متبقية! #VibeFit",
+    "shareDayStats": "إحصائيات FuelIQ اليوم: {{calories}} سعرة مستهلكة، {{protein}} غرام بروتين. {{remaining}} متبقية! #FuelIQ",
     "macroProtein": "ب",
     "macroCarbs": "ك",
     "macroFat": "د",
@@ -439,7 +439,7 @@
     "avgProtein": "متوسط البروتين"
   },
   "onboarding": {
-    "welcome": "مرحباً بك في VibeFit",
+    "welcome": "مرحباً بك في FuelIQ",
     "getStarted": "ابدأ الآن",
     "setupProfile": "أعد ملفك الشخصي",
     "setGoals": "حدد أهدافك",

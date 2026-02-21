@@ -1,5 +1,5 @@
 /**
- * Share Card Service - VibeFit Social Sharing
+ * Share Card Service - FuelIQ Social Sharing
  *
  * Generates shareable card images using react-native-view-shot + expo-sharing.
  * Supports multiple card types: daily-summary, streak, workout-complete,
@@ -161,12 +161,12 @@ export function generateShareText(type: ShareCardType, data: ShareCardData): str
         ? Math.round(((d.caloriesConsumed ?? 0) / d.caloriesGoal) * 100)
         : 0;
       return [
-        `VibeFit Daily Summary`,
+        `FuelIQ Daily Summary`,
         `Calories: ${(d.caloriesConsumed ?? 0)?.toLocaleString()} / ${(d.caloriesGoal ?? 0)?.toLocaleString()} (${pct}%)`,
         `Protein: ${d.protein ?? 0}g | Carbs: ${d.carbs ?? 0}g | Fat: ${d.fat ?? 0}g`,
         d.streak ? `Streak: ${d.streak} days` : null,
         '',
-        'Tracked with VibeFit - AI Fitness',
+        'Tracked with FuelIQ - AI Fitness',
       ]
         .filter(Boolean)
         .join('\n');
@@ -174,10 +174,10 @@ export function generateShareText(type: ShareCardType, data: ShareCardData): str
     case 'streak': {
       const d = data as StreakData;
       return [
-        `VibeFit Streak: ${d.streak} Days`,
+        `FuelIQ Streak: ${d.streak} Days`,
         getStreakQuote(d.streak),
         '',
-        'Tracked with VibeFit - AI Fitness',
+        'Tracked with FuelIQ - AI Fitness',
       ].join('\n');
     }
     case 'workout-complete': {
@@ -187,7 +187,7 @@ export function generateShareText(type: ShareCardType, data: ShareCardData): str
         `Duration: ${d.duration ?? 0} min | Calories: ${d.caloriesBurned ?? 0}`,
         d.exerciseCount ? `Exercises: ${d.exerciseCount}` : null,
         '',
-        'Powered by VibeFit AI Trainer',
+        'Powered by FuelIQ AI Trainer',
       ]
         .filter(Boolean)
         .join('\n');
@@ -198,7 +198,7 @@ export function generateShareText(type: ShareCardType, data: ShareCardData): str
         `Weight Milestone: ${d.currentWeight ?? '?'} ${d.unit ?? 'lbs'}`,
         d.change ? `Change: ${d.change > 0 ? '+' : ''}${d.change} ${d.unit ?? 'lbs'}` : null,
         '',
-        'Tracked with VibeFit - AI Fitness',
+        'Tracked with FuelIQ - AI Fitness',
       ]
         .filter(Boolean)
         .join('\n');
@@ -210,13 +210,13 @@ export function generateShareText(type: ShareCardType, data: ShareCardData): str
         `${d.emoji ?? ''} ${d.title ?? 'Achievement'}`,
         d.description ?? '',
         '',
-        'Earned on VibeFit - AI Fitness',
+        'Earned on FuelIQ - AI Fitness',
       ]
         .filter(Boolean)
         .join('\n');
     }
     default:
-      return 'Check out my progress on VibeFit!';
+      return 'Check out my progress on FuelIQ!';
   }
 }
 
@@ -240,7 +240,7 @@ export async function shareCard(viewRef: any, type: ShareCardType, data: ShareCa
 
     await Sharing.shareAsync(uri, {
       mimeType: 'image/png',
-      dialogTitle: 'Share your VibeFit progress!',
+      dialogTitle: 'Share your FuelIQ progress!',
     });
 
     return { success: true, method: 'image' };
@@ -251,11 +251,11 @@ export async function shareCard(viewRef: any, type: ShareCardType, data: ShareCa
       const isAvailable: boolean = await Sharing.isAvailableAsync();
       if (isAvailable) {
         // Write text to a temp file so we can use expo-sharing
-        const tmpPath: string = `${FileSystem.cacheDirectory}vibefit-share.txt`;
+        const tmpPath: string = `${FileSystem.cacheDirectory}fueliq-share.txt`;
         await FileSystem.writeAsStringAsync(tmpPath, text);
         await Sharing.shareAsync(tmpPath, {
           mimeType: 'text/plain',
-          dialogTitle: 'Share your VibeFit progress!',
+          dialogTitle: 'Share your FuelIQ progress!',
         });
         return { success: true, method: 'text' };
       }
@@ -277,7 +277,7 @@ export async function saveCardImage(viewRef: any): Promise<SaveResult> {
       result: 'tmpfile',
     });
 
-    const filename: string = `vibefit-card-${Date.now()}.png`;
+    const filename: string = `fueliq-card-${Date.now()}.png`;
     const dest: string = `${FileSystem.documentDirectory}${filename}`;
     await FileSystem.copyAsync({ from: uri, to: dest });
 
@@ -302,7 +302,7 @@ function BrandingHeader({ accentColor }: BrandingHeaderProps): React.ReactElemen
     <View style={cardStyles.brandingHeader}>
       <View style={cardStyles.brandingLeft}>
         <Text style={[cardStyles.brandLogo, accentColor && { color: accentColor }]}>
-          VibeFit
+          FuelIQ
         </Text>
         <Text style={cardStyles.brandSubtitle}>Powered by AI</Text>
       </View>
@@ -314,7 +314,7 @@ function BrandingFooter(): React.ReactElement {
   return (
     <View style={cardStyles.footer}>
       <View style={cardStyles.footerRule} />
-      <Text style={cardStyles.footerText}>vibefit.app</Text>
+      <Text style={cardStyles.footerText}>fueliq.app</Text>
     </View>
   );
 }

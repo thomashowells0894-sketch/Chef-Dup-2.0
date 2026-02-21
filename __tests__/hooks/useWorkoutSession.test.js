@@ -764,7 +764,7 @@ describe('useWorkoutSession - completeWorkout', () => {
     });
 
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(
-      '@vibefit_active_workout'
+      '@fueliq_active_workout'
     );
   });
 
@@ -902,7 +902,7 @@ describe('useWorkoutSession - discardWorkout', () => {
     });
 
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(
-      '@vibefit_active_workout'
+      '@fueliq_active_workout'
     );
   });
 });

@@ -1,5 +1,5 @@
 -- ============================================================================
--- VibeFit Recipes RLS Migration
+-- FuelIQ Recipes RLS Migration
 -- Date: 2026-02-09
 -- Purpose: Add RLS policies for recipes and recipe_ingredients tables
 -- ============================================================================

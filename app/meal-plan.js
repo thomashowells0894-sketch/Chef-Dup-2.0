@@ -1,5 +1,5 @@
 /**
- * VibeFit - AI Meal Plan Screen
+ * FuelIQ - AI Meal Plan Screen
  *
  * Full-screen meal plan viewer with Future Glass design.
  * Shows a multi-day AI-generated meal plan with day tabs,

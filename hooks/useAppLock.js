@@ -5,10 +5,10 @@ import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { AppState } from 'react-native';
 
-const STORAGE_KEY = '@vibefit_app_lock';
-const PIN_SECURE_KEY = 'vibefit_pin_hash';
-const SALT_SECURE_KEY = 'vibefit_pin_salt';
-const LOCKOUT_SECURE_KEY = 'vibefit_pin_lockout';
+const STORAGE_KEY = '@fueliq_app_lock';
+const PIN_SECURE_KEY = 'fueliq_pin_hash';
+const SALT_SECURE_KEY = 'fueliq_pin_salt';
+const LOCKOUT_SECURE_KEY = 'fueliq_pin_lockout';
 
 const PIN_LENGTH = 6;
 
@@ -41,7 +41,7 @@ async function getOrCreateSalt() {
     return salt;
   } catch {
     // Fallback — should never happen but don't break the app
-    return 'vibefit_pin_salt_v2_fallback';
+    return 'fueliq_pin_salt_v2_fallback';
   }
 }
 
@@ -208,7 +208,7 @@ export default function useAppLock() {
   const authenticate = useCallback(async () => {
     if (settings.biometricEnabled && biometricType) {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Unlock VibeFit',
+        promptMessage: 'Unlock FuelIQ',
         cancelLabel: 'Use PIN',
         disableDeviceFallback: settings.pinEnabled,
         fallbackLabel: settings.pinEnabled ? 'Use PIN' : 'Use Passcode',

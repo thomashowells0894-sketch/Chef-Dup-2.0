@@ -105,7 +105,7 @@
     "copyAllYesterday": "Tümünü dünden kopyala",
     "emptyTitle": "Henüz kayıtlı öğün yok",
     "emptySubtitle": "Öğünlerini burada görmek için kaydetmeye başla veya dünden kopyala.",
-    "shareDayStats": "Bugünkü VibeFit istatistiklerim: {{calories}} kal yedim, {{protein}}g protein. {{remaining}} kaldı! #VibeFit",
+    "shareDayStats": "Bugünkü FuelIQ istatistiklerim: {{calories}} kal yedim, {{protein}}g protein. {{remaining}} kaldı! #FuelIQ",
     "macroProtein": "P",
     "macroCarbs": "K",
     "macroFat": "Y",
@@ -438,7 +438,7 @@
     "avgProtein": "Ortalama Protein"
   },
   "onboarding": {
-    "welcome": "VibeFit'e Hoş Geldin",
+    "welcome": "FuelIQ'e Hoş Geldin",
     "getStarted": "Başla",
     "setupProfile": "Profilini Ayarla",
     "setGoals": "Hedeflerini Belirle",

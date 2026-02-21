@@ -409,7 +409,7 @@ function Step1Welcome({ data, onChange }) {
       <ReAnimated.View entering={FadeInDown.duration(500).springify()} style={styles.welcomeHeader}>
         <View style={styles.logoRow}>
           <Sparkles size={32} color={Colors.primary} />
-          <Text style={styles.welcomeLogo}>VibeFit</Text>
+          <Text style={styles.welcomeLogo}>FuelIQ</Text>
         </View>
         <Text style={styles.welcomeTagline}>
           Let's build your personalized fitness plan

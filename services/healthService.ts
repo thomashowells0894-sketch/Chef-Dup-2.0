@@ -1,7 +1,7 @@
 /**
  * Health Service Abstraction Layer — Production-Grade
  *
- * Platform-aware health data service for VibeFit.
+ * Platform-aware health data service for FuelIQ.
  * Attempts to use real HealthKit (iOS) / Health Connect (Android) via
  * react-native-health or expo-health when available (EAS Build).
  * Falls back gracefully to deterministic mock data in Expo Go, web,
@@ -16,7 +16,7 @@
  * - Heart rate zones (Zone 1-5 based on max HR from age)
  * - Recovery score from HRV + sleep + resting HR
  *
- * Storage key: @vibefit_health_connected
+ * Storage key: @fueliq_health_connected
  */
 
 import { Platform } from 'react-native';
@@ -24,11 +24,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 declare const __DEV__: boolean;
 
-const STORAGE_KEY: string = '@vibefit_health_connected';
-const MOCK_STEPS_KEY: string = '@vibefit_health_mock_steps';
-const MOCK_WEIGHT_KEY: string = '@vibefit_health_mock_weight';
-const LAST_SYNC_KEY: string = '@vibefit_health_last_sync';
-const DATA_SOURCE_KEY: string = '@vibefit_health_data_source';
+const STORAGE_KEY: string = '@fueliq_health_connected';
+const MOCK_STEPS_KEY: string = '@fueliq_health_mock_steps';
+const MOCK_WEIGHT_KEY: string = '@fueliq_health_mock_weight';
+const LAST_SYNC_KEY: string = '@fueliq_health_last_sync';
+const DATA_SOURCE_KEY: string = '@fueliq_health_data_source';
 
 // ---------------------------------------------------------------------------
 // Native HealthKit module (dynamically resolved)

@@ -1,5 +1,5 @@
 /**
- * VibeFit Wearable Device Integration Service
+ * FuelIQ Wearable Device Integration Service
  *
  * Comprehensive third-party wearable integration layer supporting:
  * - Fitbit (OAuth 2.0 PKCE) — steps, heart rate, sleep, weight, workouts
@@ -14,7 +14,7 @@
  * - Normalized health data sync
  * - Persistent connection state via AsyncStorage
  *
- * Storage key: @vibefit_wearable_connections
+ * Storage key: @fueliq_wearable_connections
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,7 +27,7 @@ declare const __DEV__: boolean;
 // Constants
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = '@vibefit_wearable_connections';
+const STORAGE_KEY = '@fueliq_wearable_connections';
 const LOG_PREFIX = '[WearableIntegrations]';
 
 /**

@@ -50,7 +50,7 @@ describe('initial state', () => {
       },
     ];
     (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => {
-      if (key === '@vibefit_habits') return Promise.resolve(JSON.stringify(storedHabits));
+      if (key === '@fueliq_habits') return Promise.resolve(JSON.stringify(storedHabits));
       return Promise.resolve(null);
     });
 
@@ -610,7 +610,7 @@ describe('persistence', () => {
 
     await waitFor(() => {
       expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-        '@vibefit_habits',
+        '@fueliq_habits',
         expect.any(String),
       );
     });
@@ -629,7 +629,7 @@ describe('persistence', () => {
 
     await waitFor(() => {
       expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-        '@vibefit_habits_log',
+        '@fueliq_habits_log',
         expect.any(String),
       );
     });

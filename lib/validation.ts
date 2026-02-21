@@ -1,5 +1,5 @@
 /**
- * VibeFit Input Validation & Sanitization Utilities
+ * FuelIQ Input Validation & Sanitization Utilities
  *
  * Provides helpers for sanitizing user input before sending to APIs,
  * validating data loaded from AsyncStorage, and safe JSON parsing.

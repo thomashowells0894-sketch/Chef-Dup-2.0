@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-const AUDIT_QUEUE_KEY = '@vibefit_audit_queue';
+const AUDIT_QUEUE_KEY = '@fueliq_audit_queue';
 const FLUSH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const MAX_BATCH_SIZE = 50;
 

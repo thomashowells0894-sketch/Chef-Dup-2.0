@@ -74,7 +74,7 @@ describe('initial state', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(storedEntries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(storedEntries);
         return Promise.resolve(null);
       });
     });
@@ -87,7 +87,7 @@ describe('initial state', () => {
   it('loads goal from storage', async () => {
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_goal') return Promise.resolve(170);
+        if (key === '@fueliq_weight_goal') return Promise.resolve(170);
         return Promise.resolve([]);
       });
     });
@@ -105,7 +105,7 @@ describe('initial state', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(mixedEntries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(mixedEntries);
         return Promise.resolve(null);
       });
     });
@@ -191,7 +191,7 @@ describe('deleteEntry', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(storedEntries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(storedEntries);
         return Promise.resolve(null);
       });
     });
@@ -212,7 +212,7 @@ describe('deleteEntry', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(storedEntries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(storedEntries);
         return Promise.resolve(null);
       });
     });
@@ -245,7 +245,7 @@ describe('setGoal', () => {
   it('clears goal when set to null', async () => {
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_goal') return Promise.resolve(170);
+        if (key === '@fueliq_weight_goal') return Promise.resolve(170);
         return Promise.resolve([]);
       });
     });
@@ -292,7 +292,7 @@ describe('getWeeklyAverage', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(recentEntries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(recentEntries);
         return Promise.resolve(null);
       });
     });
@@ -310,7 +310,7 @@ describe('getWeeklyAverage', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(entries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(entries);
         return Promise.resolve(null);
       });
     });
@@ -340,7 +340,7 @@ describe('getMonthlyTrend', () => {
     }));
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(entries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(entries);
         return Promise.resolve(null);
       });
     });
@@ -371,7 +371,7 @@ describe('getTotalChange', () => {
   it('returns no change for single entry', async () => {
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history')
+        if (key === '@fueliq_weight_history')
           return Promise.resolve([{ weight: 180, date: '2026-02-13T10:00:00Z', note: '' }]);
         return Promise.resolve(null);
       });
@@ -392,7 +392,7 @@ describe('getTotalChange', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(entries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(entries);
         return Promise.resolve(null);
       });
     });
@@ -412,7 +412,7 @@ describe('getTotalChange', () => {
     ];
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_history') return Promise.resolve(entries);
+        if (key === '@fueliq_weight_history') return Promise.resolve(entries);
         return Promise.resolve(null);
       });
     });
@@ -438,7 +438,7 @@ describe('data persistence', () => {
 
     await waitFor(() => {
       expect(mockSetEncryptedItem).toHaveBeenCalledWith(
-        '@vibefit_weight_history',
+        '@fueliq_weight_history',
         expect.any(Array),
       );
     }, WAIT_OPTIONS);
@@ -452,14 +452,14 @@ describe('data persistence', () => {
     });
 
     await waitFor(() => {
-      expect(mockSetEncryptedItem).toHaveBeenCalledWith('@vibefit_weight_goal', 170);
+      expect(mockSetEncryptedItem).toHaveBeenCalledWith('@fueliq_weight_goal', 170);
     }, WAIT_OPTIONS);
   });
 
   it('calls removeEncryptedItem when goal is cleared', async () => {
     const { result } = await renderAndInit(() => {
       mockGetEncryptedItem.mockImplementation((key: string) => {
-        if (key === '@vibefit_weight_goal') return Promise.resolve(170);
+        if (key === '@fueliq_weight_goal') return Promise.resolve(170);
         return Promise.resolve([]);
       });
     });
@@ -471,7 +471,7 @@ describe('data persistence', () => {
     });
 
     await waitFor(() => {
-      expect(mockRemoveEncryptedItem).toHaveBeenCalledWith('@vibefit_weight_goal');
+      expect(mockRemoveEncryptedItem).toHaveBeenCalledWith('@fueliq_weight_goal');
     }, WAIT_OPTIONS);
   });
 });

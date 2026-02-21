@@ -44,7 +44,7 @@ interface RecipeContextValue {
 
 const RecipeContext = createContext<RecipeContextValue | null>(null);
 
-const RECIPES_KEY = '@vibefit_recipes';
+const RECIPES_KEY = '@fueliq_recipes';
 
 export function RecipeProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
