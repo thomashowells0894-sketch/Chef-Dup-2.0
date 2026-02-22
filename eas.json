@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 13.0.0"
+    "version": ">= 13.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -25,7 +26,8 @@
       "autoIncrement": true,
       "env": {
         "SENTRY_ORG": "fueliq",
-        "SENTRY_PROJECT": "fueliq-mobile"
+        "SENTRY_PROJECT": "fueliq-mobile",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     }
   },

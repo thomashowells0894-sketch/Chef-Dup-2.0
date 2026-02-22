@@ -263,7 +263,7 @@ async function handleScanFood(
     throw new Error("Invalid image data. Please try again with a different image.");
   }
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `Analyze this image of food. Identify the food item(s) and estimate the nutritional information for a typical serving size.
 
@@ -345,7 +345,7 @@ async function handleGenerateWorkout(
     injuries: sanitizeString(payload.injuries || "", 500),
   };
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const levelDescriptions: Record<number, string> = {
     1: "Complete beginner - focus on form and basic movements",
@@ -515,7 +515,7 @@ async function handleChef(
     maxTime: sanitizeNumber(preferences.maxTime, 60, 5, 480),
   };
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const dietaryNote = sanitizedPrefs.dietary.length
     ? `Dietary restrictions: ${sanitizedPrefs.dietary.join(", ")}. All recipes MUST comply with these restrictions.`
@@ -642,7 +642,7 @@ async function handleGenesis(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.3,
       topK: 40,
@@ -875,7 +875,7 @@ The "suggestions" array should contain 2-3 short follow-up questions or topics t
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -950,7 +950,7 @@ async function handleParseVoiceFood(
   const safeMimeType = validMimeTypes.includes(mimeType) ? mimeType : "audio/mp4";
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: 2048,
@@ -1065,7 +1065,7 @@ async function handleWeeklyDigest(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -1170,7 +1170,7 @@ async function handleMealPlan(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -1327,7 +1327,7 @@ async function handleMorningBriefing(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -1465,7 +1465,7 @@ async function handleAdaptiveMacros(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.3,
       topK: 40,
@@ -1588,7 +1588,7 @@ async function handleRecipeImport(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.3,
       topK: 40,
@@ -1741,7 +1741,7 @@ async function handleFoodSwap(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.6,
       topK: 40,
@@ -1875,7 +1875,7 @@ async function handleMealRecommend(
   };
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
