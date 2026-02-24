@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
+import * as Crypto from 'expo-crypto';
 import ScreenErrorBoundary from '../../components/ScreenErrorBoundary';
 import {
   View,
@@ -504,7 +505,7 @@ function AddScreenInner() {
         clearTimeout(recordingTimeoutRef.current);
       }
       if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+        recordingRef.current.stopAndUnloadAsync().catch((e) => { if (__DEV__) console.warn('[add] Failed to stop recording on cleanup:', e); });
         recordingRef.current = null;
       }
     };
@@ -562,7 +563,7 @@ function AddScreenInner() {
         handleStopRecordingRef.current?.();
       }, 15000);
     } catch (error) {
-      Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => {});
+      Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch((e) => { if (__DEV__) console.warn('[add] Failed to reset audio mode:', e); });
       Alert.alert('Error', 'Could not start recording. Please try again.');
     }
   }, [isProcessingVoice]);
@@ -600,7 +601,7 @@ function AddScreenInner() {
       });
 
       // Clean up temp file
-      FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      FileSystem.deleteAsync(uri, { idempotent: true }).catch((e) => { if (__DEV__) console.warn('[add] Failed to delete temp audio file:', e); });
 
       // Parse via AI
       const result = await parseVoiceFood(base64, 'audio/m4a');
@@ -612,7 +613,7 @@ function AddScreenInner() {
       Alert.alert('Error', error.message || 'Could not process voice recording. Please try again.');
     } finally {
       // Always reset audio mode, even on error
-      Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => {});
+      Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch((e) => { if (__DEV__) console.warn('[add] Failed to reset audio mode after processing:', e); });
       setIsProcessingVoice(false);
     }
   }, []);
@@ -622,7 +623,7 @@ function AddScreenInner() {
 
   const handleAddVoiceFood = useCallback((food, mealType, foodIndex) => {
     const foodEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: food.name,
       emoji: food.emoji || '🍽️',
       calories: food.calories || 0,
@@ -648,7 +649,7 @@ function AddScreenInner() {
     voiceFoods.forEach((food, idx) => {
       if (addedVoiceIndices.has(idx)) return; // skip already added
       const foodEntry = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         name: food.name,
         emoji: food.emoji || '🍽️',
         calories: food.calories || 0,
@@ -672,7 +673,7 @@ function AddScreenInner() {
   // Quick-add a favorite food
   const handleAddFavorite = useCallback((food) => {
     const foodEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: food.name,
       emoji: food.emoji || '?',
       calories: food.calories || 0,
@@ -693,7 +694,7 @@ function AddScreenInner() {
     hapticLight();
     const effectiveMeal = mealType || selectedMeal;
     const foodEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: food.name,
       emoji: food.emoji || '?',
       calories: food.calories || 0,

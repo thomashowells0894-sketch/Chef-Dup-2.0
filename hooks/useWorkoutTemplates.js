@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 
 const STORAGE_KEY = '@fueliq_workout_templates';
 const MAX_TEMPLATES = 50;
@@ -49,7 +50,7 @@ export default function useWorkoutTemplates() {
       }));
 
       const template = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         name: name || workout.title || 'Workout Template',
         emoji: emoji || '💪',
         type: workout.type || workout.goal || 'custom',
@@ -78,7 +79,7 @@ export default function useWorkoutTemplates() {
   const createTemplate = useCallback(
     async (data) => {
       const template = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         name: data.name || 'New Template',
         emoji: data.emoji || '💪',
         type: data.type || 'custom',

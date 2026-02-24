@@ -36,7 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = useCallback(async (pref: ThemePreference) => {
     setPreference(pref);
-    await AsyncStorage.setItem(STORAGE_KEY, pref).catch(() => {});
+    await AsyncStorage.setItem(STORAGE_KEY, pref).catch((e) => { if (__DEV__) console.warn('[ThemeContext] Failed to save theme:', e); });
   }, []);
 
   const isDark = useMemo<boolean>(() => {

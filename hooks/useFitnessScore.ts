@@ -63,7 +63,7 @@ export default function useFitnessScore(): UseFitnessScoreReturn {
 
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(scoreHistory)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(scoreHistory)).catch((e) => { if (__DEV__) console.warn('[useFitnessScore] Failed to save score history:', e); });
   }, [scoreHistory, isLoading]);
 
   // Calculate score from activity data

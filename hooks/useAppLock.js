@@ -174,7 +174,7 @@ export default function useAppLock() {
   useEffect(() => {
     if (isLoading) return;
     const { pin: _dropped, ...safeSettings } = settings;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(safeSettings)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(safeSettings)).catch((e) => { if (__DEV__) console.warn('[useAppLock] Failed to save lock settings:', e); });
   }, [settings, isLoading]);
 
   // Monitor app state for auto-lock

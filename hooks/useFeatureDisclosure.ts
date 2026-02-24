@@ -67,7 +67,7 @@ export function useFeatureDisclosure() {
         lastShownDate: today,
       };
       setState(newState);
-      AsyncStorage.setItem(DISCLOSURE_KEY, JSON.stringify(newState)).catch(() => {});
+      AsyncStorage.setItem(DISCLOSURE_KEY, JSON.stringify(newState)).catch((e) => { if (__DEV__) console.warn('[useFeatureDisclosure] Failed to save disclosure state:', e); });
     }
   }, [state]);
 

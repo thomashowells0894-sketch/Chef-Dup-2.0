@@ -312,7 +312,7 @@ async function getEncryptedItem<T>(key: string, fallback: T = null as T): Promis
       const parsed = JSON.parse(decrypted) as T;
 
       // Background migration: re-encrypt with PBKDF2-derived key (aes2: prefix)
-      setEncryptedItem(key, parsed).catch(() => {});
+      setEncryptedItem(key, parsed).catch((e) => { if (__DEV__) console.warn('[encryptedStorage] Re-encryption migration failed:', e); });
       return parsed;
     }
 
@@ -326,7 +326,7 @@ async function getEncryptedItem<T>(key: string, fallback: T = null as T): Promis
       const parsed = JSON.parse(decrypted) as T;
 
       // Background migration: re-encrypt with PBKDF2-derived key
-      setEncryptedItem(key, parsed).catch(() => {});
+      setEncryptedItem(key, parsed).catch((e) => { if (__DEV__) console.warn('[encryptedStorage] Re-encryption migration failed:', e); });
       return parsed;
     }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as Crypto from 'expo-crypto';
 import {
   View,
   Text,
@@ -139,7 +140,7 @@ export default function BarcodeScreen() {
     if (!result?.food) return;
     const mealType = getDefaultMealType();
     const foodEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: result.food.name,
       calories: result.food.calories || 0,
       protein: result.food.protein || 0,
@@ -206,7 +207,7 @@ export default function BarcodeScreen() {
     // Add to diary
     const mealType = getDefaultMealType();
     const foodEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: foodData.name,
       calories: foodData.calories,
       protein: foodData.protein,

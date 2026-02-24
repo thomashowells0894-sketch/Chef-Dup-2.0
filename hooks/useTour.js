@@ -20,7 +20,7 @@ export default function useTour() {
   const markSeen = useCallback(async (tourId) => {
     const updated = { ...seenTours, [tourId]: new Date().toISOString() };
     setSeenTours(updated);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch((e) => { if (__DEV__) console.warn('[useTour] Failed to save tour state:', e); });
   }, [seenTours]);
 
   const hasSeen = useCallback((tourId) => {
@@ -29,7 +29,7 @@ export default function useTour() {
 
   const resetTours = useCallback(async () => {
     setSeenTours({});
-    await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+    await AsyncStorage.removeItem(STORAGE_KEY).catch((e) => { if (__DEV__) console.warn('[useTour] Failed to reset tours:', e); });
   }, []);
 
   return { hasSeen, markSeen, resetTours, isLoading };

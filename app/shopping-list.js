@@ -201,7 +201,7 @@ export default function ShoppingListScreen() {
                       const url = service.name === 'Instacart'
                         ? `https://www.instacart.com/store/search/${query}`
                         : service.url;
-                      Linking.openURL(url).catch(() => {});
+                      Linking.openURL(url).catch((e) => { if (__DEV__) console.warn('[shopping-list] Failed to open delivery URL:', e); });
                     }}
                   >
                     <View style={[styles.deliveryDot, { backgroundColor: service.color }]} />

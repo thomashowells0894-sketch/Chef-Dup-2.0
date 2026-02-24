@@ -58,7 +58,7 @@ export function useFavoriteFoods(): UseFavoriteFoodsReturn {
   // Auto-save whenever favorites change (skip the initial empty state)
   useEffect(() => {
     if (!isLoaded.current) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(favorites)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(favorites)).catch((e) => { if (__DEV__) console.warn('[useFavoriteFoods] Failed to save favorites:', e); });
   }, [favorites]);
 
   const addFavorite = useCallback((food: FoodInput): void => {

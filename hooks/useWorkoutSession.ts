@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { supabase } from '../lib/supabase';
 import { calculate1RM, scoreWorkout } from '../lib/workoutEngine';
 
@@ -166,7 +167,7 @@ export default function useWorkoutSession({
     });
 
     const newSession: WorkoutSessionState = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: workout.title || workout.name || 'Workout',
       emoji: workout.emoji || '',
       type: workout.type || 'strength',

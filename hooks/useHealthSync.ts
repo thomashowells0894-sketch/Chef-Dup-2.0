@@ -487,7 +487,7 @@ export function useHealthSync(): UseHealthSyncReturn {
       setAnomalies(detected);
 
       // Persist to Supabase (fire and forget)
-      persistToSupabase(snap, recovery).catch(() => {});
+      persistToSupabase(snap, recovery).catch((e) => { if (__DEV__) console.warn('[useHealthSync] Failed to persist to Supabase:', e); });
 
       // Cache snapshot locally
       await setEncryptedItem(SNAPSHOT_CACHE_KEY, snap);

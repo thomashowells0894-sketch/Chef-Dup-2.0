@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { format, subDays } from 'date-fns';
 import { safeJSONParse, isValidArray, isValidObject } from '../lib/validation';
 
@@ -85,18 +86,18 @@ export default function useHabits(): UseHabitsReturn {
 
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(habits)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(habits)).catch((e) => { if (__DEV__) console.warn('[useHabits] Failed to save habits:', e); });
   }, [habits, isLoading]);
 
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(LOG_KEY, JSON.stringify(completions)).catch(() => {});
+    AsyncStorage.setItem(LOG_KEY, JSON.stringify(completions)).catch((e) => { if (__DEV__) console.warn('[useHabits] Failed to save completions:', e); });
   }, [completions, isLoading]);
 
   const addHabit = useCallback((data: HabitInput): boolean => {
     if (habits.length >= 20) return false;
     const habit: Habit = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      id: Crypto.randomUUID(),
       name: data.name,
       emoji: data.emoji || '\u2705',
       color: data.color || '#00D4FF',

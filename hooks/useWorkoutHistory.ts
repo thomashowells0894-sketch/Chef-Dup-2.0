@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
 const STORAGE_KEY = '@fueliq_workout_history';
@@ -106,7 +107,7 @@ export default function useWorkoutHistory(): UseWorkoutHistoryReturn {
   const addWorkout = useCallback(
     async (workout: WorkoutInput): Promise<WorkoutEntry> => {
       const entry: WorkoutEntry = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         date: new Date().toISOString(),
         name: workout.name || 'Workout',
         emoji: workout.emoji || '\uD83D\uDCAA',

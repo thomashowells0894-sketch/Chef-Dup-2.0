@@ -273,7 +273,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   // Clear queue on logout
   useEffect(() => {
     if (!user) {
-      AsyncStorage.removeItem(QUEUE_KEY).catch(() => {});
+      AsyncStorage.removeItem(QUEUE_KEY).catch((e) => { if (__DEV__) console.warn('[OfflineContext] Failed to clear queue:', e); });
       setQueueLength(0);
     }
   }, [user]);

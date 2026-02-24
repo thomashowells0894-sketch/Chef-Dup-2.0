@@ -176,12 +176,12 @@ export function useBiometricDashboard() {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!historyLoaded) return;
-    setEncryptedItem(BIOMETRIC_HR_KEY, hrHistory).catch(() => {});
+    setEncryptedItem(BIOMETRIC_HR_KEY, hrHistory).catch((e) => { if (__DEV__) console.warn('[useBiometricDashboard] Failed to save HR history:', e); });
   }, [hrHistory, historyLoaded]);
 
   useEffect(() => {
     if (!historyLoaded) return;
-    setEncryptedItem(BIOMETRIC_HRV_KEY, hrvHistory).catch(() => {});
+    setEncryptedItem(BIOMETRIC_HRV_KEY, hrvHistory).catch((e) => { if (__DEV__) console.warn('[useBiometricDashboard] Failed to save HRV history:', e); });
   }, [hrvHistory, historyLoaded]);
 
   // ---------------------------------------------------------------------------

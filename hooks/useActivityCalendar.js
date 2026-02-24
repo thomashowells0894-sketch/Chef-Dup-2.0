@@ -171,7 +171,7 @@ export default function useActivityCalendar() {
   // ── Persist scores when they change ──
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(scores)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(scores)).catch((e) => { if (__DEV__) console.warn('[useActivityCalendar] Failed to save activity scores:', e); });
   }, [scores, isLoading]);
 
   // ── Record activity manually ──

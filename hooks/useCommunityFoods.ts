@@ -118,7 +118,7 @@ async function getCached<T>(key: string): Promise<T | null> {
     const entry: CacheEntry<T> = JSON.parse(raw);
     if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
       // Expired — remove it asynchronously
-      AsyncStorage.removeItem(CACHE_PREFIX + key).catch(() => {});
+      AsyncStorage.removeItem(CACHE_PREFIX + key).catch((e) => { if (__DEV__) console.warn('[useCommunityFoods] Failed to remove expired cache:', e); });
       return null;
     }
     return entry.data;

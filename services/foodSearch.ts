@@ -608,8 +608,8 @@ export async function searchAllSources(
     (sourceTotalCounts['nutritionix'] || 0);
 
   // Track search for recent/trending (fire and forget)
-  saveRecentSearch(sanitizedQuery, ranked.length).catch(() => {});
-  trackSearchTerm(sanitizedQuery).catch(() => {});
+  saveRecentSearch(sanitizedQuery, ranked.length).catch((e) => { if (__DEV__) console.warn('[foodSearch] Failed to save recent search:', e); });
+  trackSearchTerm(sanitizedQuery).catch((e) => { if (__DEV__) console.warn('[foodSearch] Failed to track search term:', e); });
 
   return {
     products: ranked,

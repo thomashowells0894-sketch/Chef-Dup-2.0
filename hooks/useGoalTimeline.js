@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { format, addDays, differenceInDays } from 'date-fns';
 
 const STORAGE_KEY = '@fueliq_goal_timeline';
@@ -20,13 +21,13 @@ export default function useGoalTimeline() {
 
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(goals)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(goals)).catch((e) => { if (__DEV__) console.warn('[useGoalTimeline] Failed to save goals:', e); });
   }, [goals, isLoading]);
 
   // Goal shape: { id, type ('weight'|'measurement'|'fitness'|'habit'|'custom'), name, currentValue, targetValue, unit, startDate, targetDate, milestones: [{value, date, reached}], checkpoints: [{date, value}], emoji, color }
   const addGoal = useCallback((data) => {
     const goal = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      id: Crypto.randomUUID(),
       type: data.type || 'custom',
       name: data.name,
       currentValue: data.currentValue,

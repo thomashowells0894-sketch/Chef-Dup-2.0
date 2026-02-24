@@ -10,7 +10,7 @@ export function useReducedMotion(): boolean {
 
   useEffect(() => {
     // Check initial state
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch((e) => { if (__DEV__) console.warn('[useReducedMotion] Failed to check motion setting:', e); });
 
     // Listen for changes
     const subscription = AccessibilityInfo.addEventListener(

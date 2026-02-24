@@ -512,7 +512,7 @@ export async function lookupBarcode(barcode: string): Promise<BarcodeLookupResul
   const cached = await lookupCachedBarcode(cleanBarcode);
   if (cached) {
     // Update scan count
-    cacheBarcodeResult(cleanBarcode, cached.food, cached.source).catch(() => {});
+    cacheBarcodeResult(cleanBarcode, cached.food, cached.source).catch((e) => { if (__DEV__) console.warn('[barcodeService] Failed to update cache:', e); });
     return {
       found: true,
       food: cached.food,
@@ -526,12 +526,12 @@ export async function lookupBarcode(barcode: string): Promise<BarcodeLookupResul
   const ofpResult = await lookupOFP(cleanBarcode);
   if (ofpResult) {
     // Cache for future re-scans (both layers)
-    cacheBarcodeResult(cleanBarcode, ofpResult, 'openfoodfacts').catch(() => {});
+    cacheBarcodeResult(cleanBarcode, ofpResult, 'openfoodfacts').catch((e) => { if (__DEV__) console.warn('[barcodeService] Failed to cache OFP result:', e); });
     setFastCachedBarcode(cleanBarcode, {
       name: ofpResult.name, calories: ofpResult.calories,
       protein: ofpResult.protein, carbs: ofpResult.carbs,
       fat: ofpResult.fat, serving: ofpResult.serving, brand: ofpResult.brand,
-    }).catch(() => {});
+    }).catch((e) => { if (__DEV__) console.warn('[barcodeService] Failed to set fast cache (OFP):', e); });
     return {
       found: true,
       food: ofpResult,
@@ -544,12 +544,12 @@ export async function lookupBarcode(barcode: string): Promise<BarcodeLookupResul
   // Step 3: Try USDA (has UPC data for US branded products)
   const usdaResult = await lookupUSDA(cleanBarcode);
   if (usdaResult) {
-    cacheBarcodeResult(cleanBarcode, usdaResult, 'usda').catch(() => {});
+    cacheBarcodeResult(cleanBarcode, usdaResult, 'usda').catch((e) => { if (__DEV__) console.warn('[barcodeService] Failed to cache USDA result:', e); });
     setFastCachedBarcode(cleanBarcode, {
       name: usdaResult.name, calories: usdaResult.calories,
       protein: usdaResult.protein, carbs: usdaResult.carbs,
       fat: usdaResult.fat, serving: usdaResult.serving, brand: usdaResult.brand,
-    }).catch(() => {});
+    }).catch((e) => { if (__DEV__) console.warn('[barcodeService] Failed to set fast cache (USDA):', e); });
     return {
       found: true,
       food: usdaResult,

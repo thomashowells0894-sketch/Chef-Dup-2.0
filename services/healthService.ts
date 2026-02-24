@@ -205,7 +205,7 @@ function mockStepsForDate(dateStr: string): number {
 
 function updateLastSync(): void {
   _lastSyncTimestamp = new Date().toISOString();
-  AsyncStorage.setItem(LAST_SYNC_KEY, _lastSyncTimestamp).catch(() => {});
+  AsyncStorage.setItem(LAST_SYNC_KEY, _lastSyncTimestamp).catch((e) => { if (__DEV__) console.warn('[healthService] Failed to save sync timestamp:', e); });
 }
 
 // ---------------------------------------------------------------------------

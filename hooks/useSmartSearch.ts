@@ -247,13 +247,13 @@ export function useSmartSearch(): SmartSearchState {
   // Set filter with persistence
   const setActiveFilter = useCallback((filter: QuickFilter) => {
     setActiveFilterState(filter);
-    savePrefs({ lastFilter: filter }).catch(() => {});
+    savePrefs({ lastFilter: filter }).catch((e) => { if (__DEV__) console.warn('[useSmartSearch] Failed to save filter pref:', e); });
   }, []);
 
   // Set multi-select with persistence
   const setMultiSelectMode = useCallback((value: boolean) => {
     setMultiSelectModeState(value);
-    savePrefs({ preferMultiSelect: value }).catch(() => {});
+    savePrefs({ preferMultiSelect: value }).catch((e) => { if (__DEV__) console.warn('[useSmartSearch] Failed to save multi-select pref:', e); });
   }, []);
 
   // Toggle item selection
@@ -301,7 +301,7 @@ export function useSmartSearch(): SmartSearchState {
         setSources(result.sources);
 
         // Refresh recent searches after a search completes
-        loadSearchMetadata().catch(() => {});
+        loadSearchMetadata().catch((e) => { if (__DEV__) console.warn('[useSmartSearch] Failed to load search metadata:', e); });
       } catch {
         if (cancelRef.current) return;
         if (localMatches.length === 0) {

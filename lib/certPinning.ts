@@ -250,7 +250,7 @@ export function createPinnedFetch(originalFetch: typeof fetch): typeof fetch {
   ensureSupabaseHost();
 
   // Kick off native pinning detection (non-blocking)
-  tryLoadNativePinning().catch(() => {});
+  tryLoadNativePinning().catch((e) => { if (__DEV__) console.warn('[certPinning] Failed to load native pinning:', e); });
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const mode = getPinMode();

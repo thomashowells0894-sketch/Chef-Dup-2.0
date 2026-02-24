@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useMemo, useCallback, useRef } from 'react';
+import * as Crypto from 'expo-crypto';
 import {
   View,
   Text,
@@ -331,7 +332,7 @@ export default function CreateFoodEnhanced() {
       }
 
       foodEntry = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         name: trimmedName,
         emoji: selectedEmoji,
         calories: recipeTotals.calories,
@@ -357,7 +358,7 @@ export default function CreateFoodEnhanced() {
       }
 
       foodEntry = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         name: trimmedName,
         emoji: selectedEmoji,
         calories: cal,

@@ -10,6 +10,7 @@ import {
   Platform,
   Keyboard,
 } from 'react-native';
+import * as Crypto from 'expo-crypto';
 import { LinearGradient } from 'expo-linear-gradient';
 import ReAnimated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { X } from 'lucide-react-native';
@@ -58,7 +59,7 @@ export default function QuickCalModal({ visible, onClose, onLog, initialMealType
     if (!cal || cal <= 0) return;
 
     const food = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: name.trim() || 'Quick entry',
       emoji: '⚡',
       calories: cal,

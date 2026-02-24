@@ -47,7 +47,7 @@ async function saveQtyMemory(foodName, quantity, unit) {
     delete mem[keys[0]];
   }
   _qtyCache = mem;
-  AsyncStorage.setItem(QTY_MEMORY_KEY, JSON.stringify(mem)).catch(() => {});
+  AsyncStorage.setItem(QTY_MEMORY_KEY, JSON.stringify(mem)).catch((e) => { if (__DEV__) console.warn('[FoodDetailModal] Failed to save quantity memory:', e); });
 }
 
 const MEAL_LABELS = {

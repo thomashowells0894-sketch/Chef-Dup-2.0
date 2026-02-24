@@ -20,7 +20,7 @@ export default function useMealTiming() {
 
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(mealTimes)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(mealTimes)).catch((e) => { if (__DEV__) console.warn('[useMealTiming] Failed to save meal times:', e); });
   }, [mealTimes, isLoading]);
 
   // Record: { date, mealType, time (ISO), calories, protein }

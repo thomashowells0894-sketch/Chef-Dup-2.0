@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, memo } from 'react';
+import * as Crypto from 'expo-crypto';
 import ScreenErrorBoundary from '../../components/ScreenErrorBoundary';
 import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, Alert, RefreshControl, Share } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -217,7 +218,7 @@ function DiaryScreenInner() {
 
   const handleVoiceFoodAdded = useCallback((food, mealType) => {
     const entry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: food.name,
       emoji: food.emoji || '🎤',
       calories: food.calories || 0,
@@ -399,7 +400,7 @@ function DiaryScreenInner() {
 
   const handleQuickLog = useCallback((food, mealType) => {
     const foodEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: food.name,
       emoji: food.emoji || '?',
       calories: food.calories || 0,

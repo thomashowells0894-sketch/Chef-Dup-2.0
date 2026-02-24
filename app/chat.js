@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as Crypto from 'expo-crypto';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import PremiumGate from '../components/PremiumGate';
 import {
@@ -43,7 +44,7 @@ const STORAGE_KEY = '@fueliq_chat_history';
 const MAX_STORED_MESSAGES = 50;
 
 function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  return Crypto.randomUUID();
 }
 
 // Typing indicator with sequentially pulsing dots
@@ -329,7 +330,7 @@ function ChatScreenInner() {
     if (!hasLoadedHistory) return;
     if (messages.length === 0) return;
     const toStore = messages.slice(-MAX_STORED_MESSAGES);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)).catch((e) => { if (__DEV__) console.warn('[chat] Failed to save chat history:', e); });
   }, [messages, hasLoadedHistory]);
 
   const sendMessage = useCallback(async (text) => {
@@ -459,7 +460,7 @@ function ChatScreenInner() {
           style: 'destructive',
           onPress: () => {
             hapticImpact();
-            AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+            AsyncStorage.removeItem(STORAGE_KEY).catch((e) => { if (__DEV__) console.warn('[chat] Failed to clear chat history:', e); });
             // Batch all state updates synchronously to avoid race conditions
             setMessages([]);
             setSuggestions([]);

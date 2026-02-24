@@ -116,7 +116,7 @@ export default function useCalorieCycling() {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
       selectedPattern,
       weekSchedule,
-    })).catch(() => {});
+    })).catch((e) => { if (__DEV__) console.warn('[useCalorieCycling] Failed to save cycling settings:', e); });
   }, [selectedPattern, weekSchedule, isLoading]);
 
   // Base TDEE from profile

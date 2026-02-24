@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import * as Crypto from 'expo-crypto';
 import {
   View,
   Text,
@@ -126,7 +127,7 @@ export default function CreateFoodScreen() {
     }
 
     const food = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      id: Crypto.randomUUID(),
       name: sanitizedName,
       emoji: selectedEmoji,
       calories: validateMacro(calories, 10000),

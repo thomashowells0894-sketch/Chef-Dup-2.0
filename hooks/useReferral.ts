@@ -184,14 +184,14 @@ export function useReferral(userId?: string) {
         const smsUrl = Platform.OS === 'ios'
           ? `sms:&body=${smsBody}`
           : `sms:?body=${smsBody}`;
-        await Linking.openURL(smsUrl).catch(() => {});
+        await Linking.openURL(smsUrl).catch((e) => { if (__DEV__) console.warn('[useReferral] Failed to open SMS:', e); });
         break;
       }
       case 'whatsapp': {
         const waText = encodeURIComponent(
           `Join me on FuelIQ! Use my invite code ${stats.inviteCode} for bonus rewards: ${shareUrl}`
         );
-        await Linking.openURL(`whatsapp://send?text=${waText}`).catch(() => {});
+        await Linking.openURL(`whatsapp://send?text=${waText}`).catch((e) => { if (__DEV__) console.warn('[useReferral] Failed to open WhatsApp:', e); });
         break;
       }
     }
@@ -218,7 +218,7 @@ export function useReferral(userId?: string) {
     }
 
     setStats(updated);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch((e) => { if (__DEV__) console.warn('[useReferral] Failed to save referral stats:', e); });
   }, [stats]);
 
   // Dismiss reward notification

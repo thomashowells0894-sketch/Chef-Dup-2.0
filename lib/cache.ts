@@ -133,7 +133,7 @@ async function persistGet(key: string): Promise<unknown | null> {
     if (!raw) return null;
     const entry: CacheEntry = JSON.parse(raw);
     if (Date.now() > entry.expiresAt) {
-      AsyncStorage.removeItem(CACHE_PREFIX + key).catch(() => {});
+      AsyncStorage.removeItem(CACHE_PREFIX + key).catch((e) => { if (__DEV__) console.warn('[cache] Failed to remove expired entry:', e); });
       return null;
     }
     return entry.value;
@@ -272,7 +272,7 @@ async function cacheImage(uri: string, base64: string): Promise<void> {
     // Evict oldest entries if over limit
     while (filtered.length > MAX_IMAGE_CACHE_SIZE) {
       const evicted = filtered.shift()!;
-      AsyncStorage.removeItem(IMAGE_CACHE_PREFIX + encodeURIComponent(evicted.uri)).catch(() => {});
+      AsyncStorage.removeItem(IMAGE_CACHE_PREFIX + encodeURIComponent(evicted.uri)).catch((e) => { if (__DEV__) console.warn('[cache] Failed to evict image cache entry:', e); });
     }
 
     await AsyncStorage.setItem(IMAGE_CACHE_INDEX_KEY, JSON.stringify(filtered));

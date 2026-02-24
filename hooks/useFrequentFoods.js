@@ -37,7 +37,7 @@ export function useFrequentFoods() {
   // Auto-persist whenever frequentFoods changes (skip the initial empty state)
   useEffect(() => {
     if (!isLoaded.current) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(frequentFoods)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(frequentFoods)).catch((e) => { if (__DEV__) console.warn('[useFrequentFoods] Failed to save frequent foods:', e); });
   }, [frequentFoods]);
 
   /**

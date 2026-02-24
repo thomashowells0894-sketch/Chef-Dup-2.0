@@ -22,7 +22,7 @@ export default function useFastingAnalytics() {
   // Persist
   useEffect(() => {
     if (isLoading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(history)).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(history)).catch((e) => { if (__DEV__) console.warn('[useFastingAnalytics] Failed to save fasting history:', e); });
   }, [history, isLoading]);
 
   // Add completed fast: { date, durationHours, targetHours, completed (bool) }

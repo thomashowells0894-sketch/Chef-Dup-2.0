@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { safeJSONParse, isValidArray } from '../lib/validation';
 
 const STORAGE_KEY = '@fueliq_workout_ratings';
@@ -43,7 +44,7 @@ export default function useWorkoutRatings() {
   const addRating = useCallback(
     async (data) => {
       const entry = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        id: Crypto.randomUUID(),
         workoutId: data.workoutId || '',
         workoutName: data.workoutName || 'Workout',
         workoutType: data.workoutType || 'strength',
