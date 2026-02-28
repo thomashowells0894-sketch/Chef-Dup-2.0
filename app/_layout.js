@@ -270,14 +270,14 @@ function RootLayout() {
     Inter_900Black,
   });
 
-  if (!fontsLoaded) {
-    return null;
-  }
-
   const handleErrorReset = useCallback(() => {
     // This will be called when user taps "Go Home" in error boundary
     // The error boundary will reset and try to re-render
   }, []);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <ErrorBoundary onReset={handleErrorReset}>
