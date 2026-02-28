@@ -5,7 +5,6 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  KeyboardAvoidingView,
   ScrollView,
   Platform,
   ActivityIndicator,
@@ -350,16 +349,13 @@ export default function AuthScreen() {
     <ScreenWrapper edges={['top']}>
       <StatusBar style="light" />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.flex1}
-      >
         <ScrollView
           contentContainerStyle={styles.keyboardView}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="none"
           bounces={false}
           showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets
         >
         {/* Logo + Tagline */}
         <ReAnimated.View
@@ -420,7 +416,6 @@ export default function AuthScreen() {
           </Text>
         </ReAnimated.View>
         </ScrollView>
-      </KeyboardAvoidingView>
     </ScreenWrapper>
   );
 }
@@ -522,9 +517,6 @@ function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPass
 }
 
 const styles = StyleSheet.create({
-  flex1: {
-    flex: 1,
-  },
   keyboardView: {
     flexGrow: 1,
     justifyContent: 'center',
