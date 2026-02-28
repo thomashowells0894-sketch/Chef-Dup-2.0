@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Mail, Lock, ArrowRight, Sparkles } from 'lucide-react-native';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { hapticImpact } from '../lib/haptics';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
@@ -187,8 +188,8 @@ export default function AuthScreen() {
     }, RATE_LIMIT_COOLDOWN_MS);
   }, []);
 
-  // OAuth login function
-  const performOAuth = async (provider) => {
+  // Google OAuth via web browser (PKCE flow)
+  const performGoogleOAuth = async () => {
     try {
       const redirectUrl = makeRedirectUri({
         scheme: 'fueliq',
@@ -196,7 +197,7 @@ export default function AuthScreen() {
       });
 
       const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
+        provider: 'google',
         options: {
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
@@ -215,7 +216,7 @@ export default function AuthScreen() {
         if (result.type === 'success' && result.url) {
           const url = new URL(result.url);
 
-          // Supabase v2 uses PKCE flow by default — redirect contains ?code=XXX
+          // Supabase v2 uses PKCE flow — redirect contains ?code=XXX
           const code = url.searchParams.get('code');
           if (code) {
             const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
@@ -237,16 +238,37 @@ export default function AuthScreen() {
         }
       }
     } catch (error) {
-      if (__DEV__) console.error('OAuth Error:', error);
-      const msg = error?.message || '';
-      if (msg.includes('provider is not enabled') || msg.includes('Unsupported provider')) {
-        Alert.alert(
-          'Provider Not Available',
-          `Sign in with ${provider === 'apple' ? 'Apple' : 'Google'} is not configured yet. Please use email and password instead.`
-        );
+      if (__DEV__) console.error('Google OAuth Error:', error);
+      Alert.alert('Sign In Failed', 'Unable to complete Google sign in. Please try again.');
+    }
+  };
+
+  // Native Apple Sign-In — uses iOS system sheet, no web browser needed
+  const performAppleSignIn = async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (credential.identityToken) {
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'apple',
+          token: credential.identityToken,
+        });
+        if (error) throw error;
       } else {
-        Alert.alert('Sign In Failed', 'Unable to complete sign in. Please try again.');
+        throw new Error('No identity token received from Apple.');
       }
+    } catch (error) {
+      if (error.code === 'ERR_REQUEST_CANCELED') {
+        // User cancelled — do nothing
+        return;
+      }
+      if (__DEV__) console.error('Apple Sign-In Error:', error);
+      Alert.alert('Sign In Failed', 'Unable to complete Apple sign in. Please try again.');
     }
   };
 
@@ -461,7 +483,7 @@ export default function AuthScreen() {
               {/* OAuth */}
               <Pressable
                 style={styles.oauthButtonGoogle}
-                onPress={() => performOAuth('google')}
+                onPress={performGoogleOAuth}
               >
                 <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.oauthGoogleText }}>G</Text>
                 <Text style={styles.oauthButtonTextGoogle}>Continue with Google</Text>
@@ -469,7 +491,7 @@ export default function AuthScreen() {
 
               <Pressable
                 style={styles.oauthButtonApple}
-                onPress={() => performOAuth('apple')}
+                onPress={performAppleSignIn}
               >
                 <Text style={{ fontSize: 20, color: Colors.oauthAppleText }}>{'\uF8FF'}</Text>
                 <Text style={styles.oauthButtonTextApple}>Continue with Apple</Text>

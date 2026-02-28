@@ -25,6 +25,7 @@
         "NSFaceIDUsageDescription": "FuelIQ uses Face ID to protect your private health data.",
         "ITSAppUsesNonExemptEncryption": false
       },
+      "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "com.apple.developer.healthkit.access": []
