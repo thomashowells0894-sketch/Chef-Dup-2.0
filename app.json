@@ -22,7 +22,8 @@
         "NSPhotoLibraryUsageDescription": "FuelIQ uses your photo library for progress photos and food journal.",
         "NSHealthShareUsageDescription": "FuelIQ reads your health data to track steps, active calories, weight, and heart rate.",
         "NSHealthUpdateUsageDescription": "FuelIQ writes workout data to Apple Health.",
-        "NSFaceIDUsageDescription": "FuelIQ uses Face ID to protect your private health data."
+        "NSFaceIDUsageDescription": "FuelIQ uses Face ID to protect your private health data.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
@@ -154,7 +155,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6a3b33c8-7992-4289-9176-f1b2db3b47f8"
+        "projectId": "3d9b018e-1ce2-43e9-871c-fecdb035261d"
       }
     },
     "owner": "thomashowells0894"
