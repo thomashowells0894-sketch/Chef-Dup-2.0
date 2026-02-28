@@ -4,6 +4,7 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import { parseVoiceFood } from '../services/ai';
 import { hapticLight, hapticSuccess, hapticImpact } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 
 export interface VoiceFood {
   name: string;
@@ -119,7 +120,8 @@ export function useVoiceLogging(
       // Clean up temp file
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore cleanup errors
       }
     } catch (error) {

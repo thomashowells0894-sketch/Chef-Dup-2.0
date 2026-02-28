@@ -26,6 +26,7 @@ import {
   BorderRadius,
 } from '../constants/theme';
 import { hapticLight } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 
 export default function HealthSyncStatus({ onSync, onConfigure, compact = false, style }) {
   const [syncStatus, setSyncStatus] = useState(null);
@@ -39,7 +40,8 @@ export default function HealthSyncStatus({ onSync, onConfigure, compact = false,
         setSyncStatus(status);
         const lastSync = await getLastSyncTime();
         setLastSyncTime(lastSync);
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore
       }
     }
@@ -94,7 +96,8 @@ export default function HealthSyncStatus({ onSync, onConfigure, compact = false,
         setSyncStatus(status);
         const lastSync = await getLastSyncTime();
         setLastSyncTime(lastSync);
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore errors
       } finally {
         setIsSyncing(false);

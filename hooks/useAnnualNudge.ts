@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSubscription } from '../context/SubscriptionContext';
+import { Sentry } from '../lib/sentry';
 
 const NUDGE_KEY = '@fueliq_annual_nudge';
 const OPTIMAL_NUDGE_DAYS = [25, 27, 29]; // Days into monthly subscription
@@ -33,7 +34,7 @@ export function useAnnualNudge() {
             setShowNudge(true);
           }
         }
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
     })();
   }, [isPremium, subscriptionType, purchaseDate, dismissed]);
 
@@ -45,7 +46,7 @@ export function useAnnualNudge() {
         lastShownCycle: getCurrentCycle(purchaseDate),
         dismissedAt: Date.now(),
       }));
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
   };
 
   const savingsPercent = 40; // Annual saves ~40% vs monthly

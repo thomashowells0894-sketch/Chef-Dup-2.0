@@ -38,6 +38,7 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Star, Share2, X, Zap, Shield, Crown, Award } from 'lucide-react-native';
 import { hapticHeavy, hapticSuccess } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 import {
   Colors,
   Spacing,
@@ -207,7 +208,8 @@ export default function LevelUpModal({ visible, level, levelName, previousLevel,
       await Share.share({
         message: `I just reached Level ${level} (${title}) in FuelIQ! ${perk ? `Unlocked: ${perk}` : ''}`,
       });
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Share cancelled
     }
   }, [level, title, perk]);

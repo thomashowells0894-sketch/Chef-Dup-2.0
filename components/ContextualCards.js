@@ -42,6 +42,7 @@ import {
   FontWeight,
   Shadows,
 } from '../constants/theme';
+import { Sentry } from '../lib/sentry';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -514,7 +515,8 @@ function ContextualCards() {
     const mealType = getSuggestedMealType();
     try {
       await addFood(food, mealType);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // MealContext handles error UI
     }
   }, [addFood]);

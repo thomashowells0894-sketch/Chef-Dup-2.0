@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { Sentry } from '../lib/sentry';
 
 interface PodMember {
   userId: string;
@@ -101,7 +102,8 @@ export function useAccountabilityPod() {
 
       await fetchPod();
       return newPod;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return null;
     }
   }, [user, fetchPod]);
@@ -120,7 +122,7 @@ export function useAccountabilityPod() {
         await fetchPod();
         return true;
       }
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
     return false;
   }, [pod, user, fetchPod]);
 
@@ -132,7 +134,7 @@ export function useAccountabilityPod() {
         .eq('pod_id', pod.id)
         .eq('user_id', user.id);
       setPod(null);
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
   }, [pod, user]);
 
   return { pod, loading, createPod, inviteToPod, leavePod, refresh: fetchPod };

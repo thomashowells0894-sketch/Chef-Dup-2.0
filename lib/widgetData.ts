@@ -15,6 +15,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { Sentry } from './sentry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -193,7 +194,8 @@ export async function saveWidgetData(data: AllWidgetData): Promise<void> {
           json,
           IOS_APP_GROUP
         );
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Native module not available — use AsyncStorage fallback
         await AsyncStorage.setItem(WIDGET_DATA_KEY, json);
       }
@@ -203,13 +205,15 @@ export async function saveWidgetData(data: AllWidgetData): Promise<void> {
       try {
         const SharedPreferences = require('react-native-shared-preferences');
         SharedPreferences.default.setItem('widgetData', json);
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         await AsyncStorage.setItem(WIDGET_DATA_KEY, json);
       }
     } else {
       await AsyncStorage.setItem(WIDGET_DATA_KEY, json);
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail — widget data is non-critical
   }
 }
@@ -221,7 +225,8 @@ export async function loadWidgetData(): Promise<AllWidgetData | null> {
   try {
     const json = await AsyncStorage.getItem(WIDGET_DATA_KEY);
     if (json) return JSON.parse(json);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
   return null;
@@ -236,7 +241,8 @@ export function reloadWidgets(): void {
     try {
       const { WidgetKit } = require('react-native-widgetkit');
       WidgetKit?.reloadAllTimelines?.();
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Native module not available
     }
   }

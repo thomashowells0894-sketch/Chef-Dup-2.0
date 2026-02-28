@@ -6,6 +6,7 @@ import { useGamification } from '../context/GamificationContext';
 import { useMood } from '../context/MoodContext';
 import { useIsPremium } from '../context/SubscriptionContext';
 import { generateWeeklyDigest } from '../services/ai';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_weekly_digest';
 
@@ -121,7 +122,8 @@ export function useWeeklyDigest() {
             setLastGenerated(cached.generatedAt);
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore storage read errors
       }
     })();

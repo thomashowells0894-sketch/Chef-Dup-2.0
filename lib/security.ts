@@ -5,6 +5,7 @@
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Platform } from 'react-native';
+import { Sentry } from './sentry';
 
 // ============================================================================
 // ENCRYPTION & SECURE STORAGE
@@ -49,7 +50,7 @@ async function secureDelete(key: string): Promise<boolean> {
   try {
     await SecureStore.deleteItemAsync(SECURE_PREFIX + key);
     return true;
-  } catch { return false; }
+  } catch (e) { Sentry.captureException(e); return false; }
 }
 
 // ============================================================================
@@ -75,7 +76,8 @@ async function isBiometricAvailable(): Promise<BiometricAvailability> {
     const hasFace: boolean = types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
     const hasFingerprint: boolean = types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
     return { available: true, type: hasFace ? 'face' : hasFingerprint ? 'fingerprint' : 'biometric', types };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return { available: false, type: 'error' };
   }
 }
@@ -274,7 +276,8 @@ async function getPrivacySettings(): Promise<PrivacySettings> {
   try {
     const raw: string | null = await SecureStore.getItemAsync(PRIVACY_KEY);
     return raw ? { ...DEFAULT_PRIVACY, ...JSON.parse(raw) } : DEFAULT_PRIVACY;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return DEFAULT_PRIVACY;
   }
 }
@@ -285,7 +288,8 @@ async function updatePrivacySettings(updates: Partial<PrivacySettings>): Promise
     const updated: PrivacySettings = { ...current, ...updates, lastModified: new Date().toISOString() };
     await SecureStore.setItemAsync(PRIVACY_KEY, JSON.stringify(updated));
     return updated;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -328,7 +332,8 @@ async function exportUserData(supabase: SupabaseClient, userId: string): Promise
     try {
       const { data, error } = await supabase.from(table).select('*').eq('user_id', userId);
       exportData[table] = error ? [] : data;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       exportData[table] = [];
     }
   }
@@ -338,7 +343,8 @@ async function exportUserData(supabase: SupabaseClient, userId: string): Promise
     const { data: friendsOut } = await supabase.from('friendships').select('*').eq('requester_id', userId);
     const { data: friendsIn } = await supabase.from('friendships').select('*').eq('addressee_id', userId);
     exportData['friendships'] = [...(friendsOut || []), ...(friendsIn || [])];
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     exportData['friendships'] = [];
   }
 
@@ -395,7 +401,8 @@ async function deleteAllUserData(supabase: SupabaseClient, userId: string): Prom
         const { error } = await supabase.from(table).delete().eq(col, userId);
         results[table] = error ? 'failed' : 'deleted';
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       results[table] = 'failed';
     }
   }
@@ -409,7 +416,8 @@ async function deleteAllUserData(supabase: SupabaseClient, userId: string): Prom
       await AsyncStorage.multiRemove(fueliqKeys);
     }
     results.asyncStorage = 'deleted';
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     results.asyncStorage = 'failed';
   }
 
@@ -426,7 +434,7 @@ async function deleteAllUserData(supabase: SupabaseClient, userId: string): Prom
   for (const key of secureKeys) {
     try {
       await SecureStore.deleteItemAsync(key);
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
   }
   results.secureStore = 'deleted';
 

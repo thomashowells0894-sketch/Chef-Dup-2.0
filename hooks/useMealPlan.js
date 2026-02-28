@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from '../context/ProfileContext';
 import { generateMealPlan } from '../services/ai';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_meal_plan';
 
@@ -58,7 +59,7 @@ export function useMealPlan() {
       try {
         const saved = await AsyncStorage.getItem('@fueliq_household_size');
         if (saved) setHouseholdSize(parseInt(saved, 10) || 1);
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
     })();
   }, []);
 
@@ -68,7 +69,7 @@ export function useMealPlan() {
     setHouseholdSize(clamped);
     try {
       await AsyncStorage.setItem('@fueliq_household_size', String(clamped));
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
   }, []);
 
   // Load cached meal plan on mount
@@ -83,7 +84,8 @@ export function useMealPlan() {
             setLastGenerated(cached.generatedAt);
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore storage read errors
       }
     })();

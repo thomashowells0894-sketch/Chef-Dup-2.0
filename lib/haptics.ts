@@ -1,10 +1,12 @@
 import * as Haptics from 'expo-haptics';
+import { Sentry } from './sentry';
 
 // ─── Light ─── Default taps, minor interactions
 export async function hapticLight(): Promise<void> {
   try {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -13,7 +15,8 @@ export async function hapticLight(): Promise<void> {
 export async function hapticMedium(): Promise<void> {
   try {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -22,7 +25,8 @@ export async function hapticMedium(): Promise<void> {
 export async function hapticHeavy(): Promise<void> {
   try {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -31,7 +35,8 @@ export async function hapticHeavy(): Promise<void> {
 export async function hapticSuccess(): Promise<void> {
   try {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -40,7 +45,8 @@ export async function hapticSuccess(): Promise<void> {
 export async function hapticWarning(): Promise<void> {
   try {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -49,7 +55,8 @@ export async function hapticWarning(): Promise<void> {
 export async function hapticError(): Promise<void> {
   try {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -58,7 +65,8 @@ export async function hapticError(): Promise<void> {
 export async function hapticSelection(): Promise<void> {
   try {
     await Haptics.selectionAsync();
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }
@@ -67,7 +75,8 @@ export async function hapticSelection(): Promise<void> {
 export async function hapticImpact(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Medium): Promise<void> {
   try {
     await Haptics.impactAsync(style);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Haptics not available
   }
 }

@@ -122,7 +122,8 @@ function ensureSupabaseHost(): void {
         PIN_HASHES[host] = PIN_HASHES['supabase'];
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Env not available — Supabase host will not be added; existing allowlist still applies
   }
 }
@@ -148,7 +149,8 @@ function reportPinFailure(host: string, reason: string, mode: PinMode): void {
         timestamp: new Date().toISOString(),
       },
     });
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Sentry not available — fall through to console
   }
 
@@ -174,7 +176,8 @@ async function tryLoadNativePinning(): Promise<boolean> {
       nativePinningAvailable = true;
       return true;
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Module not installed — fall through to tier 2
   }
   nativePinningAvailable = false;
@@ -207,7 +210,8 @@ function checkPublicKeyPinsHeader(response: Response, host: string): boolean {
     if (reportedPins.length === 0) return true; // malformed header — allow through defensively
     // Check if ANY reported pin matches any expected pin
     return reportedPins.some((rp) => expectedPins.includes(rp));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Defensive — never crash on header parsing
     return true;
   }
@@ -227,7 +231,8 @@ function checkExpectCTHeader(response: Response): boolean {
     // If there were a report-uri pointing to a suspicious domain we'd flag it,
     // but for now we accept the header if it exists.
     return true;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return true;
   }
 }

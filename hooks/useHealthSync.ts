@@ -33,6 +33,7 @@ import type {
   DataSource,
 } from '../services/healthService';
 import { getEncryptedItem, setEncryptedItem } from '../lib/encryptedStorage';
+import { Sentry } from '../lib/sentry';
 
 declare const __DEV__: boolean;
 
@@ -213,7 +214,8 @@ export function useHealthSync(): UseHealthSyncReturn {
         if (saved && typeof saved === 'object') {
           setBaselines(saved as HealthBaselines);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore
       }
     }
@@ -527,7 +529,8 @@ export function useHealthSync(): UseHealthSyncReturn {
           setSnapshot(cached as HealthSnapshot);
           setIsLoading(false);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore cache errors
       }
 

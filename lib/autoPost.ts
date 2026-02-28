@@ -1,3 +1,4 @@
+import { Sentry } from './sentry';
 import { supabase } from './supabase';
 
 type AutoPostType = 'streak_milestone' | 'weight_milestone' | 'challenge_complete' | 'level_up';
@@ -61,7 +62,8 @@ export async function createAutoPost(
       return false;
     }
     return true;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return false;
   }
 }

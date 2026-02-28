@@ -6,6 +6,7 @@
  * the previous O(n) array.filter() approach.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 
 const DEFAULT_TTL: number = 5 * 60 * 1000; // 5 minutes
 const MAX_MEMORY_ITEMS: number = 200;
@@ -137,7 +138,8 @@ async function persistGet(key: string): Promise<unknown | null> {
       return null;
     }
     return entry.value;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -148,7 +150,8 @@ async function persistSet(key: string, value: unknown, ttl: number = 30 * 60 * 1
       CACHE_PREFIX + key,
       JSON.stringify({ value, expiresAt: Date.now() + ttl, createdAt: Date.now() })
     );
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silently fail on storage errors
   }
 }
@@ -156,7 +159,8 @@ async function persistSet(key: string, value: unknown, ttl: number = 30 * 60 * 1
 async function persistInvalidate(key: string): Promise<void> {
   try {
     await AsyncStorage.removeItem(CACHE_PREFIX + key);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silently fail
   }
 }
@@ -276,7 +280,8 @@ async function cacheImage(uri: string, base64: string): Promise<void> {
     }
 
     await AsyncStorage.setItem(IMAGE_CACHE_INDEX_KEY, JSON.stringify(filtered));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silently fail
   }
 }
@@ -286,7 +291,8 @@ async function getCachedImage(uri: string): Promise<string | null> {
     if (!uri) return null;
     const cacheKey = IMAGE_CACHE_PREFIX + encodeURIComponent(uri);
     return await AsyncStorage.getItem(cacheKey);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }

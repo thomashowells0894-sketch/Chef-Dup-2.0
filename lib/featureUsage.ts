@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 import { supabase } from './supabase';
 import { trackEvent } from './analytics';
 
@@ -45,7 +46,8 @@ async function loadLocalStats(): Promise<FeatureUsageMap> {
     if (raw) {
       return JSON.parse(raw);
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Storage read failed
   }
   return {};
@@ -54,7 +56,8 @@ async function loadLocalStats(): Promise<FeatureUsageMap> {
 async function saveLocalStats(stats: FeatureUsageMap): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Storage write failed — silently ignore
   }
 }
@@ -90,7 +93,8 @@ async function syncToSupabase(feature: string): Promise<void> {
           }
         );
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Network failure — local stats still updated
   }
 }

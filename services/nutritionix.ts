@@ -12,6 +12,7 @@
  */
 
 import { createPinnedFetch } from '../lib/certPinning';
+import { Sentry } from '../lib/sentry';
 import type { ProductResult, SearchResult, MicronutrientData } from './openFoodFacts';
 
 const API_BASE = 'https://trackapi.nutritionix.com/v2';
@@ -319,7 +320,8 @@ export async function searchNutritionix(
           const nutrientsData: NixNutrientsResponse = await nutrientsResponse.json();
           commonProducts = (nutrientsData.foods || []).map(nutrientFoodToProduct);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // If nutrients lookup fails, skip common foods (branded still available)
       }
     }

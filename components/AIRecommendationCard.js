@@ -19,6 +19,7 @@ import {
   BorderRadius,
 } from '../constants/theme';
 import { useIsPremium } from '../context/SubscriptionContext';
+import { Sentry } from '../lib/sentry';
 
 /**
  * AIRecommendationCard — Proactive meal suggestions based on remaining macros.
@@ -109,7 +110,8 @@ function AIRecommendationCard({
           setAiCoachMessage(result.coachMessage || '');
           setIsAIPowered(true);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Fall through to static recommendations silently
       } finally {
         if (!cancelled) setAiLoading(false);

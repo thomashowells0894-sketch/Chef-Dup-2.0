@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
+import { Sentry } from './sentry';
 
 const SIGNING_KEY_ALIAS = 'fueliq_signing_key';
 const REPLAY_WINDOW_MS = 300 * 1000; // 5 minutes
@@ -125,7 +126,8 @@ async function hmacSHA256(key: string, data: string): Promise<string> {
     // Convert ArrayBuffer to hex string
     const hashArray = Array.from(new Uint8Array(signatureBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Fallback: use expo-crypto SHA256 with key prefix (less secure but functional)
     return Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
@@ -226,7 +228,8 @@ export function createSignedFetch(originalFetch: typeof fetch): typeof fetch {
       headers.set('x-fueliq-nonce', sigHeaders['x-fueliq-nonce']);
 
       return originalFetch(input, { ...init, headers });
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Graceful fallback: send unsigned request
       return originalFetch(input, init);
     }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJSONParse, isValidArray } from '../lib/validation';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_favorite_foods';
 const MAX_FAVORITES = 50;
@@ -47,7 +48,8 @@ export function useFavoriteFoods(): UseFavoriteFoodsReturn {
           const parsed = safeJSONParse(stored, []);
           if (isValidArray(parsed)) setFavorites(parsed as FavoriteFood[]);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail -- start with empty list
       }
       isLoaded.current = true;

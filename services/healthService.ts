@@ -21,6 +21,7 @@
 
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 declare const __DEV__: boolean;
 
@@ -602,7 +603,8 @@ async function queryDailyCumulativeAndroid(type: string): Promise<number> {
       if (r.value) return sum + r.value;
       return sum;
     }, 0);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return 0;
   }
 }
@@ -626,7 +628,8 @@ async function queryLatestSampleAndroid(type: string): Promise<number | null> {
     if (!result?.records || result.records.length === 0) return null;
     const record = result.records[0];
     return record.beatsPerMinute ?? record.weight?.inKilograms ?? record.percentage ?? record.temperature?.inCelsius ?? record.vo2MillilitersPerMinuteKilogram ?? record.value ?? null;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -697,7 +700,8 @@ async function querySleepAnalysisAndroid(): Promise<SleepAnalysisResult | null> 
       sleepEnd: session.endTime ?? null,
       source: 'google_fit',
     };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -714,7 +718,8 @@ async function loadConnectionState(): Promise<boolean> {
   try {
     const val: string | null = await AsyncStorage.getItem(STORAGE_KEY);
     _connected = val === 'true';
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     _connected = false;
   }
   _connectionLoaded = true;
@@ -732,7 +737,8 @@ async function setConnectionState(connected: boolean): Promise<void> {
       await AsyncStorage.removeItem(STORAGE_KEY);
       await AsyncStorage.removeItem(DATA_SOURCE_KEY);
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silently fail on storage errors
   }
 }
@@ -782,7 +788,8 @@ function registerBackgroundObservers(): void {
           });
           _backgroundObservers.push(type);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         if (__DEV__) console.warn(`[HealthService] Failed to register observer for ${type}`);
       }
     }
@@ -836,7 +843,8 @@ function startStepPolling(): void {
         _nativeStepObserver = true;
         return; // Native observer is active; no need for polling
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to polling
     }
   }
@@ -1377,7 +1385,8 @@ export async function getStepsToday(): Promise<number> {
         const steps = await queryDailyCumulativeAndroid('Steps');
         if (steps > 0) { updateLastSync(); return Math.round(steps); }
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1401,7 +1410,8 @@ export async function getHourlySteps(): Promise<HourlyStepEntry[]> {
     try {
       const entries = await queryHourlyStepsIOS();
       if (entries.length > 0) return entries;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1448,7 +1458,8 @@ export async function getWeeklySteps(): Promise<WeeklyStepEntry[]> {
 
         if (result && result.length > 0) return result;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1496,7 +1507,8 @@ export async function getLatestWeight(): Promise<WeightReading | null> {
           date: formatDate(new Date()),
         };
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1507,7 +1519,8 @@ export async function getLatestWeight(): Promise<WeightReading | null> {
     if (stored) {
       return JSON.parse(stored) as WeightReading;
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Fall through to generate
   }
 
@@ -1520,7 +1533,8 @@ export async function getLatestWeight(): Promise<WeightReading | null> {
 
   try {
     await AsyncStorage.setItem(MOCK_WEIGHT_KEY, JSON.stringify(weight));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Ignore storage errors
   }
 
@@ -1544,7 +1558,8 @@ export async function getActiveCaloriesToday(): Promise<number> {
         const cal = await queryDailyCumulativeAndroid('ActiveCaloriesBurned');
         if (cal > 0) return Math.round(cal);
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1573,7 +1588,8 @@ export async function getRestingCaloriesToday(): Promise<number> {
         const cal = await queryDailyCumulativeAndroid('BasalMetabolicRate');
         if (cal > 0) return Math.round(cal);
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1602,7 +1618,8 @@ export async function getRestingHeartRate(): Promise<number | null> {
         const rhr = await queryLatestSampleAndroid('RestingHeartRate');
         if (rhr !== null && rhr > 0) return Math.round(rhr);
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1646,7 +1663,8 @@ export async function getHeartRateData(hours: number = 24): Promise<HeartRateSam
           }
         }
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1684,7 +1702,8 @@ export async function getHRV(): Promise<number | null> {
         const rmssd = await queryLatestSampleAndroid('HeartRateVariabilityRmssd');
         if (rmssd !== null && rmssd > 0) return Math.round(rmssd * 10) / 10;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1722,7 +1741,8 @@ export async function getHRVHistory(days: number = 7): Promise<DailyHealthEntry[
           value: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
         })).sort((a, b) => a.date.localeCompare(b.date));
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1747,7 +1767,8 @@ export async function getSleepAnalysis(): Promise<SleepAnalysisResult | null> {
         const sleep = await querySleepAnalysisAndroid();
         if (sleep) return sleep;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1809,7 +1830,8 @@ export async function getRespiratoryRate(): Promise<number | null> {
         const rr = await queryLatestSampleAndroid('RespiratoryRate');
         if (rr !== null && rr > 0) return Math.round(rr * 10) / 10;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1835,7 +1857,8 @@ export async function getVO2Max(): Promise<number | null> {
         const v = await queryLatestSampleAndroid('Vo2Max');
         if (v !== null && v > 0) return Math.round(v * 10) / 10;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1867,7 +1890,8 @@ export async function getVO2MaxHistory(days: number = 7): Promise<DailyHealthEnt
           value: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
         })).sort((a, b) => a.date.localeCompare(b.date));
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1894,7 +1918,8 @@ export async function getBloodOxygen(): Promise<number | null> {
         const v = await queryLatestSampleAndroid('OxygenSaturation');
         if (v !== null && v > 0) return Math.round(v * 10) / 10;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1926,7 +1951,8 @@ export async function getSpO2History(days: number = 7): Promise<DailyHealthEntry
           value: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
         })).sort((a, b) => a.date.localeCompare(b.date));
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1951,7 +1977,8 @@ export async function getBodyTemperature(): Promise<number | null> {
         const v = await queryLatestSampleAndroid('BodyTemperature');
         if (v !== null && v > 0) return Math.round(v * 10) / 10;
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -1977,7 +2004,8 @@ export async function getDistanceToday(): Promise<number> {
         const d = await queryDailyCumulativeAndroid('Distance');
         if (d > 0) return Math.round(d);
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -2003,7 +2031,8 @@ export async function getFlightsClimbed(): Promise<number> {
         const f = await queryDailyCumulativeAndroid('FloorsClimbed');
         if (f > 0) return Math.round(f);
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -2025,7 +2054,8 @@ export async function getWorkouts(days: number = 7): Promise<WorkoutSession[]> {
     try {
       const workouts = await queryWorkoutsIOS(days);
       if (workouts.length > 0) return workouts;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Fall through to mock
     }
   }
@@ -2185,7 +2215,8 @@ export async function getLastSyncTime(): Promise<string | null> {
       _lastSyncTimestamp = stored;
       return stored;
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Ignore
   }
   return null;

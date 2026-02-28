@@ -21,6 +21,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 import { searchProductsGlobal, type ProductResult, type SearchResult } from './openFoodFacts';
 import { searchUSDA } from './usdaFoodData';
 import { searchFatSecret, isFatSecretConfigured } from './fatSecret';
@@ -340,7 +341,8 @@ export async function loadRecentSearches(): Promise<RecentSearch[]> {
         return _recentSearchesCache;
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 
@@ -372,7 +374,8 @@ export async function saveRecentSearch(query: string, resultCount: number): Prom
 
   try {
     await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 }
@@ -392,7 +395,8 @@ export async function clearRecentSearches(): Promise<void> {
   _recentSearchesCache = [];
   try {
     await AsyncStorage.removeItem(RECENT_SEARCHES_KEY);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 }
@@ -418,7 +422,8 @@ export async function loadTrendingTerms(): Promise<TrendingTerm[]> {
         return _trendingCache;
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 
@@ -451,7 +456,8 @@ export async function trackSearchTerm(query: string): Promise<void> {
 
   try {
     await AsyncStorage.setItem(TRENDING_TERMS_KEY, JSON.stringify(trimmed));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 }

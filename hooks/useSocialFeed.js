@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
+import { Sentry } from '../lib/sentry';
 
 const REACTION_TYPES = ['fire', 'clap', 'flex', 'heart'];
 const PHOTO_BUCKET = 'social-photos';
@@ -127,7 +128,8 @@ export function useSocialFeed() {
         }));
         try {
           await supabase.from('social_reactions').delete().eq('post_id', postId).eq('user_id', user.id);
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           // Revert on failure
           setPosts(prev => prev.map(p => p.id === postId ? { ...p, userReaction: currentReaction, reactions: post.reactions } : p));
         }
@@ -147,7 +149,8 @@ export function useSocialFeed() {
             { post_id: postId, user_id: user.id, reaction_type: reactionType },
             { onConflict: 'post_id,user_id' }
           );
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           // Revert on failure
           setPosts(prev => prev.map(p => p.id === postId ? { ...p, userReaction: currentReaction, reactions: post.reactions } : p));
         }
@@ -162,7 +165,8 @@ export function useSocialFeed() {
         } else {
           await supabase.from('social_likes').insert({ post_id: postId, user_id: user.id });
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         setPosts(prev => prev.map(p => p.id === postId ? { ...p, isLiked: post.isLiked, likesCount: post.likesCount } : p));
       }
     }
@@ -183,7 +187,8 @@ export function useSocialFeed() {
         counts[type] = (data || []).filter(r => r.reaction_type === type).length;
       }
       return counts;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return { fire: 0, clap: 0, flex: 0, heart: 0 };
     }
   }, []);
@@ -244,7 +249,7 @@ export function useSocialFeed() {
       if (error) throw error;
       setPosts(prev => prev.filter(p => p.id !== postId));
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user]);
 
   /**
@@ -407,7 +412,8 @@ export function useSocialFeed() {
 
       if (result.canceled || !result.assets?.[0]) return null;
       return result.assets[0].uri;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return null;
     }
   }, []);

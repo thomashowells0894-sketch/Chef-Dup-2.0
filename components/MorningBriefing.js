@@ -26,6 +26,7 @@ import { useGamification } from '../context/GamificationContext';
 import { useFasting } from '../context/FastingContext';
 import { useIsPremium } from '../context/SubscriptionContext';
 import { generateMorningBriefing } from '../services/ai';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY_DISMISSED = '@fueliq_morning_briefing_dismissed';
 const STORAGE_KEY_CACHE = '@fueliq_morning_briefing_cache';
@@ -150,7 +151,8 @@ function MorningBriefing() {
             setLoading(false);
             return;
           }
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           // Cache corrupt, continue to generate
         }
       }

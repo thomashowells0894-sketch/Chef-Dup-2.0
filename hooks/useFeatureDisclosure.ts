@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const DISCLOSURE_KEY = '@fueliq_feature_disclosure';
 
@@ -40,7 +41,7 @@ export function useFeatureDisclosure() {
         if (raw) {
           setState(JSON.parse(raw));
         }
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
     })();
   }, []);
 

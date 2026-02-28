@@ -3,6 +3,7 @@ import { useProfile } from '../context/ProfileContext';
 import { isValidArray } from '../lib/validation';
 import { getEncryptedItem, setEncryptedItem, removeEncryptedItem } from '../lib/encryptedStorage';
 import type { WeightEntry } from '../types';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_weight_history';
 const GOAL_STORAGE_KEY = '@fueliq_weight_goal';
@@ -42,7 +43,8 @@ export function useWeightHistory(): UseWeightHistoryReturn {
   let profileContext: { updateProfile?: (data: { weight: number }) => void } | null = null;
   try {
     profileContext = useProfile();
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Profile context not available
   }
 
@@ -128,7 +130,8 @@ export function useWeightHistory(): UseWeightHistoryReturn {
     if (profileContext && profileContext.updateProfile) {
       try {
         profileContext.updateProfile({ weight: parseFloat(weight as string) });
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail if profile sync fails
       }
     }

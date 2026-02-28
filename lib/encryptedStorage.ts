@@ -9,6 +9,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { Sentry } from './sentry';
 
 declare const __DEV__: boolean;
 
@@ -140,7 +141,8 @@ async function getLegacyAESKey(): Promise<CryptoKey | null> {
       false,
       ['encrypt', 'decrypt'],
     );
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -230,7 +232,8 @@ function legacyFromBase64(b64: string): string {
         '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
       ).join(''),
     );
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return decodeURIComponent(escape(atob(b64)));
   }
 }
@@ -281,7 +284,8 @@ async function aesDecryptWithKey(encoded: string, key: CryptoKey): Promise<strin
     );
 
     return new TextDecoder().decode(decrypted);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -333,7 +337,8 @@ async function getEncryptedItem<T>(key: string, fallback: T = null as T): Promis
     // Plaintext fallback (unencrypted legacy data)
     try {
       return JSON.parse(raw) as T;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return fallback;
     }
   } catch (error: unknown) {
@@ -349,7 +354,8 @@ async function removeEncryptedItem(key: string): Promise<boolean> {
   try {
     await AsyncStorage.removeItem(key);
     return true;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return false;
   }
 }

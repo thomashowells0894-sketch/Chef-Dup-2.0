@@ -5,6 +5,7 @@ import { RotateCcw, Plus } from 'lucide-react-native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { hapticLight } from '../lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const RECENT_MEALS_KEY = '@fueliq_quick_repeat';
 const MAX_RECENT = 5;
@@ -28,7 +29,7 @@ export function recordMealForRepeat(food) {
       });
       if (meals.length > MAX_RECENT) meals.length = MAX_RECENT;
       await AsyncStorage.setItem(RECENT_MEALS_KEY, JSON.stringify(meals));
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
   })();
 }
 
@@ -45,7 +46,7 @@ export default function QuickRepeatBar({ onRepeat, style }) {
           const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
           setRecentMeals(meals.filter(m => m.timestamp > threeDaysAgo));
         }
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
     })();
   }, []);
 

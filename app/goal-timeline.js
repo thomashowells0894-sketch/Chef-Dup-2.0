@@ -53,6 +53,7 @@ import { useWeightHistory } from '../hooks/useWeightHistory';
 import { useProfile } from '../context/ProfileContext';
 import useGoalProjection from '../hooks/useGoalProjection';
 import { hapticLight } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 import { format, addDays, subDays } from 'date-fns';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -1235,7 +1236,8 @@ export default function GoalTimelineScreen() {
   let profileData = null;
   try {
     profileData = useProfile();
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Profile context not available
   }
 

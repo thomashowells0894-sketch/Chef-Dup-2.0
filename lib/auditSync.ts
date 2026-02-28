@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 import { supabase } from './supabase';
 
 const AUDIT_QUEUE_KEY = '@fueliq_audit_queue';
@@ -29,7 +30,9 @@ export async function queueAuditLog(entry: AuditEntry): Promise<void> {
     }
 
     await AsyncStorage.setItem(AUDIT_QUEUE_KEY, JSON.stringify(queue));
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 }
 
 /**

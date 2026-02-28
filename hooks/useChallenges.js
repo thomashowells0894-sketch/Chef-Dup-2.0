@@ -4,6 +4,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { Sentry } from '../lib/sentry';
 
 const CHALLENGE_TYPES = {
   steps: { label: 'Step Challenge', icon: '\uD83D\uDC5F', unit: 'steps', defaultGoal: 70000 },
@@ -185,7 +186,7 @@ export function useChallenges() {
       if (error) throw error;
       await fetchChallenges();
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user, fetchChallenges]);
 
   const updateProgress = useCallback(async (challengeId, progress) => {
@@ -195,7 +196,7 @@ export function useChallenges() {
       if (error) throw error;
       setActiveChallenges(prev => prev.map(c => c.challengeId === challengeId ? { ...c, progress } : c));
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user]);
 
   const createChallenge = useCallback(async (challengeData) => {
@@ -222,7 +223,7 @@ export function useChallenges() {
       // Auto-join as creator
       await joinChallenge(data.id);
       return data;
-    } catch { return null; }
+    } catch (e) { Sentry.captureException(e); return null; }
   }, [user, joinChallenge]);
 
   const getLeaderboard = useCallback(async (challengeId) => {
@@ -239,7 +240,7 @@ export function useChallenges() {
         avatarUrl: p.profiles?.avatar_url, progress: p.progress, isCurrentUser: p.user_id === user?.id,
         teamId: p.team_id || null,
       }));
-    } catch { return []; }
+    } catch (e) { Sentry.captureException(e); return []; }
   }, [user]);
 
   // --- Team Challenge Support ---

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSubscription } from '../context/SubscriptionContext';
+import { Sentry } from '../lib/sentry';
 
 const WINBACK_KEY = '@fueliq_winback';
 const WINBACK_COOLDOWN = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -60,7 +61,7 @@ export function useWinBack() {
           const offerIndex = Math.floor(Math.random() * OFFERS.length);
           setOffer(OFFERS[offerIndex]);
         }
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
     })();
   }, [isPremium, isTrialing, hasExpiredTrial, dismissed]);
 
@@ -71,7 +72,7 @@ export function useWinBack() {
       await AsyncStorage.setItem(WINBACK_KEY, JSON.stringify({
         dismissedAt: Date.now(),
       }));
-    } catch {}
+    } catch (e) { Sentry.captureException(e); }
   }, []);
 
   return { offer, dismissOffer };

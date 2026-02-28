@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useGamification } from '../context/GamificationContext';
 import { sanitizeText, sanitizeNumber } from '../lib/validation';
+import { Sentry } from '../lib/sentry';
 
 // ============================================================================
 // TYPES
@@ -122,7 +123,8 @@ async function getCached<T>(key: string): Promise<T | null> {
       return null;
     }
     return entry.data;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -131,7 +133,8 @@ async function setCache<T>(key: string, data: T): Promise<void> {
   try {
     const entry: CacheEntry<T> = { data, timestamp: Date.now() };
     await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Cache write failure is non-critical
   }
 }
@@ -145,7 +148,8 @@ async function invalidateCache(prefix?: string): Promise<void> {
     if (cacheKeys.length > 0) {
       await AsyncStorage.multiRemove(cacheKeys);
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Non-critical
   }
 }

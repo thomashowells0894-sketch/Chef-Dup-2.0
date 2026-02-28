@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Share, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
+import { Sentry } from '../lib/sentry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,7 +143,8 @@ export function useReferral(userId?: string) {
           setStats(newStats);
           await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newStats));
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Generate fallback code
         setStats((prev) => ({
           ...prev,
@@ -164,7 +166,8 @@ export function useReferral(userId?: string) {
         message: `Join me on FuelIQ! AI-powered fitness tracking that actually works. Use my invite code ${stats.inviteCode} for bonus rewards.\n\n${shareUrl}\n\nDownload: ${storeUrl}`,
         title: 'Join FuelIQ',
       });
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // User cancelled or share failed
     }
   }, [stats.inviteCode]);

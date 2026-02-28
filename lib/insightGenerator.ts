@@ -14,6 +14,7 @@ import {
   calculateAdherenceScore,
   analyzeMacroConsistency,
 } from './analyticsEngine';
+import { Sentry } from './sentry';
 
 // ============================================================================
 // TYPES
@@ -99,7 +100,9 @@ export function generateInsights(
         priority: 5,
       });
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Protein drop-off pattern ---
   try {
@@ -124,7 +127,9 @@ export function generateInsights(
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Weight progress tracking ---
   try {
@@ -170,7 +175,9 @@ export function generateInsights(
         });
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Plateau detection ---
   try {
@@ -189,7 +196,9 @@ export function generateInsights(
         });
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- TDEE adaptation ---
   try {
@@ -219,7 +228,9 @@ export function generateInsights(
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Streak analysis ---
   try {
@@ -265,7 +276,9 @@ export function generateInsights(
         });
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Sleep correlation ---
   try {
@@ -300,7 +313,9 @@ export function generateInsights(
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Sleep and workout correlation ---
   try {
@@ -338,7 +353,9 @@ export function generateInsights(
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Macro consistency insight ---
   try {
@@ -366,7 +383,9 @@ export function generateInsights(
         });
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Adherence achievement ---
   try {
@@ -392,7 +411,9 @@ export function generateInsights(
         });
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // --- Calorie anomalies ---
   try {
@@ -414,7 +435,9 @@ export function generateInsights(
         });
       }
     }
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 
   // Sort by priority (highest first) and return top N
   insights.sort((a, b) => b.priority - a.priority);

@@ -19,6 +19,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createPinnedFetch } from '../lib/certPinning';
 import { getCachedBarcode as getFastCachedBarcode, setCachedBarcode as setFastCachedBarcode } from '../lib/barcodeCache';
+import { Sentry } from '../lib/sentry';
 
 const OFP_API_BASE: string = 'https://world.openfoodfacts.org/api/v2/product';
 const USDA_API_BASE: string = 'https://api.nal.usda.gov/fdc/v1';
@@ -167,7 +168,8 @@ async function loadBarcodeCache(): Promise<Map<string, CachedBarcode>> {
         return _barcodeCache;
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 
@@ -208,7 +210,8 @@ async function cacheBarcodeResult(
       BARCODE_CACHE_KEY,
       JSON.stringify(Object.fromEntries(cache)),
     );
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 }
@@ -239,7 +242,8 @@ export async function clearBarcodeCache(): Promise<void> {
   _barcodeCache = new Map();
   try {
     await AsyncStorage.removeItem(BARCODE_CACHE_KEY);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 }
@@ -374,7 +378,8 @@ async function lookupOFP(barcode: string): Promise<BarcodeFoodData | null> {
       barcode,
       micronutrients: Object.keys(micro).length > 0 ? micro : undefined,
     };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     clearTimeout(timeoutId);
     return null;
   }
@@ -451,7 +456,8 @@ async function lookupUSDA(barcode: string): Promise<BarcodeFoodData | null> {
       image: null, // USDA doesn't provide images
       barcode,
     };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     clearTimeout(timeoutId);
     return null;
   }

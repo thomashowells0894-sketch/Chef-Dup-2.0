@@ -5,6 +5,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import { Sentry } from './sentry';
 
 // ============================================================================
 // TYPES
@@ -207,7 +208,8 @@ async function getReferralStats(userId: string): Promise<ReferralStats> {
   try {
     const raw: string | null = await AsyncStorage.getItem(`${REFERRAL_KEY}_${userId}`);
     return raw ? JSON.parse(raw) : { totalReferrals: 0, pendingReferrals: 0, earnedXP: 0, freeProDays: 0, referralCode: await generateReferralCode(userId) };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return { totalReferrals: 0, pendingReferrals: 0, earnedXP: 0, freeProDays: 0, referralCode: await generateReferralCode(userId) };
   }
 }
@@ -235,7 +237,8 @@ async function processReferral(referrerId: string, refereeId: string): Promise<P
 
     await AsyncStorage.setItem(`${REFERRAL_KEY}_${referrerId}`, JSON.stringify(stats));
     return { success: true, stats, milestone };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return { success: false };
   }
 }
@@ -274,7 +277,8 @@ async function getABTestVariant(testName: string): Promise<string | null> {
     assignments[testName] = assignedVariant;
     await AsyncStorage.setItem(AB_TEST_KEY, JSON.stringify(assignments));
     return assignedVariant;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return ACTIVE_TESTS[testName]?.variants[0] || null;
   }
 }

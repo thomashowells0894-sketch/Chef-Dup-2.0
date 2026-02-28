@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 
 const LOG_TIMES_KEY = '@fueliq_log_times';
 const MAX_ENTRIES = 100;
@@ -33,7 +34,8 @@ export async function recordLogTime(): Promise<void> {
     }
 
     await AsyncStorage.setItem(LOG_TIMES_KEY, JSON.stringify(entries));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Non-critical, silently fail
   }
 }
@@ -90,7 +92,8 @@ export async function getOptimalNotificationTimes(): Promise<{
       lunch: lunch.length >= 3 ? minutesToTime(getMedian(lunch)) : { hour: 12, minute: 30 },
       dinner: dinner.length >= 3 ? minutesToTime(getMedian(dinner)) : { hour: 18, minute: 30 },
     };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }

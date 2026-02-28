@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { createSignedFetch } from './requestSigning';
+import { Sentry } from './sentry';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -56,7 +57,8 @@ const SecureStoreAdapter = {
         i++;
       }
       return chunks.join('');
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return null;
     }
   },
@@ -69,7 +71,7 @@ const SecureStoreAdapter = {
         await SecureStore.setItemAsync(key, value);
       } else {
         // Remove old single-key value if any
-        try { await SecureStore.deleteItemAsync(key); } catch {}
+        try { await SecureStore.deleteItemAsync(key); } catch (e) { Sentry.captureException(e); }
 
         // Write chunks
         const totalChunks = Math.ceil(value.length / CHUNK_SIZE);
@@ -87,10 +89,11 @@ const SecureStoreAdapter = {
             if (old === null) break;
             await SecureStore.deleteItemAsync(`${key}_chunk_${j}`);
             j++;
-          } catch { break; }
+          } catch (e) { Sentry.captureException(e); break; }
         }
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // SecureStore not available (e.g. Expo Go on some devices) — silent fail
     }
   },
@@ -98,7 +101,9 @@ const SecureStoreAdapter = {
   async removeItem(key: string): Promise<void> {
     try {
       await SecureStore.deleteItemAsync(key);
-    } catch {}
+    } catch (e) {
+      Sentry.captureException(e);
+    }
     // Also remove chunks
     let i = 0;
     while (true) {
@@ -107,7 +112,7 @@ const SecureStoreAdapter = {
         if (chunk === null) break;
         await SecureStore.deleteItemAsync(`${key}_chunk_${i}`);
         i++;
-      } catch { break; }
+      } catch (e) { Sentry.captureException(e); break; }
     }
   },
 };
