@@ -7,8 +7,8 @@ import { View, ActivityIndicator, AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as QuickActions from 'expo-quick-actions';
 import { useQuickActionCallback } from 'expo-quick-actions/hooks';
+import { useFonts } from 'expo-font';
 import {
-  useFonts,
   Inter_400Regular,
   Inter_500Medium,
   Inter_600SemiBold,
@@ -275,9 +275,11 @@ function RootLayout() {
     // The error boundary will reset and try to re-render
   }, []);
 
-  if (fontError) {
-    Sentry.captureException(fontError);
-  }
+  useEffect(() => {
+    if (fontError) {
+      Sentry.captureException(fontError);
+    }
+  }, [fontError]);
 
   if (!fontsLoaded && !fontError) {
     return null;
