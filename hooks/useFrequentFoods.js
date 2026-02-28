@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_frequent_foods';
 const MAX_ITEMS = 100;
@@ -26,8 +27,8 @@ export function useFrequentFoods() {
             setFrequentFoods(parsed);
           }
         }
-      } catch {
-        // Silently fail - start with empty list
+      } catch (e) {
+        Sentry.captureException(e);
       }
       isLoaded.current = true;
       setIsLoading(false);
@@ -51,7 +52,7 @@ export function useFrequentFoods() {
     setFrequentFoods((prev) => {
       const normalizedName = food.name.toLowerCase().trim();
       const existingIndex = prev.findIndex(
-        (f) => f.name.toLowerCase().trim() === normalizedName
+        (f) => f.name && f.name.toLowerCase().trim() === normalizedName
       );
 
       let updated;

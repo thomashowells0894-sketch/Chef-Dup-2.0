@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { format, subDays } from 'date-fns';
 import { safeJSONParse, isValidArray, isValidObject } from '../lib/validation';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_habits';
 const LOG_KEY = '@fueliq_habits_log';
@@ -79,7 +80,7 @@ export default function useHabits(): UseHabitsReturn {
         if (isValidArray(parsedHabits)) setHabits(parsedHabits as Habit[]);
         const parsedLog = safeJSONParse(savedLog ?? '', {});
         if (isValidObject(parsedLog)) setCompletions(parsedLog as HabitCompletions);
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays, parseISO } from 'date-fns';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_meal_timing';
 
@@ -13,7 +14,7 @@ export default function useMealTiming() {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) setMealTimes(JSON.parse(saved));
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);

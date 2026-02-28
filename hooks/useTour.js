@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_tours_seen';
 
@@ -12,7 +13,7 @@ export default function useTour() {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) setSeenTours(JSON.parse(saved));
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);

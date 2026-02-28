@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays } from 'date-fns';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_fasting_history';
 
@@ -14,7 +15,7 @@ export default function useFastingAnalytics() {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) setHistory(JSON.parse(saved));
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);

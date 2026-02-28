@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { AppState } from 'react-native';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_app_lock';
 const PIN_SECURE_KEY = 'fueliq_pin_hash';
@@ -145,7 +146,7 @@ export default function useAppLock() {
           // so next failure escalates correctly
           setLockoutExpiry(0);
         }
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);
@@ -244,7 +245,7 @@ export default function useAppLock() {
         await saveLockoutState(0, 0);
         return true;
       }
-    } catch (e) {}
+    } catch (e) { Sentry.captureException(e); }
 
     // Incorrect PIN — increment attempts and apply lockout
     const newAttempts = failedAttempts + 1;
@@ -283,9 +284,9 @@ export default function useAppLock() {
 
   const disableLock = useCallback(async () => {
     // Wipe PIN, salt, and lockout from SecureStore
-    try { await SecureStore.deleteItemAsync(PIN_SECURE_KEY); } catch (e) {}
-    try { await SecureStore.deleteItemAsync(SALT_SECURE_KEY); } catch (e) {}
-    try { await SecureStore.deleteItemAsync(LOCKOUT_SECURE_KEY); } catch (e) {}
+    try { await SecureStore.deleteItemAsync(PIN_SECURE_KEY); } catch (e) { Sentry.captureException(e); }
+    try { await SecureStore.deleteItemAsync(SALT_SECURE_KEY); } catch (e) { Sentry.captureException(e); }
+    try { await SecureStore.deleteItemAsync(LOCKOUT_SECURE_KEY); } catch (e) { Sentry.captureException(e); }
     setSettings({
       enabled: false,
       biometricEnabled: false,
