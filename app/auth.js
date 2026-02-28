@@ -5,23 +5,21 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
   Platform,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { StatusBar } from 'expo-status-bar';
 import { Mail, Lock, ArrowRight, Sparkles } from 'lucide-react-native';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { hapticImpact } from '../lib/haptics';
-import ReAnimated, { FadeInUp, FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing } from 'react-native-reanimated';
-import ScreenWrapper from '../components/ScreenWrapper';
+import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Colors, Gradients, Spacing, BorderRadius, FontSize, FontWeight, Shadows } from '../constants/theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -30,8 +28,8 @@ const RATE_LIMIT_COOLDOWN_MS = 3000;
 const MAX_ATTEMPTS_BEFORE_LOCKOUT = 5;
 const LOCKOUT_DURATION_MS = 60000;
 
-// Glowing input component with focus state
-function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoComplete, autoCapitalize, testID }) {
+// Simple input component — no BlurView, no conditional glow dot layout shifts
+function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoComplete, autoCapitalize, testID, inputRef }) {
   const [focused, setFocused] = useState(false);
 
   return (
@@ -43,6 +41,7 @@ function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEn
         <Icon size={18} color={focused ? Colors.primary : Colors.textTertiary} />
       </View>
       <TextInput
+        ref={inputRef}
         testID={testID}
         style={styles.input}
         placeholder={placeholder}
@@ -56,7 +55,7 @@ function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEn
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
       />
-      {focused && <View style={styles.inputGlowDot} />}
+      <View style={[styles.inputGlowDot, { opacity: focused ? 1 : 0 }]} />
     </View>
   );
 }
@@ -209,7 +208,8 @@ export default function AuthScreen() {
       if (data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
-          redirectUrl
+          redirectUrl,
+          { preferEphemeralSession: true }
         );
 
         if (result.type === 'success' && result.url) {
@@ -228,7 +228,15 @@ export default function AuthScreen() {
       }
     } catch (error) {
       if (__DEV__) console.error('OAuth Error:', error);
-      Alert.alert('Sign In Failed', 'Unable to complete sign in. Please try again.');
+      const msg = error?.message || '';
+      if (msg.includes('provider is not enabled') || msg.includes('Unsupported provider')) {
+        Alert.alert(
+          'Provider Not Available',
+          `Sign in with ${provider === 'apple' ? 'Apple' : 'Google'} is not configured yet. Please use email and password instead.`
+        );
+      } else {
+        Alert.alert('Sign In Failed', 'Unable to complete sign in. Please try again.');
+      }
     }
   };
 
@@ -346,179 +354,146 @@ export default function AuthScreen() {
       : 'Sign In';
 
   return (
-    <ScreenWrapper edges={['top']}>
-      <StatusBar style="light" />
+    <View style={styles.root}>
+      <LinearGradient
+        colors={['#0A0A12', '#060608', '#000000']}
+        locations={[0, 0.4, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <StatusBar style="light" />
 
-        <ScrollView
-          contentContainerStyle={styles.keyboardView}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="none"
-          bounces={false}
-          showsVerticalScrollIndicator={false}
-          automaticallyAdjustKeyboardInsets
-        >
         {/* Logo + Tagline */}
-        <ReAnimated.View
-          entering={FadeInDown.delay(0).springify().mass(0.5).damping(10)}
-          style={styles.header}
-        >
+        <View style={styles.header}>
           <View style={styles.logoRow}>
             <Sparkles size={28} color={Colors.primary} />
             <Text style={styles.logo}>FuelIQ</Text>
           </View>
           <Text style={styles.tagline}>Your fitness journey starts here</Text>
-        </ReAnimated.View>
+        </View>
 
         {/* Glass Card — the main form */}
-        <ReAnimated.View
-          entering={FadeInUp.delay(150).springify().mass(0.5).damping(10)}
-          style={styles.cardOuter}
-        >
-          <View style={styles.blurFill}>
-            {Platform.OS === 'ios' && (
-              <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill} />
-            )}
-            <View style={[styles.cardInner, Platform.OS !== 'ios' && styles.cardAndroid]}>
-              <FormContent
-                isSignUp={isSignUp}
-                setIsSignUp={setIsSignUp}
-                email={email}
-                setEmail={setEmail}
-                password={password}
-                setPassword={setPassword}
-                loading={loading}
-                isRateLimited={isRateLimited}
-                buttonLabel={buttonLabel}
-                handleSubmit={handleSubmit}
-                handleResetPassword={handleResetPassword}
-                performOAuth={performOAuth}
+        <View style={styles.cardOuter}>
+          <View style={[styles.cardInner, styles.cardBackground]}>
+            {/* Tabs */}
+            <View style={styles.tabs}>
+              <Pressable
+                style={[styles.tab, !isSignUp && styles.tabActive]}
+                onPress={() => setIsSignUp(false)}
+              >
+                <Text style={[styles.tabText, !isSignUp && styles.tabTextActive]}>
+                  Sign In
+                </Text>
+                {!isSignUp && <View style={styles.tabIndicator} />}
+              </Pressable>
+              <Pressable
+                style={[styles.tab, isSignUp && styles.tabActive]}
+                onPress={() => setIsSignUp(true)}
+              >
+                <Text style={[styles.tabText, isSignUp && styles.tabTextActive]}>
+                  Create Account
+                </Text>
+                {isSignUp && <View style={styles.tabIndicator} />}
+              </Pressable>
+            </View>
+
+            {/* Inputs */}
+            <View style={styles.form}>
+              <GlassInput
+                testID="email-input"
+                icon={Mail}
+                placeholder="Email address"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
               />
+
+              <GlassInput
+                testID="password-input"
+                icon={Lock}
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoComplete="password"
+              />
+
+              {/* Forgot Password */}
+              {!isSignUp && (
+                <Pressable
+                  style={styles.forgotPasswordContainer}
+                  onPress={handleResetPassword}
+                >
+                  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                </Pressable>
+              )}
+
+              {/* Submit button */}
+              <NeonButton
+                testID={isSignUp ? 'sign-up-button' : 'sign-in-button'}
+                onPress={handleSubmit}
+                loading={loading}
+                disabled={loading || isRateLimited}
+                label={buttonLabel}
+              />
+
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* OAuth */}
+              <Pressable
+                style={styles.oauthButtonGoogle}
+                onPress={() => performOAuth('google')}
+              >
+                <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.oauthGoogleText }}>G</Text>
+                <Text style={styles.oauthButtonTextGoogle}>Continue with Google</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.oauthButtonApple}
+                onPress={() => performOAuth('apple')}
+              >
+                <Text style={{ fontSize: 20, color: Colors.oauthAppleText }}>{'\uF8FF'}</Text>
+                <Text style={styles.oauthButtonTextApple}>Continue with Apple</Text>
+              </Pressable>
             </View>
           </View>
           {/* Glass border overlay */}
           <View style={styles.cardBorder} />
-        </ReAnimated.View>
-
-        {/* Footer toggle */}
-        <ReAnimated.View
-          entering={FadeInUp.delay(300).springify().mass(0.5).damping(10)}
-        >
-          <Text style={styles.footer}>
-            {isSignUp
-              ? 'Already have an account? '
-              : "Don't have an account? "}
-            <Text
-              style={styles.footerLink}
-              onPress={() => setIsSignUp(!isSignUp)}
-            >
-              {isSignUp ? 'Sign In' : 'Create one'}
-            </Text>
-          </Text>
-        </ReAnimated.View>
-        </ScrollView>
-    </ScreenWrapper>
-  );
-}
-
-// Extracted form content to share between iOS (BlurView) and Android
-function FormContent({ isSignUp, setIsSignUp, email, setEmail, password, setPassword, loading, isRateLimited, buttonLabel, handleSubmit, handleResetPassword, performOAuth }) {
-  return (
-    <>
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        <Pressable
-          style={[styles.tab, !isSignUp && styles.tabActive]}
-          onPress={() => setIsSignUp(false)}
-        >
-          <Text style={[styles.tabText, !isSignUp && styles.tabTextActive]}>
-            Sign In
-          </Text>
-          {!isSignUp && <View style={styles.tabIndicator} />}
-        </Pressable>
-        <Pressable
-          style={[styles.tab, isSignUp && styles.tabActive]}
-          onPress={() => setIsSignUp(true)}
-        >
-          <Text style={[styles.tabText, isSignUp && styles.tabTextActive]}>
-            Create Account
-          </Text>
-          {isSignUp && <View style={styles.tabIndicator} />}
-        </Pressable>
-      </View>
-
-      {/* Inputs */}
-      <View style={styles.form}>
-        <GlassInput
-          testID="email-input"
-          icon={Mail}
-          placeholder="Email address"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoComplete="email"
-        />
-
-        <GlassInput
-          testID="password-input"
-          icon={Lock}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="password"
-        />
-
-        {/* Forgot Password */}
-        {!isSignUp && (
-          <Pressable
-            style={styles.forgotPasswordContainer}
-            onPress={handleResetPassword}
-          >
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </Pressable>
-        )}
-
-        {/* Submit button */}
-        <NeonButton
-          testID={isSignUp ? 'sign-up-button' : 'sign-in-button'}
-          onPress={handleSubmit}
-          loading={loading}
-          disabled={loading || isRateLimited}
-          label={buttonLabel}
-        />
-
-        {/* Divider */}
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
         </View>
 
-        {/* OAuth */}
-        <Pressable
-          style={styles.oauthButtonGoogle}
-          onPress={() => performOAuth('google')}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.oauthGoogleText }}>G</Text>
-          <Text style={styles.oauthButtonTextGoogle}>Continue with Google</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.oauthButtonApple}
-          onPress={() => performOAuth('apple')}
-        >
-          <Text style={{ fontSize: 20, color: Colors.oauthAppleText }}>{'\uF8FF'}</Text>
-          <Text style={styles.oauthButtonTextApple}>Continue with Apple</Text>
-        </Pressable>
-      </View>
-    </>
+        {/* Footer toggle */}
+        <Text style={styles.footer}>
+          {isSignUp
+            ? 'Already have an account? '
+            : "Don't have an account? "}
+          <Text
+            style={styles.footerLink}
+            onPress={() => setIsSignUp(!isSignUp)}
+          >
+            {isSignUp ? 'Sign In' : 'Create one'}
+          </Text>
+        </Text>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  keyboardView: {
-    flexGrow: 1,
+  root: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  safe: {
+    flex: 1,
     justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
   },
@@ -556,16 +531,12 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 12,
   },
-  blurFill: {
-    borderRadius: 28,
-    overflow: 'hidden',
+  cardBackground: {
+    backgroundColor: 'rgba(15, 15, 22, 0.95)',
   },
   cardInner: {
     padding: Spacing.xl,
     paddingTop: Spacing.lg,
-  },
-  cardAndroid: {
-    backgroundColor: 'rgba(10, 10, 14, 0.92)',
   },
   cardBorder: {
     ...StyleSheet.absoluteFillObject,
