@@ -11,6 +11,7 @@ import { hapticSuccess } from '../lib/haptics';
 import { getEncryptedItem, setEncryptedItem } from '../lib/encryptedStorage';
 import { useGamification } from './GamificationContext';
 import { useNotifications } from './NotificationContext';
+import { Sentry } from '../lib/sentry';
 import type {
   FastingProgress,
   FastingPrompt,
@@ -238,7 +239,7 @@ export function FastingProvider({ children }: { children: React.ReactNode }) {
         completed: progress.isComplete,
       });
       await setEncryptedItem('@fueliq_fasting_history', updatedHistory.slice(0, 365));
-    } catch (e) {}
+    } catch (e) { Sentry.captureException(e); }
 
     return progress; // Return final progress for stats
   }, [fastStartTime, fastDuration, awardXP, cancelNotification]);

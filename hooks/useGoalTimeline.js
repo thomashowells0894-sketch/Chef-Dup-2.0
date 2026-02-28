@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { format, addDays, differenceInDays } from 'date-fns';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_goal_timeline';
 
@@ -14,7 +15,7 @@ export default function useGoalTimeline() {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) setGoals(JSON.parse(saved));
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);

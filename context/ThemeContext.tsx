@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { useColorScheme, ColorSchemeName } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors as DarkColors, LightColors as ThemeLightColors, Shadows as DarkShadows, LightShadows } from '../constants/theme';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_theme_preference';
 
@@ -29,7 +30,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) setPreference(saved as ThemePreference);
-      } catch (e) {}
+      } catch (e) { Sentry.captureException(e); }
       setIsLoading(false);
     })();
   }, []);

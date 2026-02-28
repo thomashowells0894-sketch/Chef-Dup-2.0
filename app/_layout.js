@@ -261,7 +261,7 @@ function RootLayoutNav() {
 }
 
 function RootLayout() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -275,7 +275,11 @@ function RootLayout() {
     // The error boundary will reset and try to re-render
   }, []);
 
-  if (!fontsLoaded) {
+  if (fontError) {
+    Sentry.captureException(fontError);
+  }
+
+  if (!fontsLoaded && !fontError) {
     return null;
   }
 

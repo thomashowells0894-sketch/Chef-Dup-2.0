@@ -258,7 +258,7 @@ export const MACRO_PRESETS: Record<string, MacroPresetInfo> = {
  * For women: BMR = (10 * weight in kg) + (6.25 * height in cm) - (5 * age) - 161
  */
 function calculateBMR(weightLbs: number | null, heightInches: number | null, age: number | null, gender: string): number | null {
-  if (!weightLbs || !heightInches || !age) return null;
+  if (weightLbs == null || heightInches == null || age == null) return null;
 
   // Convert to metric
   const weightKg = weightLbs * 0.453592;
@@ -302,7 +302,7 @@ function calculateDailyCalorieGoal(tdee: number | null, weeklyGoal: string): num
  * Carbs: Fill remaining calories
  */
 function calculateBodyweightMacros(calorieGoal: number, weightLbs: number | null): { protein: number; carbs: number; fat: number } {
-  if (!weightLbs || !calorieGoal) {
+  if (weightLbs == null || !calorieGoal) {
     return { protein: 150, carbs: 200, fat: 65 }; // Defaults
   }
 
