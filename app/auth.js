@@ -370,27 +370,11 @@ export default function AuthScreen() {
           entering={FadeInUp.delay(150).springify().mass(0.5).damping(10)}
           style={styles.cardOuter}
         >
-          {Platform.OS === 'ios' ? (
-            <BlurView intensity={90} tint="dark" style={styles.blurFill}>
-              <View style={styles.cardInner}>
-                <FormContent
-                  isSignUp={isSignUp}
-                  setIsSignUp={setIsSignUp}
-                  email={email}
-                  setEmail={setEmail}
-                  password={password}
-                  setPassword={setPassword}
-                  loading={loading}
-                  isRateLimited={isRateLimited}
-                  buttonLabel={buttonLabel}
-                  handleSubmit={handleSubmit}
-                  handleResetPassword={handleResetPassword}
-                  performOAuth={performOAuth}
-                />
-              </View>
-            </BlurView>
-          ) : (
-            <View style={[styles.cardInner, styles.cardAndroid]}>
+          <View style={styles.blurFill}>
+            {Platform.OS === 'ios' && (
+              <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill} />
+            )}
+            <View style={[styles.cardInner, Platform.OS !== 'ios' && styles.cardAndroid]}>
               <FormContent
                 isSignUp={isSignUp}
                 setIsSignUp={setIsSignUp}
@@ -406,7 +390,7 @@ export default function AuthScreen() {
                 performOAuth={performOAuth}
               />
             </View>
-          )}
+          </View>
           {/* Glass border overlay */}
           <View style={styles.cardBorder} />
         </ReAnimated.View>
