@@ -347,7 +347,7 @@ export default function AuthScreen() {
       : 'Sign In';
 
   return (
-    <ScreenWrapper edges={['top', 'bottom']}>
+    <ScreenWrapper edges={['top']}>
       <StatusBar style="light" />
 
       <KeyboardAvoidingView
