@@ -214,6 +214,16 @@ export default function AuthScreen() {
 
         if (result.type === 'success' && result.url) {
           const url = new URL(result.url);
+
+          // Supabase v2 uses PKCE flow by default — redirect contains ?code=XXX
+          const code = url.searchParams.get('code');
+          if (code) {
+            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+            if (exchangeError) throw exchangeError;
+            return;
+          }
+
+          // Fallback: implicit flow — tokens in URL hash fragment
           const params = new URLSearchParams(url.hash.substring(1));
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
