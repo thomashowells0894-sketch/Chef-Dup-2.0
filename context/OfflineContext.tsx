@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../lib/supabase';
+import { Sentry } from '../lib/sentry';
 import { useAuth } from './AuthContext';
 
 const MAX_RETRIES = 5;
@@ -103,7 +104,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       const raw = await AsyncStorage.getItem(QUEUE_KEY);
       const queue: QueuedOperation[] = raw ? JSON.parse(raw) : [];
       setQueueLength(queue.length);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       setQueueLength(0);
     }
   };
@@ -220,7 +222,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
               failed++;
               remaining.push({ ...op, retryCount: retryCount + 1 });
             }
-          } catch {
+          } catch (e) {
+            Sentry.captureException(e);
             failed++;
             remaining.push({ ...op, retryCount: (op.retryCount ?? 0) + 1 });
           }
@@ -257,7 +260,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     try {
       const state = await NetInfo.fetch();
       return !!(state.isConnected && state.isInternetReachable !== false);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return true;
     }
   }, []);

@@ -4,6 +4,7 @@ import { useGamification } from '../context/GamificationContext';
 import { useFasting } from '../context/FastingContext';
 import { getSmartNudge } from '../lib/smartNudges';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 interface ProactiveMessage {
   id: string;
@@ -61,7 +62,8 @@ export function useProactiveCoach(options?: ProactiveCoachOptions) {
             setDismissed(new Set(parsed.ids || []));
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore storage errors
       }
     })();
@@ -368,7 +370,8 @@ export function useProactiveCoach(options?: ProactiveCoachOptions) {
         date: new Date().toISOString().split('T')[0],
         ids: Array.from(newDismissed),
       }));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Ignore storage errors
     }
   }, [dismissed]);

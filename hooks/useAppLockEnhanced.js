@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
 import { secureStore, secureRetrieve, authenticateWithBiometrics, isBiometricAvailable, recordActivity } from '../lib/security';
+import { Sentry } from '../lib/sentry';
 
 const LOCK_SETTINGS_KEY = 'app_lock_settings';
 const DEFAULT_SETTINGS = {
@@ -30,7 +31,7 @@ export function useAppLockEnhanced() {
         const bio = await isBiometricAvailable();
         setBiometricInfo(bio);
         if (saved?.enabled && saved?.requireOnOpen) setIsLocked(true);
-      } catch {} finally {
+      } catch (e) { Sentry.captureException(e); } finally {
         setIsLoading(false);
       }
     })();

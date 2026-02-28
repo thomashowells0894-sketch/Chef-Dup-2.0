@@ -1,4 +1,5 @@
 import { AccessibilityInfo, Platform } from 'react-native';
+import { Sentry } from './sentry';
 
 /**
  * Check if screen reader is active
@@ -6,7 +7,8 @@ import { AccessibilityInfo, Platform } from 'react-native';
 export async function isScreenReaderActive(): Promise<boolean> {
   try {
     return await AccessibilityInfo.isScreenReaderEnabled();
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return false;
   }
 }

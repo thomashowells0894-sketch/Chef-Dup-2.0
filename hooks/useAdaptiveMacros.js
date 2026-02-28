@@ -7,6 +7,7 @@ import { useIsPremium } from '../context/SubscriptionContext';
 import { generateMacroRecommendation } from '../services/ai';
 import { useAdaptiveTDEE } from './useAdaptiveTDEE';
 import { usePredictiveAnalytics } from './usePredictiveAnalytics';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_adaptive_macros';
 
@@ -77,7 +78,8 @@ export function useAdaptiveMacros() {
             setRecommendation(cached);
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore storage read errors
       }
     })();

@@ -17,6 +17,7 @@ import { useGamification } from './GamificationContext';
 import { useAuth } from './AuthContext';
 import { useOffline } from './OfflineContext';
 import { supabase } from '../lib/supabase';
+import { Sentry } from '../lib/sentry';
 import type {
   MealAction,
   MealState,
@@ -640,7 +641,8 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
           // Replace temp ID with server ID
           dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: effectiveMealType, dateKey: selectedDateKey } });
           dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: data.id }, mealType: effectiveMealType, dateKey: selectedDateKey } });
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: effectiveMealType, dateKey: selectedDateKey } });
           Alert.alert('Error', 'Failed to save food. Please try again.');
         }
@@ -715,7 +717,8 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
             dispatch({ type: 'ADD_WATER', payload: { amount: -amount, dateKey: selectedDateKey } });
             Alert.alert('Error', 'Failed to save water. Please try again.');
           }
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           dispatch({ type: 'ADD_WATER', payload: { amount: -amount, dateKey: selectedDateKey } });
           Alert.alert('Error', 'Failed to save water. Please try again.');
         }
@@ -766,7 +769,8 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
           }
           dispatch({ type: 'REMOVE_EXERCISE', payload: { logId: tempId, dateKey: selectedDateKey } });
           dispatch({ type: 'ADD_EXERCISE', payload: { exercise: { ...exercise, id: data.id }, duration, caloriesBurned, dateKey: selectedDateKey } });
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           dispatch({ type: 'REMOVE_EXERCISE', payload: { logId: tempId, dateKey: selectedDateKey } });
           Alert.alert('Error', 'Failed to save exercise. Please try again.');
         }
@@ -857,7 +861,8 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
                 }
               });
             }
-          } catch {
+          } catch (e) {
+            Sentry.captureException(e);
             // Keep optimistic entries
           }
         }
@@ -937,7 +942,8 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
                 }
               });
             }
-          } catch {
+          } catch (e) {
+            Sentry.captureException(e);
             // Keep optimistic entries
           }
         }
@@ -1019,7 +1025,8 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
                 }
               });
             }
-          } catch {
+          } catch (e) {
+            Sentry.captureException(e);
             // Keep optimistic entries
           }
         }

@@ -25,6 +25,7 @@ import {
 } from '../services/foodSearch';
 import { foodDatabase } from '../data/foods';
 import type { ProductResult } from '../services/openFoodFacts';
+import { Sentry } from '../lib/sentry';
 import { useIsPremium } from '../context/SubscriptionContext';
 
 // ---------------------------------------------------------------------------
@@ -108,7 +109,8 @@ async function loadPrefs(): Promise<SearchPrefs> {
         preferMultiSelect: parsed.preferMultiSelect || false,
       };
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
   return { lastFilter: null, preferMultiSelect: false };
@@ -118,7 +120,8 @@ async function savePrefs(prefs: Partial<SearchPrefs>): Promise<void> {
   try {
     const current = await loadPrefs();
     await AsyncStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...prefs }));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail
   }
 }
@@ -302,7 +305,8 @@ export function useSmartSearch(): SmartSearchState {
 
         // Refresh recent searches after a search completes
         loadSearchMetadata().catch((e) => { if (__DEV__) console.warn('[useSmartSearch] Failed to load search metadata:', e); });
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         if (cancelRef.current) return;
         if (localMatches.length === 0) {
           setError('Could not reach food databases. Showing local foods only.');

@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { Sentry } from '../lib/sentry';
 
 const SETTINGS_KEY: string = '@fueliq_notification_settings';
 
@@ -23,7 +24,8 @@ async function checkFrequencyCap(): Promise<boolean> {
       }
     }
     return true;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return true;
   }
 }
@@ -43,7 +45,9 @@ async function incrementFrequencyCount(): Promise<void> {
 
     data.count++;
     await AsyncStorage.setItem(FREQUENCY_CAP_KEY, JSON.stringify(data));
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 }
 
 // ============================================================================

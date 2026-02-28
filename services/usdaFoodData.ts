@@ -14,6 +14,7 @@
  */
 
 import { createPinnedFetch } from '../lib/certPinning';
+import { Sentry } from '../lib/sentry';
 import type { ProductResult, SearchResult, MicronutrientData } from './openFoodFacts';
 
 const USDA_API_BASE = 'https://api.nal.usda.gov/fdc/v1';
@@ -383,7 +384,8 @@ export async function fetchUSDAFood(fdcId: number): Promise<ProductResult | null
     if (!food || !food.description) return null;
 
     return usdaFoodToProduct(food);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     clearTimeout(timeoutId);
     return null;
   }

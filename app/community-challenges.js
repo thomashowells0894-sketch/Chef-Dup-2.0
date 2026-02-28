@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, memo } from 'react';
+import { Sentry } from '../lib/sentry';
 import {
   View,
   Text,
@@ -344,7 +345,8 @@ export default function CommunityChallengesScreen() {
     try {
       const data = await getLeaderboard(challenge.challengeId || challenge.id);
       setLeaderboardData(data);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       setLeaderboardData([]);
     } finally {
       setLeaderboardLoading(false);
@@ -407,7 +409,8 @@ export default function CommunityChallengesScreen() {
       const data = await getTeamProgress(challengeId);
       setTeamLeaderboard(data);
       setShowTeamLeaderboard(true);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       setTeamLeaderboard([]);
     }
   }, [getTeamProgress]);

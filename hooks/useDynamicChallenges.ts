@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMealTotals } from '../context/MealContext';
 import { useGamification } from '../context/GamificationContext';
+import { Sentry } from '../lib/sentry';
 
 const CHALLENGE_KEY = '@fueliq_dynamic_challenges';
 
@@ -127,7 +128,7 @@ export function useDynamicChallenges() {
             return;
           }
         }
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
 
       // Generate new challenges
       const newChallenges = generateChallenges(

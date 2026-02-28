@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { isValidArray } from '../lib/validation';
 import { getEncryptedItem, setEncryptedItem } from '../lib/encryptedStorage';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_body_measurements';
 const UNIT_KEY = '@fueliq_body_measurements_unit';
@@ -62,7 +63,8 @@ export default function useBodyMeasurements(): UseBodyMeasurementsReturn {
         ]);
         if (isValidArray(storedHistory)) setHistory(storedHistory as BodyMeasurementEntry[]);
         if (storedUnit) setUnitState(storedUnit as MeasurementUnit);
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - start fresh
       } finally {
         setIsLoading(false);
@@ -74,7 +76,8 @@ export default function useBodyMeasurements(): UseBodyMeasurementsReturn {
   const persistHistory = async (updated: BodyMeasurementEntry[]): Promise<void> => {
     try {
       await setEncryptedItem(STORAGE_KEY, updated);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - data is still in memory
     }
   };
@@ -83,7 +86,8 @@ export default function useBodyMeasurements(): UseBodyMeasurementsReturn {
   const persistUnit = async (newUnit: MeasurementUnit): Promise<void> => {
     try {
       await setEncryptedItem(UNIT_KEY, newUnit);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed
     }
   };

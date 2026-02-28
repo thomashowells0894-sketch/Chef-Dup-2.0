@@ -16,6 +16,7 @@
  * Receives workout data via route params from generate-workout or workout-templates.
  */
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { Sentry } from '../lib/sentry';
 import {
   View,
   Text,
@@ -926,7 +927,8 @@ export default function WorkoutSessionScreen() {
         };
       }
       return null;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return null;
     }
   }, [params]);

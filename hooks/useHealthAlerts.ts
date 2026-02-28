@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const ALERT_KEY = '@fueliq_health_alerts';
 
@@ -32,7 +33,7 @@ export function useHealthAlerts(healthData: HealthData | null) {
       try {
         const raw = await AsyncStorage.getItem(ALERT_KEY);
         if (raw) lastAlertRef.current = JSON.parse(raw);
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
 
       const now = Date.now();
       const cooldown = 12 * 60 * 60 * 1000; // 12 hours between same alert type
@@ -101,7 +102,7 @@ export function useHealthAlerts(healthData: HealthData | null) {
             trigger: null,
           });
           lastAlertRef.current[alert.type] = now;
-        } catch {}
+        } catch (e) { Sentry.captureException(e); }
       }
 
       // Persist alert times

@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { getDailyJournalPrompt } from '../lib/wellnessEngine';
+import { Sentry } from '../lib/sentry';
 
 export function useJournal() {
   const { user } = useAuth();
@@ -80,7 +81,7 @@ export function useJournal() {
       setEntries(prev => prev.filter(e => e.id !== entryId));
       if (todayEntry?.id === entryId) setTodayEntry(null);
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user, todayEntry]);
 
   return { entries, todayEntry, todayPrompt, isLoading, streak, saveEntry, deleteEntry, refresh: fetchEntries };

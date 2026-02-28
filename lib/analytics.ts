@@ -94,7 +94,8 @@ async function generateSessionId(): Promise<string> {
     return Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Fallback if crypto is unavailable
     return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   }
@@ -133,7 +134,8 @@ async function persistQueue(): Promise<void> {
     const capped = merged.slice(-500);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
     eventQueue = [];
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Storage failure — events remain in memory queue
   }
 }
@@ -146,7 +148,8 @@ async function restoreQueue(): Promise<void> {
       eventQueue = [...events, ...eventQueue];
       await AsyncStorage.removeItem(STORAGE_KEY);
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Ignore restore errors
   }
 }
@@ -309,7 +312,8 @@ export function setUserProperties(props: Record<string, unknown>): void {
 
   try {
     Sentry.setContext('user_properties', userProperties);
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Sentry not initialized
   }
 }

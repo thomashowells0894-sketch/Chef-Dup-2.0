@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const CYCLE_KEY = '@fueliq_cycle_data';
 
@@ -34,7 +35,7 @@ export function useCycleTracking() {
       try {
         const raw = await AsyncStorage.getItem(CYCLE_KEY);
         if (raw) setCycleData(JSON.parse(raw));
-      } catch {}
+      } catch (e) { Sentry.captureException(e); }
     })();
   }, []);
 

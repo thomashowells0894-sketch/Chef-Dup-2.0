@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useProfile } from '../context/ProfileContext';
+import { Sentry } from '../lib/sentry';
 import {
   computeAdaptiveTDEE,
   lbsToKg,
@@ -78,7 +79,8 @@ async function loadFromCache(): Promise<CachedTDEEResult | null> {
     const age = Date.now() - new Date(cached.timestamp).getTime();
     if (age > CACHE_TTL_MS) return null;
     return cached;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }
@@ -90,7 +92,8 @@ async function saveToCache(result: AdaptiveTDEEResult): Promise<void> {
       timestamp: new Date().toISOString(),
     };
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cached));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Silent fail - cache is best-effort
   }
 }
@@ -135,7 +138,8 @@ async function fetchWeightData(userId: string): Promise<DailyWeightEntry[]> {
         }
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Profile fetch failed, continue with other sources
   }
 
@@ -157,7 +161,8 @@ async function fetchWeightData(userId: string): Promise<DailyWeightEntry[]> {
         }
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Table may not exist, that's fine
   }
 
@@ -198,7 +203,8 @@ async function fetchIntakeData(userId: string): Promise<DailyIntakeEntry[]> {
     }
 
     return entries.sort((a, b) => a.date.localeCompare(b.date));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return [];
   }
 }

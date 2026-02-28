@@ -31,6 +31,7 @@ import AnimatedProgressRing from '../components/AnimatedProgressRing';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { useProfile } from '../context/ProfileContext';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_glp1';
 
@@ -130,7 +131,8 @@ export default function GLP1SupportScreen() {
             setData(parsed);
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // ignore
       } finally {
         setIsLoading(false);
@@ -142,7 +144,8 @@ export default function GLP1SupportScreen() {
     setData(updated);
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed
     }
   }, []);

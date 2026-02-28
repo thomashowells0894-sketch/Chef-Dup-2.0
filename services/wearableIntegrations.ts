@@ -20,6 +20,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import { Sentry } from '../lib/sentry';
 
 declare const __DEV__: boolean;
 
@@ -343,7 +344,8 @@ async function sha256Base64Url(input: string): Promise<string> {
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Fallback: simple string hash (not cryptographically secure, for dev only)
     if (__DEV__) {
       console.warn(`${LOG_PREFIX} expo-crypto not available, using fallback hash`);
@@ -2138,7 +2140,8 @@ export function parseWearableCallback(url: string): {
       oauthToken: params.get('oauth_token'),
       oauthVerifier: params.get('oauth_verifier'),
     };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return null;
   }
 }

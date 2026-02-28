@@ -6,6 +6,7 @@
  */
 
 import { Platform } from 'react-native';
+import { Sentry } from '../lib/sentry';
 
 // RevenueCat SDK - imported dynamically to prevent crashes
 let Purchases: any = null;
@@ -172,7 +173,8 @@ export async function checkSubscriptionStatus(): Promise<boolean> {
           cachedIsPremium = data.isPremium;
           return data.isPremium;
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Edge Function call failed — fall through to client-side check result
       }
 
@@ -181,7 +183,8 @@ export async function checkSubscriptionStatus(): Promise<boolean> {
 
     // No entitlements data - assume not premium
     return false;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // ANY error = return false (Free plan)
     return false;
   }

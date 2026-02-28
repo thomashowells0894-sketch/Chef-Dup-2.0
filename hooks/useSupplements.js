@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeJSONParse, isValidArray, isValidObject } from '../lib/validation';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_supplements';
 const LOG_KEY = '@fueliq_supplements_log';
@@ -131,7 +132,8 @@ export default function useSupplements() {
             setTodayLog({});
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         setSupplements(DEFAULT_SUPPLEMENTS);
         setTodayLog({});
       } finally {
@@ -144,7 +146,8 @@ export default function useSupplements() {
   const persistSupplements = async (updated) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed
     }
   };
@@ -156,7 +159,8 @@ export default function useSupplements() {
         LOG_KEY,
         JSON.stringify({ date: getTodayKey(), entries: updated })
       );
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed
     }
   };

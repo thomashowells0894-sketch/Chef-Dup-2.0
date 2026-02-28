@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { safeJSONParse, isValidArray } from '../lib/validation';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_workout_ratings';
 const MAX_ENTRIES = 200;
@@ -19,7 +20,8 @@ export default function useWorkoutRatings() {
           const parsed = safeJSONParse(stored, []);
           if (isValidArray(parsed)) setRatings(parsed);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - start fresh
       } finally {
         setIsLoading(false);
@@ -31,7 +33,8 @@ export default function useWorkoutRatings() {
   const persist = async (updated) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - ratings are still in memory
     }
   };

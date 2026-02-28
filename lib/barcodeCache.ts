@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 
 const BARCODE_CACHE_KEY = '@fueliq_barcode_cache';
 const MAX_CACHED = 200;
@@ -30,7 +31,8 @@ async function loadCache(): Promise<Map<string, CachedBarcode>> {
     } else {
       _memoryCache = new Map();
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     _memoryCache = new Map();
   }
 
@@ -71,12 +73,16 @@ export async function setCachedBarcode(barcode: string, food: CachedBarcode['foo
       BARCODE_CACHE_KEY,
       JSON.stringify(Array.from(cache.values()))
     );
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 }
 
 export async function clearBarcodeCache(): Promise<void> {
   _memoryCache = new Map();
   try {
     await AsyncStorage.removeItem(BARCODE_CACHE_KEY);
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 }

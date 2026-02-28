@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { supabase } from '../lib/supabase';
 import { calculate1RM, scoreWorkout } from '../lib/workoutEngine';
+import { Sentry } from '../lib/sentry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -223,7 +224,8 @@ export default function useWorkoutSession({
     autosaveRef.current = setInterval(async () => {
       try {
         await AsyncStorage.setItem(AUTOSAVE_KEY, JSON.stringify(session));
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // silent
       }
     }, AUTOSAVE_INTERVAL);
@@ -248,7 +250,8 @@ export default function useWorkoutSession({
         return true;
       }
       return false;
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return false;
     }
   }, []);
@@ -256,7 +259,8 @@ export default function useWorkoutSession({
   const clearRecovery = useCallback(async () => {
     try {
       await AsyncStorage.removeItem(AUTOSAVE_KEY);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // silent
     }
   }, []);
@@ -651,7 +655,8 @@ export default function useWorkoutSession({
           completed_at: new Date().toISOString(),
         });
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Supabase save failed - data is still in local summary
     }
 

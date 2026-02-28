@@ -1,4 +1,5 @@
 import { logAuditEvent } from './security';
+import { Sentry } from './sentry';
 
 type PaywallEvent =
   | 'paywall_shown'
@@ -44,7 +45,9 @@ export function trackConversion(event: ConversionEvent): void {
       data: { source: event.source, variant: event.variant },
       level: 'info',
     });
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 }
 
 export function getConversionEvents(): ConversionEvent[] {

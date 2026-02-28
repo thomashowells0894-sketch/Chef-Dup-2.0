@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Sentry } from '../lib/sentry';
 import {
   View,
   Text,
@@ -138,7 +139,8 @@ export default function BodyMeasurementsScreen() {
       await addMeasurement(measurements, noteValue.trim());
       await hapticSuccess();
       setNoteValue('');
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       Alert.alert('Save Failed', 'Could not save your measurements. Please try again.');
     } finally {
       setIsSaving(false);

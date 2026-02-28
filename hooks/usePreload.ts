@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
 import { queryCache } from '../lib/cache';
+import { Sentry } from '../lib/sentry';
 
 /**
  * Predictive pre-loader: fetches data for likely-next screens
@@ -49,7 +50,7 @@ async function prefetchFoodSearch() {
     if (cached) {
       queryCache.set('recent_foods', JSON.parse(cached));
     }
-  } catch {}
+  } catch (e) { Sentry.captureException(e); }
 }
 
 async function prefetchDiaryData() {
@@ -61,7 +62,7 @@ async function prefetchDiaryData() {
     if (cached) {
       queryCache.set(`diary_${today}`, JSON.parse(cached));
     }
-  } catch {}
+  } catch (e) { Sentry.captureException(e); }
 }
 
 async function prefetchSettings() {
@@ -71,7 +72,7 @@ async function prefetchSettings() {
     if (settings) {
       queryCache.set('notification_settings', JSON.parse(settings));
     }
-  } catch {}
+  } catch (e) { Sentry.captureException(e); }
 }
 
 // Simple in-memory cache for prefetched data

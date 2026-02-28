@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProgramById, getTotalDays } from '../data/workoutPrograms';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_active_program';
 
@@ -40,7 +41,8 @@ export default function useWorkoutPrograms() {
             await AsyncStorage.removeItem(STORAGE_KEY);
           }
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - start fresh
       } finally {
         setIsLoading(false);
@@ -56,7 +58,8 @@ export default function useWorkoutPrograms() {
       } else {
         await AsyncStorage.removeItem(STORAGE_KEY);
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - data still in memory
     }
   };

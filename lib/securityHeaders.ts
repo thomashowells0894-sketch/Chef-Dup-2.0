@@ -6,6 +6,7 @@
  * clickjacking, and aid in request tracing and version tracking.
  */
 import * as Crypto from 'expo-crypto';
+import { Sentry } from './sentry';
 
 /**
  * App version — pulled from package.json at build time.
@@ -18,7 +19,8 @@ function getAppVersion(): string {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pkg = require('../package.json');
     _appVersion = pkg.version || 'unknown';
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     _appVersion = 'unknown';
   }
   return _appVersion!;
@@ -31,7 +33,8 @@ function getAppVersion(): string {
 function generateRequestId(): string {
   try {
     return Crypto.randomUUID();
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Fallback: timestamp + random suffix
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -124,7 +127,8 @@ export function isWebViewUrlAllowed(url: string): boolean {
         }
       }
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return false;
   }
 

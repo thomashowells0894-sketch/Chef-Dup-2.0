@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { Sentry } from '../lib/sentry';
 import {
   View,
   Text,
@@ -179,7 +180,8 @@ export default function WeightLogScreen() {
   try {
     const ctx = useProfile();
     profileData = ctx.profile;
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Profile context not available
   }
 

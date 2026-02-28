@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_allergens';
 
@@ -41,7 +42,8 @@ export default function useAllergens() {
           setAllergens(parsed.allergens || []);
           setReactions(parsed.reactions || []);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Storage read failed
       } finally {
         setIsLoading(false);
@@ -59,7 +61,8 @@ export default function useAllergens() {
           reactions: updatedReactions,
         })
       );
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed
     }
   };

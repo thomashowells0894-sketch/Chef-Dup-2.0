@@ -50,6 +50,7 @@ import { hapticLight, hapticSuccess, hapticError } from '../lib/haptics';
 import { importRecipeFromURL } from '../services/ai';
 import { useRecipes } from '../context/RecipeContext';
 import { useMeals } from '../context/MealContext';
+import { Sentry } from '../lib/sentry';
 
 // ---------------------------------------------------------------------------
 // URL Validation
@@ -59,7 +60,8 @@ function isValidURL(str) {
   try {
     const url = new URL(str);
     return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return false;
   }
 }
@@ -177,7 +179,8 @@ function RecipeImportInner() {
       if (text) {
         setUrl(text.trim());
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Clipboard access may fail silently
     }
   }, []);

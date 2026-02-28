@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
+import { Sentry } from '../../lib/sentry';
 import ScreenErrorBoundary from '../../components/ScreenErrorBoundary';
 import {
   View,
@@ -514,7 +515,8 @@ function DashboardScreenInner() {
           setShareModalData({ streak: currentStreak });
           setShareModalVisible(true);
         }, 1500);
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore storage errors
       }
     })();

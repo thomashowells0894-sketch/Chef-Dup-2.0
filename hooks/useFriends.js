@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const FRIEND_STREAKS_KEY = '@fueliq_friend_streaks';
 
@@ -74,7 +75,8 @@ export function useFriends() {
 
           setBrokenStreakFriends(broken);
           await AsyncStorage.setItem(FRIEND_STREAKS_KEY, JSON.stringify(newStreaks));
-        } catch {
+        } catch (e) {
+          Sentry.captureException(e);
           // Ignore storage errors
         }
       }
@@ -128,7 +130,7 @@ export function useFriends() {
       if (error) throw error;
       await fetchFriends();
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user, fetchFriends, blockedIds]);
 
   const acceptRequest = useCallback(async (friendshipId) => {
@@ -137,7 +139,7 @@ export function useFriends() {
       if (error) throw error;
       await fetchFriends();
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [fetchFriends]);
 
   const declineRequest = useCallback(async (friendshipId) => {
@@ -146,7 +148,7 @@ export function useFriends() {
       if (error) throw error;
       await fetchFriends();
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [fetchFriends]);
 
   const removeFriend = useCallback(async (friendshipId) => {
@@ -155,7 +157,7 @@ export function useFriends() {
       if (error) throw error;
       setFriends(prev => prev.filter(f => f.id !== friendshipId));
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, []);
 
   const searchUsers = useCallback(async (query) => {
@@ -179,7 +181,7 @@ export function useFriends() {
           level: u.level || 1,
           totalXp: u.total_xp || 0,
         }));
-    } catch { return []; }
+    } catch (e) { Sentry.captureException(e); return []; }
   }, [user, blockedIds]);
 
   /**
@@ -202,7 +204,7 @@ export function useFriends() {
 
       await fetchFriends();
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user, fetchFriends]);
 
   /**
@@ -220,7 +222,7 @@ export function useFriends() {
       if (error) throw error;
       await fetchFriends();
       return true;
-    } catch { return false; }
+    } catch (e) { Sentry.captureException(e); return false; }
   }, [user, fetchFriends]);
 
   /**
@@ -249,7 +251,8 @@ export function useFriends() {
 
       // Intersect with current user's friends
       return friends.filter(f => otherFriendIds.has(f.friendId));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return [];
     }
   }, [user, friends]);
@@ -276,7 +279,8 @@ export function useFriends() {
         title: item.title,
         createdAt: item.created_at,
       }));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       return [];
     }
   }, [user]);
@@ -291,7 +295,8 @@ export function useFriends() {
         .from('profiles')
         .update({ last_active_at: new Date().toISOString() })
         .eq('user_id', user.id);
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Silent fail
     }
   }, [user]);

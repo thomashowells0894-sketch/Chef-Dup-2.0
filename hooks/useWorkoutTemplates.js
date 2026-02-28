@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_workout_templates';
 const MAX_TEMPLATES = 50;
@@ -15,7 +16,8 @@ export default function useWorkoutTemplates() {
       try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
         if (stored) setTemplates(JSON.parse(stored));
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - start fresh
       } finally {
         setIsLoading(false);
@@ -27,7 +29,8 @@ export default function useWorkoutTemplates() {
   const persist = async (updated) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - templates are still in memory
     }
   };

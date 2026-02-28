@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_personal_records';
 
@@ -12,7 +13,8 @@ export default function usePersonalRecords() {
       try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
         if (stored) setRecords(JSON.parse(stored));
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - start fresh
       }
     })();
@@ -22,7 +24,8 @@ export default function usePersonalRecords() {
   const persist = async (updated) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - records are still in memory
     }
   };

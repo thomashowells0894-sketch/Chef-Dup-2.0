@@ -13,6 +13,7 @@ import {
   InteractionManager,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from '../lib/sentry';
 import { Image } from 'expo-image';
 import { X, Check, Edit3, Calculator, ChevronDown, Sparkles, Heart } from 'lucide-react-native';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
@@ -32,7 +33,8 @@ async function getQtyMemory() {
   try {
     const raw = await AsyncStorage.getItem(QTY_MEMORY_KEY);
     _qtyCache = raw ? JSON.parse(raw) : {};
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     _qtyCache = {};
   }
   return _qtyCache;

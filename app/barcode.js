@@ -24,6 +24,7 @@ import { useFood } from '../context/FoodContext';
 import { hapticSuccess, hapticWarning, hapticLight } from '../lib/haptics';
 import { lookupBarcode, submitBarcodeData } from '../services/barcodeService';
 import { setCachedBarcode } from '../lib/barcodeCache';
+import { Sentry } from '../lib/sentry';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_RECT_W = SCREEN_WIDTH * 0.78;
@@ -113,7 +114,8 @@ export default function BarcodeScreen() {
           // Auto-focus calories input after animation
           setTimeout(() => calorieInputRef.current?.focus(), 400);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         setResult({ found: false });
         setShowResult(true);
         await hapticWarning();
@@ -199,7 +201,8 @@ export default function BarcodeScreen() {
           image: null,
           barcode: scannedBarcode,
         });
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silent fail - still add to diary
       }
     }

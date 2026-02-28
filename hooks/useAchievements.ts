@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AchievementDefinition, AchievementContext, Achievement, UnlockedAchievement } from '../types';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_achievements';
 
@@ -291,7 +292,8 @@ export default function useAchievements(): UseAchievementsReturn {
         if (stored) {
           setUnlockedMap(JSON.parse(stored) as Record<string, UnlockedAchievement>);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Start fresh on error
       } finally {
         setIsLoaded(true);
@@ -303,7 +305,8 @@ export default function useAchievements(): UseAchievementsReturn {
   const persist = useCallback(async (updated: Record<string, UnlockedAchievement>): Promise<void> => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - data still in memory
     }
   }, []);

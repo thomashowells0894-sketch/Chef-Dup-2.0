@@ -18,6 +18,7 @@ import {
   getActiveCaloriesToday,
   subscribeToStepUpdates,
 } from '../services/healthService';
+import { Sentry } from '../lib/sentry';
 
 /** Refresh interval: 30 minutes in milliseconds. */
 const REFRESH_INTERVAL = 30 * 60 * 1000;
@@ -156,7 +157,8 @@ export function useHealthKit() {
           await fetchHealthData();
           startRefresh();
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Ignore initialization errors
       } finally {
         if (isMountedRef.current) {

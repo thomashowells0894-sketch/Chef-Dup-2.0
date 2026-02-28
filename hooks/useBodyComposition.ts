@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useProfile, ACTIVITY_LEVELS } from '../context/ProfileContext';
 import useBodyMeasurements from './useBodyMeasurements';
+import { Sentry } from '../lib/sentry';
 
 /**
  * Body fat category thresholds by gender
@@ -175,7 +176,8 @@ export default function useBodyComposition(): BodyComposition {
         unit: bodyMeasurements.unit,
       };
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Measurements not available
   }
 

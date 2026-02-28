@@ -8,6 +8,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, MessageCircle, Share2, MoreHorizontal, Trophy, Dumbbell, Utensils, Camera, Target, Send, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { Colors, BorderRadius, Spacing, FontSize, FontWeight, Shadows } from '../constants/theme';
+import { Sentry } from '../lib/sentry';
 
 const POST_ICONS = {
   achievement: Trophy,
@@ -83,7 +84,8 @@ function SocialPostCard({ post, onLike, onComment, onShare, onMore, onReaction, 
       try {
         const fetchedComments = await onFetchComments(post.id);
         setComments(fetchedComments || []);
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         setComments([]);
       } finally {
         setCommentsLoading(false);
@@ -103,7 +105,8 @@ function SocialPostCard({ post, onLike, onComment, onShare, onMore, onReaction, 
         setComments(prev => [...prev, newComment]);
         setCommentText('');
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Comment submission failed silently
     } finally {
       setSubmittingComment(false);

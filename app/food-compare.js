@@ -57,6 +57,7 @@ import {
   Shadows,
 } from '../constants/theme';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SLOT_WIDTH = (SCREEN_WIDTH - Spacing.md * 3) / 2;
@@ -468,7 +469,8 @@ export default function FoodCompareScreen() {
       if (stored) {
         setRecentComparisons(JSON.parse(stored));
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Ignore storage errors
     }
   };
@@ -481,7 +483,8 @@ export default function FoodCompareScreen() {
       )].slice(0, 10);
       setRecentComparisons(updated);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Ignore storage errors
     }
   }, [recentComparisons]);

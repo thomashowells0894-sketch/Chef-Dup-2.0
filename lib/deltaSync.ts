@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 
 const SYNC_ANCHOR_KEY = '@fueliq_health_sync_anchor';
 
@@ -22,7 +23,9 @@ export async function getSyncAnchor(): Promise<SyncAnchor> {
   try {
     const raw = await AsyncStorage.getItem(SYNC_ANCHOR_KEY);
     if (raw) return { ...DEFAULT_ANCHOR, ...JSON.parse(raw) };
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
   return { ...DEFAULT_ANCHOR };
 }
 
@@ -31,7 +34,9 @@ export async function updateSyncAnchor(updates: Partial<SyncAnchor>): Promise<vo
     const current = await getSyncAnchor();
     const updated = { ...current, ...updates, lastSyncTimestamp: Date.now() };
     await AsyncStorage.setItem(SYNC_ANCHOR_KEY, JSON.stringify(updated));
-  } catch {}
+  } catch (e) {
+    Sentry.captureException(e);
+  }
 }
 
 /**

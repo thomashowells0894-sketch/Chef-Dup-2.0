@@ -62,6 +62,7 @@ import {
 } from '../constants/theme';
 import { useJournal } from '../hooks/useJournal';
 import { hapticLight, hapticSuccess, hapticImpact } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 
 // Mood emoji mapping: index 0-4 corresponds to mood values 1-5
 const MOOD_OPTIONS = [
@@ -95,7 +96,8 @@ function formatEntryDate(dateStr) {
     if (isToday(date)) return 'Today';
     if (isYesterday(date)) return 'Yesterday';
     return format(date, 'EEEE, MMM d');
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return dateStr;
   }
 }

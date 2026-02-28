@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { captureRef } from 'react-native-view-shot';
+import { Sentry } from '../lib/sentry';
 import {
   Colors,
   Gradients,
@@ -244,7 +245,8 @@ export async function shareCard(viewRef: any, type: ShareCardType, data: ShareCa
     });
 
     return { success: true, method: 'image' };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Fallback: share as text
     try {
       const text: string = generateShareText(type, data);
@@ -259,7 +261,8 @@ export async function shareCard(viewRef: any, type: ShareCardType, data: ShareCa
         });
         return { success: true, method: 'text' };
       }
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Total failure
     }
     return { success: false, method: 'none' };
@@ -282,7 +285,8 @@ export async function saveCardImage(viewRef: any): Promise<SaveResult> {
     await FileSystem.copyAsync({ from: uri, to: dest });
 
     return { success: true, uri: dest };
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     return { success: false, uri: null };
   }
 }

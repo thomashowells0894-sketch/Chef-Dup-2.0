@@ -18,6 +18,7 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
+import { Sentry } from '../lib/sentry';
 import {
   View,
   Text,
@@ -854,7 +855,8 @@ export default function BiometricDashboardScreen() {
     await hapticLight();
     try {
       await forceRefresh();
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Ignore
     }
     setRefreshing(false);

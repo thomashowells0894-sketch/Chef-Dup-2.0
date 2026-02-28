@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { safeJSONParse, isValidArray } from '../lib/validation';
+import { Sentry } from '../lib/sentry';
 
 const STORAGE_KEY = '@fueliq_workout_history';
 const MAX_ENTRIES = 200;
@@ -82,7 +83,8 @@ export default function useWorkoutHistory(): UseWorkoutHistoryReturn {
           const parsed = safeJSONParse(stored, []);
           if (isValidArray(parsed)) setWorkouts(parsed as WorkoutEntry[]);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - start fresh
       } finally {
         setIsLoading(false);
@@ -94,7 +96,8 @@ export default function useWorkoutHistory(): UseWorkoutHistoryReturn {
   const persist = async (updated: WorkoutEntry[]): Promise<void> => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
+    } catch (e) {
+      Sentry.captureException(e);
       // Storage write failed - workouts are still in memory
     }
   };

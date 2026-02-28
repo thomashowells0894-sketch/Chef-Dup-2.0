@@ -5,6 +5,7 @@ import { Zap, ArrowRightLeft, X } from 'lucide-react-native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { suggestFoodSwaps } from '../services/ai';
 import { hapticLight } from '../lib/haptics';
+import { Sentry } from '../lib/sentry';
 
 /**
  * FoodCritiqueToast - Proactive nutritional critique after food logs.
@@ -53,7 +54,8 @@ export default function FoodCritiqueToast({ lastLoggedFood, onSwap, onDismiss })
             if (!cancelled) setVisible(false);
           }, 6000);
         }
-      } catch {
+      } catch (e) {
+        Sentry.captureException(e);
         // Silently fail - this is a non-essential feature
       }
     })();

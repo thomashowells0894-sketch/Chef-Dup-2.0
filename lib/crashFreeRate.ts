@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Sentry } from './sentry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,7 +31,8 @@ async function loadData(): Promise<CrashFreeData> {
     if (raw) {
       return JSON.parse(raw);
     }
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Storage read failed — start fresh
   }
   return { sessions: [] };
@@ -39,7 +41,8 @@ async function loadData(): Promise<CrashFreeData> {
 async function saveData(data: CrashFreeData): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
+  } catch (e) {
+    Sentry.captureException(e);
     // Storage write failed — silently ignore
   }
 }
