@@ -292,6 +292,7 @@ function GoalCard({ item, selected, onPress, index }) {
     <ReAnimated.View entering={FadeInDown.delay(index * 80).duration(400).springify()}>
       <Pressable
         onPress={() => { hapticImpact(); onPress(item.id); }}
+        hitSlop={2}
         style={[styles.goalCard, isSelected && styles.goalCardSelected]}
       >
         {isSelected && (
@@ -323,6 +324,7 @@ function SelectChip({ label, selected, onPress, color = Colors.primary }) {
   return (
     <Pressable
       onPress={() => { hapticImpact(); onPress(); }}
+      hitSlop={4}
       style={[
         styles.chip,
         selected && { backgroundColor: `${color}22`, borderColor: color },
@@ -338,6 +340,7 @@ function OptionButton({ label, description, selected, onPress, index }) {
     <ReAnimated.View entering={FadeInDown.delay(index * 60).duration(350).springify()}>
       <Pressable
         onPress={() => { hapticImpact(); onPress(); }}
+        hitSlop={4}
         style={[styles.optionBtn, selected && styles.optionBtnSelected]}
       >
         <View style={{ flex: 1 }}>
@@ -748,6 +751,7 @@ function Step4Fitness({ data, onChange }) {
           <ReAnimated.View key={eq.id} entering={FadeInDown.delay(index * 60).duration(350).springify()}>
             <Pressable
               onPress={() => { hapticImpact(); toggleEquipment(eq.id); }}
+              hitSlop={4}
               style={[styles.optionBtn, selected && styles.optionBtnSelected]}
             >
               <View style={styles.equipIconWrap}>
@@ -1239,64 +1243,8 @@ export default function OnboardingScreen() {
         }
       });
 
-      // Save to Supabase directly for extended fields
-      if (user) {
-        const supabaseUpdates = {
-          weight: weightLbs,
-          height: heightInches,
-          age,
-          gender,
-          activity_level: data.activityLevel || 'moderate',
-          goal_weight: goalWeightLbs,
-          weekly_goal: weeklyGoal,
-          macro_preset: macroPreset,
-          weight_unit: isMetric ? 'kg' : 'lbs',
-          dietary_restrictions: dietaryRestrictions,
-          equipment: equipmentList,
-          custom_macros: {
-            protein: macros.proteinPct,
-            carbs: macros.carbsPct,
-            fat: macros.fatPct,
-          },
-          bmr,
-          tdee,
-          daily_calories: calories,
-          onboarding_completed: true,
-          onboarding_data: {
-            goal: data.goal,
-            dietType: data.dietType,
-            allergies: data.allergies,
-            mealsPerDay: data.mealsPerDay,
-            interestedInFasting: data.interestedInFasting,
-            experience: data.experience,
-            workoutTypes: data.workoutTypes,
-            equipment: data.equipment,
-            daysPerWeek: data.daysPerWeek,
-            sessionDuration: data.sessionDuration,
-            enableMealReminders: data.enableMealReminders,
-            enableWorkoutReminders: data.enableWorkoutReminders,
-            enableStreakWarnings: data.enableStreakWarnings,
-            connectHealth: data.connectHealth,
-            enableAI: data.enableAI,
-            waterGoal: data.waterGoal,
-            enableFasting: data.enableFasting,
-          },
-          weight_history: [{ date: new Date().toISOString().split('T')[0], weight: weightLbs }],
-          updated_at: new Date().toISOString(),
-        };
-
-        const { error } = await supabase
-          .from('profiles')
-          .upsert({ user_id: user.id, ...supabaseUpdates })
-          .select();
-
-        if (error) {
-          if (__DEV__) console.error('Onboarding save error:', error);
-          // Still try to save locally
-        }
-      }
-
-      // Update ProfileContext state so isProfileComplete becomes true
+      // Update ProfileContext state so isProfileComplete becomes true.
+      // This sets local state immediately AND saves core fields to Supabase.
       await updateProfile({
         weight: weightLbs,
         height: heightInches,
@@ -1309,20 +1257,63 @@ export default function OnboardingScreen() {
         weightUnit: isMetric ? 'kg' : 'lbs',
         dietaryRestrictions,
         equipment: equipmentList,
+        customMacros: {
+          protein: macros.proteinPct,
+          carbs: macros.carbsPct,
+          fat: macros.fatPct,
+        },
       });
 
-      // Re-fetch to make sure everything is consistent
-      await fetchProfile();
+      // Save additional onboarding metadata to Supabase (non-blocking best-effort).
+      // These are supplementary fields — the core profile is already saved above.
+      if (user) {
+        supabase
+          .from('profiles')
+          .update({
+            onboarding_completed: true,
+            onboarding_data: {
+              goal: data.goal,
+              dietType: data.dietType,
+              allergies: data.allergies,
+              mealsPerDay: data.mealsPerDay,
+              interestedInFasting: data.interestedInFasting,
+              experience: data.experience,
+              workoutTypes: data.workoutTypes,
+              equipment: data.equipment,
+              daysPerWeek: data.daysPerWeek,
+              sessionDuration: data.sessionDuration,
+              enableMealReminders: data.enableMealReminders,
+              enableWorkoutReminders: data.enableWorkoutReminders,
+              enableStreakWarnings: data.enableStreakWarnings,
+              connectHealth: data.connectHealth,
+              enableAI: data.enableAI,
+              waterGoal: data.waterGoal,
+              enableFasting: data.enableFasting,
+            },
+          })
+          .eq('user_id', user.id)
+          .then(() => {})
+          .catch(() => {});
+      }
+
+      // NOTE: Do NOT call fetchProfile() here. It would re-fetch from Supabase and
+      // potentially overwrite the local state with stale data (if the Supabase write
+      // hasn't propagated yet), causing isProfileComplete to flip back to false and
+      // triggering a redirect loop back to onboarding.
 
       hapticHeavy();
-      router.replace('/(tabs)');
+
+      // Small delay to let React commit the profile state update before navigation,
+      // ensuring ProfileAwareNav sees isProfileComplete = true when it evaluates.
+      setTimeout(() => {
+        router.replace('/(tabs)');
+      }, 50);
     } catch (err) {
       if (__DEV__) console.error('Onboarding complete error:', err);
       Alert.alert('Error', 'Failed to save your profile. Please try again.');
-    } finally {
       setSaving(false);
     }
-  }, [data, user, updateProfile, fetchProfile, router, saving]);
+  }, [data, user, updateProfile, router, saving]);
 
   // Choose entering/exiting animations based on direction
   const entering = direction === 'forward'
