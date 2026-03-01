@@ -210,7 +210,6 @@ export default function AuthScreen() {
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
           redirectUrl,
-          { preferEphemeralSession: true }
         );
 
         if (result.type === 'success' && result.url) {
@@ -225,21 +224,32 @@ export default function AuthScreen() {
           }
 
           // Fallback: implicit flow — tokens in URL hash fragment
-          const params = new URLSearchParams(url.hash.substring(1));
-          const accessToken = params.get('access_token');
-          const refreshToken = params.get('refresh_token');
+          const hashParams = new URLSearchParams(url.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
 
           if (accessToken && refreshToken) {
-            await supabase.auth.setSession({
+            const { error: sessionError } = await supabase.auth.setSession({
               access_token: accessToken,
               refresh_token: refreshToken,
             });
+            if (sessionError) throw sessionError;
+            return;
           }
+
+          // Neither code nor tokens found
+          throw new Error('No auth credentials in callback URL');
+        } else if (result.type === 'dismiss' || result.type === 'cancel') {
+          // User closed browser — do nothing
+          return;
         }
       }
     } catch (error) {
       if (__DEV__) console.error('Google OAuth Error:', error);
-      Alert.alert('Sign In Failed', 'Unable to complete Google sign in. Please try again.');
+      Alert.alert(
+        'Google Sign In Failed',
+        error?.message || 'Unable to complete Google sign in. Please try again.',
+      );
     }
   };
 
@@ -253,22 +263,25 @@ export default function AuthScreen() {
         ],
       });
 
-      if (credential.identityToken) {
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: 'apple',
-          token: credential.identityToken,
-        });
-        if (error) throw error;
-      } else {
+      if (!credential.identityToken) {
         throw new Error('No identity token received from Apple.');
       }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) throw error;
     } catch (error) {
       if (error.code === 'ERR_REQUEST_CANCELED') {
         // User cancelled — do nothing
         return;
       }
       if (__DEV__) console.error('Apple Sign-In Error:', error);
-      Alert.alert('Sign In Failed', 'Unable to complete Apple sign in. Please try again.');
+      Alert.alert(
+        'Apple Sign In Failed',
+        error?.message || 'Unable to complete Apple sign in. Please try again.',
+      );
     }
   };
 
