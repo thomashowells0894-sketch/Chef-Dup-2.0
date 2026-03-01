@@ -95,45 +95,15 @@ function generateNonce(): string {
 }
 
 /**
- * Derive a CryptoKey from the signing key string for use with HMAC.
- * Uses Web Crypto API (available via expo-crypto polyfill).
- */
-async function deriveHMACKey(keyString: string): Promise<CryptoKey> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(keyString);
-  return crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-}
-
-/**
- * Compute proper HMAC-SHA256 signature.
- * Falls back to SHA256(key:data) if Web Crypto is unavailable.
+ * Compute HMAC-SHA256 signature using expo-crypto.
+ * Web Crypto API (crypto.subtle) is not available in React Native Hermes,
+ * so we use expo-crypto's digestStringAsync with key prefix directly.
  */
 async function hmacSHA256(key: string, data: string): Promise<string> {
-  try {
-    const cryptoKey = await deriveHMACKey(key);
-    const encoder = new TextEncoder();
-    const signatureBuffer = await crypto.subtle.sign(
-      'HMAC',
-      cryptoKey,
-      encoder.encode(data)
-    );
-    // Convert ArrayBuffer to hex string
-    const hashArray = Array.from(new Uint8Array(signatureBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) {
-    Sentry.captureException(e);
-    // Fallback: use expo-crypto SHA256 with key prefix (less secure but functional)
-    return Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      `${key}:${data}`
-    );
-  }
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `${key}:${data}`
+  );
 }
 
 /**
