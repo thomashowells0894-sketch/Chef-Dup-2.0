@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -29,35 +30,41 @@ const RATE_LIMIT_COOLDOWN_MS = 3000;
 const MAX_ATTEMPTS_BEFORE_LOCKOUT = 5;
 const LOCKOUT_DURATION_MS = 60000;
 
-// Simple input component — no BlurView, no conditional glow dot layout shifts
+// Simple input component — no BlurView, no conditional glow dot layout shifts.
+// Wraps in Pressable for programmatic focus — workaround for iOS Fabric
+// renderer bug where TextInput doesn't always respond to direct taps.
 function GlassInput({ icon: Icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoComplete, autoCapitalize, testID, inputRef }) {
   const [focused, setFocused] = useState(false);
+  const localRef = useRef(null);
+  const ref = inputRef || localRef;
 
   return (
-    <View style={[
-      styles.inputContainer,
-      focused && styles.inputContainerFocused,
-    ]}>
-      <View style={styles.inputIcon}>
-        <Icon size={18} color={focused ? Colors.primary : Colors.textTertiary} />
+    <Pressable onPress={() => ref.current?.focus()}>
+      <View style={[
+        styles.inputContainer,
+        focused && styles.inputContainerFocused,
+      ]}>
+        <View style={styles.inputIcon}>
+          <Icon size={18} color={focused ? Colors.primary : Colors.textTertiary} />
+        </View>
+        <TextInput
+          ref={ref}
+          testID={testID}
+          style={styles.input}
+          placeholder={placeholder}
+          placeholderTextColor={Colors.textTertiary}
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType}
+          autoComplete={autoComplete}
+          autoCapitalize={autoCapitalize}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        <View style={[styles.inputGlowDot, { opacity: focused ? 1 : 0 }]} />
       </View>
-      <TextInput
-        ref={inputRef}
-        testID={testID}
-        style={styles.input}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textTertiary}
-        value={value}
-        onChangeText={onChangeText}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        autoComplete={autoComplete}
-        autoCapitalize={autoCapitalize}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-      />
-      <View style={[styles.inputGlowDot, { opacity: focused ? 1 : 0 }]} />
-    </View>
+    </Pressable>
   );
 }
 
@@ -399,7 +406,7 @@ export default function AuthScreen() {
       : 'Sign In';
 
   return (
-    <View style={styles.root}>
+    <Pressable style={styles.root} onPress={Keyboard.dismiss}>
       <LinearGradient
         colors={['#0A0A12', '#060608', '#000000']}
         locations={[0, 0.4, 1]}
@@ -511,8 +518,6 @@ export default function AuthScreen() {
               </Pressable>
             </View>
           </View>
-          {/* Glass border overlay */}
-          <View style={styles.cardBorder} />
         </View>
 
         {/* Footer toggle */}
@@ -528,7 +533,7 @@ export default function AuthScreen() {
           </Text>
         </Text>
       </SafeAreaView>
-    </View>
+    </Pressable>
   );
 }
 
@@ -570,6 +575,8 @@ const styles = StyleSheet.create({
   cardOuter: {
     borderRadius: 28,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
@@ -583,14 +590,6 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
     paddingTop: Spacing.lg,
   },
-  cardBorder: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    pointerEvents: 'none',
-  },
-
   // Tabs
   tabs: {
     flexDirection: 'row',
@@ -650,11 +649,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingVertical: Spacing.md,
+    paddingVertical: 0,
     paddingRight: Spacing.md,
     fontSize: FontSize.md,
     color: Colors.text,
-    height: '100%',
   },
   inputGlowDot: {
     width: 6,

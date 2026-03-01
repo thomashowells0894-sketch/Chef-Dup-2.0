@@ -176,9 +176,9 @@ async function tryLoadNativePinning(): Promise<boolean> {
       nativePinningAvailable = true;
       return true;
     }
-  } catch (e) {
-    Sentry.captureException(e);
-    // Module not installed — fall through to tier 2
+  } catch {
+    // Module not installed — expected when react-native-ssl-pinning is not
+    // added as a dependency. Fall through to tier 2 (header-based checks).
   }
   nativePinningAvailable = false;
   return false;
