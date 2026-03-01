@@ -296,4 +296,7 @@ function RootLayout() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+// Sentry.wrap() adds a TouchEventBoundary (View with onTouchStart) that
+// interferes with TextInput focus on iOS + New Architecture. Export directly
+// instead — Sentry error tracking and session replay still work via init().
+export default RootLayout;
