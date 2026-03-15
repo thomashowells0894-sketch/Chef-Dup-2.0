@@ -42,6 +42,8 @@ import {
   Zap,
   ArrowRight,
 } from 'lucide-react-native';
+import useWorkoutHistory from '../hooks/useWorkoutHistory';
+import { useWeightHistory as useWeightHistoryHook } from '../hooks/useWeightHistory';
 import ScreenWrapper from '../components/ScreenWrapper';
 import {
   Colors,
@@ -59,11 +61,6 @@ import { generateWeeklyReportCard } from '../lib/analyticsEngine';
 import { generateInsights, getNextWeekFocus } from '../lib/insightGenerator';
 
 // Safe optional hooks
-let useWorkoutHistory = null;
-try { useWorkoutHistory = require('../hooks/useWorkoutHistory').default; } catch {}
-let useWeightHistoryHook = null;
-try { useWeightHistoryHook = require('../hooks/useWeightHistory').useWeightHistory; } catch {}
-
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Grade ring configuration
@@ -164,9 +161,9 @@ export default function WeeklyReportScreen() {
   const { weeklyWeightData, profile } = useProfile();
   const { currentStreak } = useGamification();
 
-  const workoutResult = useWorkoutHistory ? useWorkoutHistory() : null;
+  const workoutResult = useWorkoutHistory();
   const workouts = workoutResult?.workouts || [];
-  const weightResult = useWeightHistoryHook ? useWeightHistoryHook() : null;
+  const weightResult = useWeightHistoryHook();
 
   const handleBack = useCallback(async () => {
     await hapticLight();

@@ -1,6 +1,8 @@
 // FuelIQ Premium Theme - Apple Design Award Level
 // Dark mode with Electric Blue & Sunset Orange accents
 
+import { Platform } from 'react-native';
+
 export const Colors = {
   // Background colors - Premium dark grey (not pure black)
   background: '#0A0A0C',
@@ -339,8 +341,6 @@ export const FontWeight = {
 
 // Font families — loaded via expo-font in _layout.js
 // Falls back to system fonts if not loaded yet
-import { Platform } from 'react-native';
-
 export const FontFamily = {
   regular: Platform.select({ ios: 'Inter_400Regular', android: 'Inter_400Regular', default: 'System' }),
   medium: Platform.select({ ios: 'Inter_500Medium', android: 'Inter_500Medium', default: 'System' }),

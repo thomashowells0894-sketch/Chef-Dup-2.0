@@ -217,7 +217,7 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
             accessibilityRole="button"
             accessibilityLabel={`Add food to ${config.label}`}
             accessibilityHint="Opens food search to add to this meal"
-            hitSlop={6}
+            hitSlop={10}
           >
             <ReAnimated.View
               style={[

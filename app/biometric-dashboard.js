@@ -446,11 +446,9 @@ function SleepCard({ snapshot, isSimulated, delay = 400 }) {
 // Hourly Steps Activity Chart
 // ============================================================
 function HourlyStepsCard({ hourlySteps, totalSteps, isSimulated, delay = 500 }) {
-  if (!hourlySteps || hourlySteps.length === 0) return null;
+  const maxSteps = Math.max(...(hourlySteps || []).map((h) => h.steps), 1);
 
-  const maxSteps = useMemo(() => {
-    return Math.max(...hourlySteps.map((h) => h.steps), 1);
-  }, [hourlySteps]);
+  if (!hourlySteps || hourlySteps.length === 0) return null;
 
   const stepsGoal = 10000;
   const pct = Math.min(100, Math.round((totalSteps / stepsGoal) * 100));

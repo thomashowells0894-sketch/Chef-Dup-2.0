@@ -95,7 +95,7 @@ function ExerciseSwapModal({ visible, muscleGroup, currentName, onSelect, onClos
   }, [muscleGroup, currentName, search]);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={swapStyles.overlay}>
         <View style={swapStyles.sheet}>
           <View style={swapStyles.header}>
@@ -242,7 +242,7 @@ const swapStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 function RestSettingsModal({ visible, current, onSelect, onClose }) {
   return (
-    <Modal visible={visible} animationType="fade" transparent>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <Pressable style={restModalStyles.overlay} onPress={onClose}>
         <View style={restModalStyles.content}>
           <Text style={restModalStyles.title}>Default Rest Timer</Text>
@@ -333,7 +333,7 @@ function WorkoutSummaryModal({ visible, summary, prs, onDone }) {
   if (!visible || !summary) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false}>
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onDone}>
       <View style={summaryStyles.container}>
         <SafeAreaView style={summaryStyles.safe}>
           <ScrollView contentContainerStyle={summaryStyles.scroll}>

@@ -69,6 +69,7 @@ const WaterButton = memo(function WaterButton({ emoji, label, amount, onPress, s
         ]}
       >
         <Animated.View
+          pointerEvents="none"
           style={[
             styles.buttonGlow,
             animatedGlowStyle,

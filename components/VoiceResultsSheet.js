@@ -26,9 +26,7 @@ const mealTypes = [
 
 // Voice Results Sheet
 function VoiceResultsSheet({ visible, transcript, foods, selectedMeal, onAddFood, onAddAll, onClose, addedIndices }) {
-  if (!visible) return null;
-
-  const mealLabel = mealTypes.find(m => m.id === selectedMeal)?.label || 'Meal';
+  const mealLabel = mealTypes.find((m) => m.id === selectedMeal)?.label || 'Meal';
   const remainingFoods = foods.filter((_, i) => !addedIndices.has(i));
   const remainingCalories = remainingFoods.reduce((sum, f) => sum + (f.calories || 0), 0);
   const remainingProtein = remainingFoods.reduce((sum, f) => sum + (f.protein || 0), 0);
@@ -43,6 +41,8 @@ function VoiceResultsSheet({ visible, transcript, foods, selectedMeal, onAddFood
     hapticLight();
     onAddFood?.(food, meal, idx);
   }, [onAddFood]);
+
+  if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -60,7 +60,7 @@ function VoiceResultsSheet({ visible, transcript, foods, selectedMeal, onAddFood
           {transcript ? (
             <View style={styles.voiceTranscriptBox}>
               <Mic size={14} color={Colors.textSecondary} />
-              <Text style={styles.voiceTranscriptText}>"{transcript}"</Text>
+              <Text style={styles.voiceTranscriptText}>{'"'}{transcript}{'"'}</Text>
             </View>
           ) : null}
 

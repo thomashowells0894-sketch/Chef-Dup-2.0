@@ -72,8 +72,12 @@ class NonceCache {
 // Singleton nonce cache
 const nonceCache = new NonceCache();
 
-// Periodic cleanup every 60 seconds
-setInterval(() => nonceCache.cleanup(), 60_000);
+// Periodic cleanup every 60 seconds. Allow Node-based test runs to exit cleanly.
+const cleanupInterval = setInterval(() => nonceCache.cleanup(), 60_000);
+const cleanupTimer = cleanupInterval as unknown as { unref?: () => void };
+if (typeof cleanupTimer.unref === 'function') {
+  cleanupTimer.unref();
+}
 
 /**
  * Get or generate a device-specific signing key stored in SecureStore.

@@ -236,7 +236,10 @@ class RateLimiter {
 const globalRateLimiter: RateLimiter = new RateLimiter();
 
 // Cleanup every 5 minutes
-setInterval(() => globalRateLimiter.cleanup(), 300000);
+const cleanupInterval = setInterval(() => globalRateLimiter.cleanup(), 300000);
+if (typeof cleanupInterval.unref === 'function') {
+  cleanupInterval.unref();
+}
 
 // ============================================================================
 // DATA PRIVACY & GDPR

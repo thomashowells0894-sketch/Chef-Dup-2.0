@@ -35,7 +35,7 @@ export default function FastingPromptModal() {
       <View style={styles.backdrop}>
         <View style={styles.container}>
           {/* Close button */}
-          <Pressable style={styles.closeButton} onPress={handleDismiss}>
+          <Pressable style={styles.closeButton} onPress={handleDismiss} hitSlop={12}>
             <X size={20} color={Colors.textSecondary} />
           </Pressable>
 

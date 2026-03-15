@@ -199,6 +199,7 @@ export default function LockScreen({
       transparent={false}
       animationType="fade"
       statusBarTranslucent
+      onRequestClose={handleBiometric}
     >
       <View style={styles.container}>
         <LinearGradient

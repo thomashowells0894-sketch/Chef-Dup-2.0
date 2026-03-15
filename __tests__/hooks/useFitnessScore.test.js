@@ -11,13 +11,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
 
 import useFitnessScore from '../../hooks/useFitnessScore';
+let consoleErrorSpy;
 
 // ─── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   (AsyncStorage.getItem).mockResolvedValue(null);
   (AsyncStorage.setItem).mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 // =============================================================================

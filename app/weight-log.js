@@ -39,6 +39,7 @@ import {
 import { hapticSuccess, hapticLight } from '../lib/haptics';
 import { useWeightHistory } from '../hooks/useWeightHistory';
 import { useProfile } from '../context/ProfileContext';
+import { isSameLocalDay } from '../lib/date';
 
 function formatDate(dateString) {
   const date = new Date(dateString);
@@ -66,9 +67,7 @@ function getMonthYear(dateString) {
 }
 
 function isSameDay(date1, date2) {
-  const d1 = new Date(date1).toISOString().split('T')[0];
-  const d2 = new Date(date2).toISOString().split('T')[0];
-  return d1 === d2;
+  return isSameLocalDay(date1, date2);
 }
 
 // Stats Card component

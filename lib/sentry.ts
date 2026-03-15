@@ -64,7 +64,6 @@ function getEnvironment(): string {
  * Format: fitness-app@<version> (matches sentry-cli release naming)
  */
 function getRelease(): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { version } = require('../package.json');
   return `fitness-app@${version}`;
 }
@@ -75,7 +74,6 @@ function getRelease(): string {
  */
 function getDist(): string {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Constants = require('expo-constants').default;
     // EAS Build sets runtimeVersion or use the native build number
     return (

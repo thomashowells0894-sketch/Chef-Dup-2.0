@@ -200,10 +200,15 @@ async function invokeAIBrain(type: string, payload: Record<string, unknown>): Pr
     }
   }
 
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
   try {
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('AI request timed out. Please try again.')), 15000)
-    );
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('AI request timed out. Please try again.')), 15000);
+      if (typeof timeoutId.unref === 'function') {
+        timeoutId.unref();
+      }
+    });
     const { data, error } = await Promise.race([
       retryWithBackoff(() =>
         supabase.functions.invoke('ai-brain', { body: { type, payload } })
@@ -257,6 +262,10 @@ async function invokeAIBrain(type: string, payload: Record<string, unknown>): Pr
         ? 'AI service temporarily unavailable. Please try again later.'
         : message
     );
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

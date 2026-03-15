@@ -17,12 +17,14 @@ const mockSetItem = AsyncStorage.setItem as jest.Mock;
 const mockRemoveItem = AsyncStorage.removeItem as jest.Mock;
 const mockSecureGetItem = SecureStore.getItemAsync as jest.Mock;
 const mockSecureSetItem = SecureStore.setItemAsync as jest.Mock;
+let consoleErrorSpy: jest.SpyInstance;
 
 // Store what gets written to AsyncStorage so we can verify it
 let storedItems: Record<string, string> = {};
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   storedItems = {};
 
   // Track stored items
@@ -42,6 +44,10 @@ beforeEach(() => {
 
   // Provide a consistent encryption key
   mockSecureGetItem.mockResolvedValue('test-encryption-key-1234567890abcdef');
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 describe('Encrypted Storage', () => {

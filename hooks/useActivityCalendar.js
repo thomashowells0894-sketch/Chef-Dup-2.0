@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, eachMonthOfInterval, startOfYear, endOfYear } from 'date-fns';
+import { useFood } from '../context/FoodContext';
+import { useFasting } from '../context/FastingContext';
 
 const STORAGE_KEY = '@fueliq_activity_scores';
 
@@ -24,18 +26,8 @@ const STORAGE_KEY = '@fueliq_activity_scores';
 export default function useActivityCalendar() {
   const [scores, setScores] = useState({});
   const [isLoading, setIsLoading] = useState(true);
-
-  // ── Food & Fasting contexts (optional, wrapped in try/catch) ──
-  let foodCtx = null;
-  let fastingCtx = null;
-  try {
-    const { useFood } = require('../context/FoodContext');
-    foodCtx = useFood();
-  } catch (_) { /* context not available */ }
-  try {
-    const { useFasting } = require('../context/FastingContext');
-    fastingCtx = useFasting();
-  } catch (_) { /* context not available */ }
+  const foodCtx = useFood();
+  const fastingCtx = useFasting();
 
   // ── Load persisted scores on mount ──
   useEffect(() => {

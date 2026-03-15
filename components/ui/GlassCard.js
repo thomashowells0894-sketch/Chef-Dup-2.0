@@ -148,6 +148,7 @@ export default function GlassCard({
         {/* Glow overlay */}
         {glow && (
           <Animated.View
+            pointerEvents="none"
             style={[
               styles.glowOverlay,
               { backgroundColor: variantStyles.glowColor },
@@ -157,7 +158,7 @@ export default function GlassCard({
         )}
 
         {/* Border effect */}
-        <View style={styles.borderOverlay} />
+        <View pointerEvents="none" style={styles.borderOverlay} />
 
         {/* Content */}
         <View style={styles.content}>

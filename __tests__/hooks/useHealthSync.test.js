@@ -147,16 +147,22 @@ function validateSnapshotRow(row) {
 }
 
 const { useHealthSync } = require('../../hooks/useHealthSync');
+let consoleErrorSpy;
+let consoleWarnSpy;
 
 // ─── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(() => {
   jest.useRealTimers();
+  consoleErrorSpy.mockRestore();
+  consoleWarnSpy.mockRestore();
 });
 
 // =============================================================================

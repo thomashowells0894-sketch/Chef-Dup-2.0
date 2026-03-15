@@ -126,7 +126,7 @@ const ActionCard = memo(function ActionCard({
           </View>
 
           {/* Border */}
-          <View style={[styles.actionCardBorder, { borderColor: gradientColors[0] + '40' }]} />
+          <View pointerEvents="none" style={[styles.actionCardBorder, { borderColor: gradientColors[0] + '40' }]} />
         </LinearGradient>
       </Animated.View>
     </Pressable>

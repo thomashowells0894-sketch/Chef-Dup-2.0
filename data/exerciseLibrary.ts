@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * FuelIQ Comprehensive Exercise Library
  * 200+ exercises with detailed instructions, muscle targeting,

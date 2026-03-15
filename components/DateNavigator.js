@@ -92,7 +92,7 @@ export default function DateNavigator() {
         </Pressable>
 
         {/* Center Date Display */}
-        <Pressable style={styles.centerContent} onPress={handleTodayPress}>
+        <Pressable style={styles.centerContent} onPress={handleTodayPress} hitSlop={{ top: 8, bottom: 8 }}>
           <ReAnimated.View
             style={[styles.dateContainer, labelAnimatedStyle]}
           >
@@ -120,7 +120,7 @@ export default function DateNavigator() {
 
       {/* Today Button (when not on today) */}
       {showTodayButton && (
-        <Pressable style={styles.todayButton} onPress={handleTodayPress}>
+        <Pressable style={styles.todayButton} onPress={handleTodayPress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={styles.todayButtonText}>Go to Today</Text>
         </Pressable>
       )}

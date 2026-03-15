@@ -1076,7 +1076,7 @@ export default function WorkoutTemplatesScreen() {
     editTemplate,
     deleteTemplate,
     toggleFavorite,
-    useTemplate,
+    useTemplate: getTemplate,
     getTemplatesByType,
     getFavorites,
   } = useWorkoutTemplates();
@@ -1125,7 +1125,7 @@ export default function WorkoutTemplatesScreen() {
 
   const handleStartWorkout = useCallback(
     async (template) => {
-      const templateData = await useTemplate(template.id);
+      const templateData = await getTemplate(template.id);
       if (templateData) {
         // Navigate to workout-session with the template exercises
         const workoutPayload = {
@@ -1150,7 +1150,7 @@ export default function WorkoutTemplatesScreen() {
         });
       }
     },
-    [useTemplate, router]
+    [getTemplate, router]
   );
 
   const renderTemplateCard = useCallback(

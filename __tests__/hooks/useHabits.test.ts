@@ -12,11 +12,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format, subDays } from 'date-fns';
 
 import useHabits from '../../hooks/useHabits';
+let consoleErrorSpy: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
   (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 // =============================================================================

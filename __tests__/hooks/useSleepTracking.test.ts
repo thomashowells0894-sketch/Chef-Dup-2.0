@@ -26,6 +26,7 @@ jest.mock('../../services/healthService', () => ({
 import { useSleepTracking } from '../../hooks/useSleepTracking';
 
 const WAIT_OPTIONS = { timeout: 5000 };
+let consoleErrorSpy: jest.SpyInstance;
 
 /**
  * Render the hook and wait for the async useEffect initialization to complete.
@@ -44,8 +45,13 @@ async function renderAndInit(setupMocks?: () => void) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   mockGetEncryptedItem.mockResolvedValue([]);
   mockSetEncryptedItem.mockResolvedValue(true);
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 // =============================================================================

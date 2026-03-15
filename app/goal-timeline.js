@@ -53,7 +53,6 @@ import { useWeightHistory } from '../hooks/useWeightHistory';
 import { useProfile } from '../context/ProfileContext';
 import useGoalProjection from '../hooks/useGoalProjection';
 import { hapticLight } from '../lib/haptics';
-import { Sentry } from '../lib/sentry';
 import { format, addDays, subDays } from 'date-fns';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -1232,15 +1231,7 @@ const achievedStyles = StyleSheet.create({
 
 export default function GoalTimelineScreen() {
   const { entries, goal } = useWeightHistory();
-
-  let profileData = null;
-  try {
-    profileData = useProfile();
-  } catch (e) {
-    Sentry.captureException(e);
-    // Profile context not available
-  }
-
+  const profileData = useProfile();
   const profile = profileData?.profile;
   const tdee = profile?.tdee || 0;
   const weeklyGoal = profile?.weeklyGoal || 'maintain';

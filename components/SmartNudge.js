@@ -22,7 +22,7 @@ const SmartNudge = memo(function SmartNudge({ title, body, actionLabel, onAction
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.body}>{body}</Text>
           {actionLabel && onAction && (
-            <Pressable onPress={onAction} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable onPress={onAction} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.actionText}>{actionLabel}</Text>
             </Pressable>
           )}

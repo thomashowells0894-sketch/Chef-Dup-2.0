@@ -16,7 +16,6 @@ let _appVersion: string | null = null;
 function getAppVersion(): string {
   if (_appVersion !== null) return _appVersion;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pkg = require('../package.json');
     _appVersion = pkg.version || 'unknown';
   } catch (e) {

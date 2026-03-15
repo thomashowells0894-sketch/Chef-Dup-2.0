@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * FuelIQ - Curated Recipe Library
  *

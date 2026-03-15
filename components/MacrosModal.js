@@ -117,7 +117,7 @@ export default function MacrosModal({ visible, onClose }) {
       <View style={styles.container} accessibilityViewIsModal={true} accessibilityLabel="Macro goals editor">
         <View style={styles.header}>
           <Text style={styles.title}>Macro Breakdown</Text>
-          <Pressable style={styles.closeButton} onPress={handleClose}>
+          <Pressable style={styles.closeButton} onPress={handleClose} hitSlop={8}>
             <X size={24} color={Colors.text} />
           </Pressable>
         </View>

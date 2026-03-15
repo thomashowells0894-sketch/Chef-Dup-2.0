@@ -55,8 +55,10 @@ export function useAdaptiveMacros() {
   const [recommendation, setRecommendation] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [plateauTriggered, setPlateauTriggered] = useState(false);
+  const [hasLoadedCache, setHasLoadedCache] = useState(false);
   const hasChecked = useRef(false);
   const plateauChecked = useRef(false);
+  const isGeneratingRef = useRef(false);
 
   const { totals, goals } = useMealTotals();
   const { profile, calculatedGoals, weightStats, updateProfile, currentGoalType } = useProfile();
@@ -81,6 +83,8 @@ export function useAdaptiveMacros() {
       } catch (e) {
         Sentry.captureException(e);
         // Ignore storage read errors
+      } finally {
+        setHasLoadedCache(true);
       }
     })();
   }, []);
@@ -133,7 +137,8 @@ export function useAdaptiveMacros() {
   // Generate a new recommendation (premium only)
   const generate = useCallback(async () => {
     if (!isPremium) return;
-    if (isGenerating) return;
+    if (isGeneratingRef.current) return;
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     try {
       const weekData = buildWeekData();
@@ -153,13 +158,15 @@ export function useAdaptiveMacros() {
         console.error('[AdaptiveMacros] Generation failed:', error.message);
       }
     } finally {
+      isGeneratingRef.current = false;
       setIsGenerating(false);
     }
-  }, [buildWeekData, isGenerating]);
+  }, [buildWeekData, isPremium]);
 
   // Auto-generate if stale and past Sunday evening (premium only)
   useEffect(() => {
     if (!isPremium) return;
+    if (!hasLoadedCache) return;
     if (hasChecked.current) return;
     hasChecked.current = true;
 
@@ -167,11 +174,12 @@ export function useAdaptiveMacros() {
     if (isStale && isPastSundayEvening()) {
       generate();
     }
-  }, [recommendation, generate]);
+  }, [hasLoadedCache, isPremium, recommendation, generate]);
 
   // Auto-trigger when a plateau is detected (premium only, regardless of day of week)
   useEffect(() => {
     if (!isPremium) return;
+    if (!hasLoadedCache) return;
     if (!plateauStatus?.isPlateau) {
       plateauChecked.current = false;
       return;
@@ -185,7 +193,7 @@ export function useAdaptiveMacros() {
     plateauChecked.current = true;
     setPlateauTriggered(true);
     generate();
-  }, [plateauStatus, recommendation, generate]);
+  }, [hasLoadedCache, isPremium, plateauStatus, recommendation, generate]);
 
   // Apply the recommendation to the profile
   const applyRecommendation = useCallback(async () => {

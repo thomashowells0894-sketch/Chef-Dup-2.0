@@ -101,6 +101,7 @@ jest.mock('../../context/SubscriptionContext', () => ({
 // ─── Import after mocks ────────────────────────────────────────────────────
 
 const { useAdaptiveMacros } = require('../../hooks/useAdaptiveMacros');
+let consoleErrorSpy;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -138,9 +139,14 @@ function isCurrentWeek(timestamp) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   (AsyncStorage.getItem).mockResolvedValue(null);
   (AsyncStorage.setItem).mockResolvedValue(undefined);
   mockPlateauStatus.isPlateau = false;
+  const { useAdaptiveTDEE } = require('../../hooks/useAdaptiveTDEE');
+  useAdaptiveTDEE.mockReturnValue({
+    estimate: mockTDEEEstimate,
+  });
   // Reset mock to default resolved behavior (clearAllMocks doesn't reset mockImplementation)
   mockGenerateMacroRecommendation.mockImplementation(() =>
     Promise.resolve({
@@ -154,6 +160,17 @@ beforeEach(() => {
     })
   );
 });
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
+  jest.useRealTimers();
+});
+
+async function renderDuringReviewWindow() {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date('2026-03-09T09:00:00Z'));
+  return renderHook(() => useAdaptiveMacros());
+}
 
 // =============================================================================
 // Utility functions (getISOWeek / isCurrentWeek)
@@ -281,7 +298,7 @@ describe('useAdaptiveMacros - initial state', () => {
 describe('useAdaptiveMacros - buildWeekData via generate', () => {
   it('should use adaptive TDEE when confidence is sufficient', async () => {
     // Adaptive TDEE has confidence 0.6 and source "hybrid" — should be used
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     // Auto-generate is triggered because no cached rec. We rely on the mock.
     await waitFor(() => {
@@ -309,7 +326,7 @@ describe('useAdaptiveMacros - buildWeekData via generate', () => {
       },
     });
 
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     await waitFor(() => {
       expect(mockGenerateMacroRecommendation).toHaveBeenCalled();
@@ -325,7 +342,7 @@ describe('useAdaptiveMacros - buildWeekData via generate', () => {
   });
 
   it('should pass correct adherence and streak data', async () => {
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     await waitFor(() => {
       expect(mockGenerateMacroRecommendation).toHaveBeenCalled();
@@ -339,7 +356,7 @@ describe('useAdaptiveMacros - buildWeekData via generate', () => {
   });
 
   it('should report triggerReason as weekly_review by default', async () => {
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     await waitFor(() => {
       expect(mockGenerateMacroRecommendation).toHaveBeenCalled();
@@ -356,7 +373,7 @@ describe('useAdaptiveMacros - buildWeekData via generate', () => {
 
 describe('useAdaptiveMacros - applyRecommendation', () => {
   it('should call updateProfile with correct macro percentages', async () => {
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     // Wait for auto-generation to produce a recommendation
     await waitFor(() => {
@@ -392,7 +409,7 @@ describe('useAdaptiveMacros - applyRecommendation', () => {
       generatedAt: new Date().toISOString(),
     });
 
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     await waitFor(() => {
       expect(result.current.recommendation).not.toBeNull();
@@ -415,7 +432,7 @@ describe('useAdaptiveMacros - applyRecommendation', () => {
     };
     (AsyncStorage.getItem).mockResolvedValue(JSON.stringify(cached));
 
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     // Wait for effects to settle; since dismissed, rec will stay null
     // but auto-generate will also fire. Let's prevent that:
@@ -435,7 +452,7 @@ describe('useAdaptiveMacros - applyRecommendation', () => {
 
 describe('useAdaptiveMacros - dismissRecommendation', () => {
   it('should clear recommendation and persist dismissed state', async () => {
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     await waitFor(() => {
       expect(result.current.recommendation).not.toBeNull();
@@ -493,7 +510,7 @@ describe('useAdaptiveMacros - generation error handling', () => {
       new Error('Network error')
     );
 
-    const { result } = renderHook(() => useAdaptiveMacros());
+    const { result } = await renderDuringReviewWindow();
 
     await waitFor(() => {
       expect(mockGenerateMacroRecommendation).toHaveBeenCalled();

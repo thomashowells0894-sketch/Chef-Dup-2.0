@@ -27,12 +27,18 @@ import { checkAIRateLimit } from '../../lib/rateLimiter';
 
 const mockInvoke = supabase.functions.invoke as jest.Mock;
 const mockRateLimit = checkAIRateLimit as jest.Mock;
+let consoleErrorSpy: jest.SpyInstance;
 
 describe('AI Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     setAIPremiumStatus(true);
     mockRateLimit.mockReturnValue({ allowed: true, retryAfterMs: 0, message: '' });
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
   });
 
   describe('isAIServiceAvailable', () => {

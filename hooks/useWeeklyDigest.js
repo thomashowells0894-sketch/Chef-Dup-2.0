@@ -103,7 +103,9 @@ export function useWeeklyDigest() {
   const [digest, setDigest] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
+  const [hasLoadedCache, setHasLoadedCache] = useState(false);
   const hasChecked = useRef(false);
+  const isGeneratingRef = useRef(false);
 
   const { totals, goals, meals } = useMeals();
   const { profile, weightStats } = useProfile();
@@ -125,6 +127,8 @@ export function useWeeklyDigest() {
       } catch (e) {
         Sentry.captureException(e);
         // Ignore storage read errors
+      } finally {
+        setHasLoadedCache(true);
       }
     })();
   }, []);
@@ -168,7 +172,8 @@ export function useWeeklyDigest() {
   // Generate a new digest (premium only)
   const generateDigest = useCallback(async () => {
     if (!isPremium) return;
-    if (isGenerating) return;
+    if (isGeneratingRef.current) return;
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     try {
       const weekData = buildWeekData();
@@ -189,13 +194,15 @@ export function useWeeklyDigest() {
         console.error('[WeeklyDigest] Generation failed:', error.message);
       }
     } finally {
+      isGeneratingRef.current = false;
       setIsGenerating(false);
     }
-  }, [buildWeekData, isGenerating]);
+  }, [buildWeekData, isPremium]);
 
   // Auto-generate if stale (premium only)
   useEffect(() => {
     if (!isPremium) return;
+    if (!hasLoadedCache) return;
     if (hasChecked.current) return;
     hasChecked.current = true;
 
@@ -203,7 +210,7 @@ export function useWeeklyDigest() {
     if (isStale && isPastMondayMorning()) {
       generateDigest();
     }
-  }, [digest, generateDigest]);
+  }, [digest, generateDigest, hasLoadedCache, isPremium]);
 
   return { digest, isGenerating, generateDigest, lastGenerated, lossAversionFrame };
 }

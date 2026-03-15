@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProfile } from '../context/ProfileContext';
 import { isValidArray } from '../lib/validation';
 import { getEncryptedItem, setEncryptedItem, removeEncryptedItem } from '../lib/encryptedStorage';
+import * as dateUtils from '../lib/date';
 import type { WeightEntry } from '../types';
 import { Sentry } from '../lib/sentry';
 
@@ -39,14 +40,7 @@ export function useWeightHistory(): UseWeightHistoryReturn {
   const [entries, setEntries] = useState<WeightEntry[]>([]);
   const [goal, setGoalState] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  let profileContext: { updateProfile?: (data: { weight: number }) => void } | null = null;
-  try {
-    profileContext = useProfile();
-  } catch (e) {
-    Sentry.captureException(e);
-    // Profile context not available
-  }
+  const profileContext = useProfile();
 
   // Load data from encrypted storage on mount
   useEffect(() => {
@@ -113,9 +107,9 @@ export function useWeightHistory(): UseWeightHistoryReturn {
 
     setEntries((prev: WeightEntry[]) => {
       // Check if there's already an entry for today - replace it
-      const todayStr = now.toISOString().split('T')[0];
+      const todayStr = dateUtils.formatLocalDateKey(now);
       const filtered = prev.filter((e: WeightEntry) => {
-        const entryDay = new Date(e.date).toISOString().split('T')[0];
+        const entryDay = dateUtils.formatLocalDateKey(e.date);
         return entryDay !== todayStr;
       });
 

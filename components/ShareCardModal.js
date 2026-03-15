@@ -141,7 +141,7 @@ export default function ShareCardModal({ visible, onClose, type = 'daily-summary
 
         {/* Close button */}
         <ReAnimated.View entering={FadeInDown.delay(100).springify()} style={styles.closeContainer}>
-          <Pressable style={styles.closeButton} onPress={handleClose}>
+          <Pressable style={styles.closeButton} onPress={handleClose} hitSlop={12}>
             <X size={22} color={Colors.text} strokeWidth={2.5} />
           </Pressable>
         </ReAnimated.View>

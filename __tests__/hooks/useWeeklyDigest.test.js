@@ -81,6 +81,7 @@ jest.mock('../../services/ai', () => ({
 // ─── Import after mocks ────────────────────────────────────────────────────
 
 const { useWeeklyDigest } = require('../../hooks/useWeeklyDigest');
+let consoleErrorSpy;
 
 // ─── Replicate getLossAversionFrame for unit testing ────────────────────────
 
@@ -118,12 +119,17 @@ function getLossAversionFrame(weekData) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   (AsyncStorage.getItem).mockResolvedValue(null);
   (AsyncStorage.setItem).mockResolvedValue(undefined);
   // Reset mock to default resolved behavior (clearAllMocks doesn't reset mockImplementation)
   mockGenerateWeeklyDigest.mockImplementation(() =>
     Promise.resolve(mockDigestResult)
   );
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 // =============================================================================
@@ -391,8 +397,9 @@ describe('useWeeklyDigest - generateDigest', () => {
     const { result } = renderHook(() => useWeeklyDigest());
 
     // Start generation but do not resolve yet
-    const gen1 = act(async () => {
-      result.current.generateDigest();
+    let gen1;
+    act(() => {
+      gen1 = result.current.generateDigest();
     });
 
     // Try to generate again while first is pending
@@ -405,7 +412,9 @@ describe('useWeeklyDigest - generateDigest', () => {
 
     // Resolve to clean up
     resolveGeneration(mockDigestResult);
-    await gen1;
+    await act(async () => {
+      await gen1;
+    });
   });
 });
 

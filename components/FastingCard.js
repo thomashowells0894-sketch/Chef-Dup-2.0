@@ -168,6 +168,7 @@ function FastingCard() {
       {/* Glow effect when fasting */}
       {isFasting && (
         <Animated.View
+          pointerEvents="none"
           style={[
             styles.glowEffect,
             glowAnimatedStyle,

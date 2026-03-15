@@ -8,6 +8,7 @@
  */
 
 import { renderHook, act, waitFor } from '@testing-library/react-native';
+import * as dateUtils from '../../lib/date';
 
 // Mock the encrypted storage module
 const mockGetEncryptedItem = jest.fn();
@@ -30,6 +31,7 @@ jest.mock('../../context/ProfileContext', () => ({
 import { useWeightHistory } from '../../hooks/useWeightHistory';
 
 const WAIT_OPTIONS = { timeout: 5000 };
+let consoleErrorSpy: jest.SpyInstance;
 
 /**
  * Render the hook and wait for async useEffect initialization to complete.
@@ -45,9 +47,14 @@ async function renderAndInit(setupMocks?: () => void) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   mockGetEncryptedItem.mockResolvedValue([]);
   mockSetEncryptedItem.mockResolvedValue(true);
   mockRemoveEncryptedItem.mockResolvedValue(true);
+});
+
+afterEach(() => {
+  consoleErrorSpy.mockRestore();
 });
 
 // =============================================================================
@@ -154,6 +161,46 @@ describe('addEntry', () => {
     // Should only have 1 entry (today's was replaced)
     expect(result.current.entries).toHaveLength(1);
     expect(result.current.entries[0].weight).toBe(179);
+  });
+
+  it('replaces an entry from the same local day even when the UTC day differs', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-08T07:30:00Z'));
+    const localDateSpy = jest.spyOn(dateUtils, 'formatLocalDateKey');
+    localDateSpy.mockImplementation((value: Date | string | number) => {
+      const isoValue = new Date(value).toISOString();
+      if (
+        isoValue.startsWith('2026-03-08T07:30:00.') ||
+        isoValue.startsWith('2026-03-07T16:00:00.')
+      ) {
+        return '2026-03-07';
+      }
+
+      return isoValue.slice(0, 10);
+    });
+
+    try {
+      const { result } = await renderAndInit(() => {
+        mockGetEncryptedItem.mockImplementation((key: string) => {
+          if (key === '@fueliq_weight_history') {
+            return Promise.resolve([
+              { weight: 180, date: '2026-03-07T16:00:00Z', note: '' },
+            ]);
+          }
+          return Promise.resolve(null);
+        });
+      });
+
+      act(() => {
+        result.current.addEntry(179);
+      });
+
+      expect(result.current.entries).toHaveLength(1);
+      expect(result.current.entries[0].weight).toBe(179);
+    } finally {
+      localDateSpy.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   it('stores note with entry', async () => {

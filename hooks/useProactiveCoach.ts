@@ -23,7 +23,7 @@ export interface ProactiveCoachOptions {
     activeCalories: number;
     sleepMinutes: number;
     recoveryScore: number | null;
-    anomalies: Array<{ type: string; title: string; message: string }>;
+    anomalies: { type: string; title: string; message: string }[];
   } | null;
 }
 
@@ -42,7 +42,7 @@ const EVAL_INTERVAL_MS = 60_000; // Re-evaluate every 60s, not every render
  */
 export function useProactiveCoach(options?: ProactiveCoachOptions) {
   const { friendStreakLoss, healthData } = options ?? {};
-  const { totals, goals, remaining, mealCalories, exerciseMinutes, caloriesBurned } = useMeals() as any;
+  const { totals, goals, exerciseMinutes, caloriesBurned } = useMeals() as any;
   const { waterProgress } = useWaterProgress();
   const { currentStreak, brokenStreak, canRepairStreak, streakRepairCost } = useGamification();
   const { isFasting, fastingProgress } = useFasting();
@@ -256,8 +256,8 @@ export function useProactiveCoach(options?: ProactiveCoachOptions) {
     }
 
     // Health anomaly surfacing (critical/warning from useHealthSync)
-    if (healthData?.anomalies?.length > 0) {
-      const topAnomaly = healthData.anomalies[0]; // Already sorted by severity
+    const topAnomaly = healthData?.anomalies?.[0];
+    if (topAnomaly) {
       messages.push({
         id: `anomaly_${topAnomaly.type}`,
         message: topAnomaly.message,
@@ -348,7 +348,7 @@ export function useProactiveCoach(options?: ProactiveCoachOptions) {
     } else {
       setMessage(null);
     }
-  }, [totals, goals, remaining, mealCalories, exerciseMinutes, caloriesBurned, currentStreak, dismissed, isFasting, fastingProgress, waterProgress, canRepairStreak, brokenStreak, streakRepairCost, friendStreakLoss, healthData]);
+  }, [totals, goals, exerciseMinutes, caloriesBurned, currentStreak, dismissed, isFasting, fastingProgress, waterProgress, canRepairStreak, brokenStreak, streakRepairCost, friendStreakLoss, healthData]);
 
   // Evaluate immediately on data change + on a 60s interval for time-window transitions
   useEffect(() => {
