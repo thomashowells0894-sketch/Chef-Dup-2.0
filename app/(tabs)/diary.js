@@ -20,7 +20,6 @@ import useNutritionScore from '../../hooks/useNutritionScore';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Glass } from '../../constants/theme';
 import { useMeals } from '../../context/MealContext';
 import { useFavoriteFoods } from '../../hooks/useFavoriteFoods';
-import { useFrequentFoods } from '../../hooks/useFrequentFoods';
 import { useFasting } from '../../context/FastingContext';
 import { useGamification } from '../../context/GamificationContext';
 import { ListSkeleton } from '../../components/SkeletonLoader';
@@ -188,7 +187,6 @@ function DiaryScreenInner() {
     refreshDate,
   } = useMeals();
   const { isFavorite, toggleFavorite } = useFavoriteFoods();
-  const { recordFood } = useFrequentFoods();
   const { recordMealLogged } = useFasting();
   const { currentStreak, streakTier } = useGamification();
   const { dailyScore, grade, gradeColor, hasFood: hasNutritionData } = useNutritionScore();
@@ -231,8 +229,7 @@ function DiaryScreenInner() {
     };
     addFood(entry, mealType);
     recordMealLogged(mealType);
-    recordFood(entry);
-  }, [addFood, recordMealLogged, recordFood]);
+  }, [addFood, recordMealLogged]);
 
   const {
     isRecording,
@@ -395,8 +392,7 @@ function DiaryScreenInner() {
   const handleQuickCalLog = useCallback((food, mealType) => {
     addFood(food, mealType);
     recordMealLogged(mealType);
-    recordFood(food);
-  }, [addFood, recordMealLogged, recordFood]);
+  }, [addFood, recordMealLogged]);
 
   const handleQuickLog = useCallback((food, mealType) => {
     const foodEntry = {
@@ -413,8 +409,7 @@ function DiaryScreenInner() {
     };
     addFood(foodEntry, mealType);
     recordMealLogged(mealType);
-    recordFood(foodEntry);
-  }, [addFood, recordMealLogged, recordFood]);
+  }, [addFood, recordMealLogged]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -661,7 +656,6 @@ function DiaryScreenInner() {
             const mealType = new Date().getHours() < 14 ? 'lunch' : 'dinner';
             addFood(food, mealType);
             recordMealLogged(mealType);
-            recordFood(food);
           }}
         />
 

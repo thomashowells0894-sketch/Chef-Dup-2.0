@@ -112,6 +112,25 @@ export interface ProductResult {
   isUK?: boolean;
   countries?: string;
   categories?: string;
+  source?: string;
+  sourceLabel?: string;
+  qualityTag?: 'verified' | 'curated' | 'partner' | 'restaurant' | 'community';
+  qualityLabel?: string;
+  trustScore?: number;
+  confidenceScore?: number;
+  confidenceLevel?: 'high' | 'medium' | 'review';
+  confidenceReason?: string;
+  qualityIssues?: string[];
+  nutritionCompleteness?: number;
+  normalizedServing?: {
+    original: string;
+    gramsPerServing: number;
+    caloriesPer100g: number;
+    proteinPer100g: number;
+    carbsPer100g: number;
+    fatPer100g: number;
+  };
+  reportable?: boolean;
   micronutrients?: MicronutrientData;
   raw?: {
     categories: string | undefined;
@@ -142,6 +161,18 @@ export interface FoodFromProduct {
   category: string;
   barcode: string;
   micronutrients?: MicronutrientData;
+  source?: string;
+  sourceLabel?: string;
+  qualityTag?: ProductResult['qualityTag'];
+  qualityLabel?: string;
+  trustScore?: number;
+  confidenceScore?: number;
+  confidenceLevel?: ProductResult['confidenceLevel'];
+  confidenceReason?: string;
+  qualityIssues?: string[];
+  reportable?: boolean;
+  brand?: string | null;
+  image?: string | null;
 }
 
 /**
@@ -743,5 +774,17 @@ export function productToFood(product: ProductResult): FoodFromProduct {
     category: 'searched',
     barcode: product.barcode,
     micronutrients: product.micronutrients,
+    source: product.source,
+    sourceLabel: product.sourceLabel,
+    qualityTag: product.qualityTag,
+    qualityLabel: product.qualityLabel,
+    trustScore: product.trustScore,
+    confidenceScore: product.confidenceScore,
+    confidenceLevel: product.confidenceLevel,
+    confidenceReason: product.confidenceReason,
+    qualityIssues: product.qualityIssues,
+    reportable: product.reportable,
+    brand: product.brand,
+    image: product.image,
   };
 }

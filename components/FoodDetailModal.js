@@ -15,7 +15,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Sentry } from '../lib/sentry';
 import { Image } from 'expo-image';
-import { X, Check, Edit3, Calculator, ChevronDown, Sparkles, Heart } from 'lucide-react-native';
+import { X, Check, Edit3, Calculator, ChevronDown, Sparkles, Heart, AlertTriangle } from 'lucide-react-native';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import FoodSwapSheet from './FoodSwapSheet';
@@ -58,6 +58,41 @@ const MEAL_LABELS = {
   dinner: 'Dinner',
   snacks: 'Snacks',
 };
+
+function getQualityBadgeTheme(tag) {
+  switch (tag) {
+    case 'verified':
+      return {
+        backgroundColor: Colors.success + '14',
+        borderColor: Colors.success + '32',
+        textColor: Colors.success,
+      };
+    case 'curated':
+      return {
+        backgroundColor: Colors.primary + '14',
+        borderColor: Colors.primary + '32',
+        textColor: Colors.primary,
+      };
+    case 'restaurant':
+      return {
+        backgroundColor: Colors.warning + '14',
+        borderColor: Colors.warning + '32',
+        textColor: Colors.warning,
+      };
+    default:
+      return {
+        backgroundColor: Colors.surfaceElevated,
+        borderColor: Colors.border,
+        textColor: Colors.textSecondary,
+      };
+  }
+}
+
+function getConfidenceTextColor(level) {
+  if (level === 'high') return Colors.success;
+  if (level === 'medium') return Colors.textSecondary;
+  return Colors.warning;
+}
 
 function UnitSelector({ value, onChange, servingLabel }) {
   const options = [
@@ -146,6 +181,7 @@ function FoodDetailModal({
   mealType,
   onClose,
   onConfirm,
+  onReport,
 }) {
   const quantityInputRef = useRef(null);
   const { isFavorite, toggleFavorite } = useFavoriteFoods();
@@ -361,6 +397,11 @@ function FoodDetailModal({
   const mealLabel = MEAL_LABELS[mealType] || 'Log';
   const isValidQuantity = parseFloat(quantity) > 0;
   const quantityNum = parseFloat(quantity) || 0;
+  const badgeTheme = getQualityBadgeTheme(food.qualityTag);
+  const trustNote =
+    food.confidenceLevel === 'review' && food.qualityIssues?.length
+      ? food.qualityIssues[0]
+      : food.confidenceReason;
 
   // Build breakdown string
   const breakdownText = unit === 'grams'
@@ -383,11 +424,11 @@ function FoodDetailModal({
       >
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.closeButton} onPress={handleClose}>
+          <Pressable style={styles.closeButton} onPress={handleClose} hitSlop={8}>
             <X size={24} color={Colors.text} />
           </Pressable>
           <Text style={styles.headerTitle}>Add Food</Text>
-          <Pressable style={styles.favoriteHeaderButton} onPress={handleToggleFavorite}>
+          <Pressable style={styles.favoriteHeaderButton} onPress={handleToggleFavorite} hitSlop={8}>
             <Heart
               size={22}
               color={food && isFavorite(food.name) ? Colors.secondary : Colors.textTertiary}
@@ -428,6 +469,40 @@ function FoodDetailModal({
               <Text style={styles.baseNutrition}>
                 {baseValues.calories} kcal per {baseValues.servingDescription}
               </Text>
+              {(food.qualityLabel || trustNote) && (
+                <View style={styles.foodTrustBlock}>
+                  <View style={styles.foodTrustRow}>
+                    {food.qualityLabel && (
+                      <View
+                        style={[
+                          styles.qualityBadge,
+                          {
+                            backgroundColor: badgeTheme.backgroundColor,
+                            borderColor: badgeTheme.borderColor,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.qualityBadgeText, { color: badgeTheme.textColor }]}>
+                          {food.qualityLabel}
+                        </Text>
+                      </View>
+                    )}
+                    {food.sourceLabel && (
+                      <Text style={styles.sourceMeta}>{food.sourceLabel}</Text>
+                    )}
+                  </View>
+                  {trustNote && (
+                    <Text
+                      style={[
+                        styles.confidenceMeta,
+                        { color: getConfidenceTextColor(food.confidenceLevel) },
+                      ]}
+                    >
+                      {trustNote}
+                    </Text>
+                  )}
+                </View>
+              )}
             </View>
           </View>
 
@@ -634,6 +709,13 @@ function FoodDetailModal({
             <Sparkles size={16} color={Colors.primary} />
             <Text style={styles.swapButtonText}>Find Smarter Swap</Text>
           </Pressable>
+
+          {food.reportable && onReport && (
+            <Pressable style={styles.reportButton} onPress={() => onReport(food)}>
+              <AlertTriangle size={16} color={Colors.warning} />
+              <Text style={styles.reportButtonText}>Report wrong nutrition</Text>
+            </Pressable>
+          )}
         </ScrollView>
 
         {/* Bottom Action */}
@@ -767,6 +849,37 @@ const styles = StyleSheet.create({
   baseNutrition: {
     fontSize: FontSize.sm,
     color: Colors.textTertiary,
+  },
+  foodTrustBlock: {
+    marginTop: Spacing.sm,
+    gap: 6,
+  },
+  foodTrustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    flexWrap: 'wrap',
+  },
+  qualityBadge: {
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  qualityBadgeText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  sourceMeta: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
+  },
+  confidenceMeta: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
   },
   calculatorCard: {
     backgroundColor: Colors.surface,
@@ -1014,6 +1127,23 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
     color: Colors.primary,
+  },
+  reportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.warning + '12',
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.warning + '28',
+  },
+  reportButtonText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.warning,
   },
   bottomAction: {
     padding: Spacing.md,

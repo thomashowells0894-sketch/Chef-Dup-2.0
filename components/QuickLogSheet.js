@@ -18,7 +18,6 @@ import {
   Zap,
   Clock,
   TrendingUp,
-  Trash2,
   Coffee,
   Sun,
   Sunset,
@@ -208,7 +207,7 @@ function ToastNotification({ visible, foodName }) {
 // QuickLogSheet Component
 // =============================================
 export default function QuickLogSheet({ visible, onClose, mealType = 'snacks', onLog }) {
-  const { getTopFoods, getRecentFoods, removeFood, frequentFoods } = useFrequentFoods();
+  const { getTopFoods, getRecentFoods, removeFood } = useFrequentFoods();
   const [activeTab, setActiveTab] = useState('frequent');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastVisible, setToastVisible] = useState(false);

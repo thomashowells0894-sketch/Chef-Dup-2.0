@@ -135,11 +135,11 @@ export default function BarcodeScanner({ visible, onClose, onBarcodeScanned }) {
 
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.closeButton} onPress={onClose}>
+          <Pressable style={styles.closeButton} onPress={onClose} hitSlop={8}>
             <X size={24} color={Colors.text} />
           </Pressable>
           <Text style={styles.headerTitle}>Scan Barcode</Text>
-          <Pressable style={styles.torchButton} onPress={() => setTorch(!torch)}>
+          <Pressable style={styles.torchButton} onPress={() => setTorch(!torch)} hitSlop={8}>
             {torch ? (
               <Flashlight size={24} color={Colors.warning} />
             ) : (

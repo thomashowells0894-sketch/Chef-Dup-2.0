@@ -21,7 +21,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   ArrowLeft,
   Check,
@@ -41,8 +41,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Colors, Gradients, Spacing, FontSize, FontWeight, BorderRadius, Shadows } from '../constants/theme';
 import { useCommunityFoods } from '../hooks/useCommunityFoods';
+import { useAuth } from '../context/AuthContext';
 import { hapticSuccess, hapticLight, hapticError, hapticWarning } from '../lib/haptics';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
+import { submitFoodQualityReport } from '../services/foodQualityReports';
 
 // ============================================================================
 // CONSTANTS
@@ -78,20 +80,37 @@ const SERVING_UNITS = [
 // SCREEN
 // ============================================================================
 
+function getParamValue(param) {
+  if (Array.isArray(param)) {
+    return param[0];
+  }
+  return param;
+}
+
+function normalizeOptionalText(value) {
+  return value && value.trim().length > 0 ? value.trim() : null;
+}
+
 function SubmitFoodScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const { user } = useAuth();
   const { submitFood, isSubmitting, error: hookError } = useCommunityFoods();
+  const isReportMode = getParamValue(params.report) === 'true';
+  const source = getParamValue(params.source) || '';
+  const sourceLabel = getParamValue(params.sourceLabel) || 'search';
+  const qualityLabel = getParamValue(params.qualityLabel) || '';
 
   // Form state
-  const [name, setName] = useState('');
-  const [brand, setBrand] = useState('');
-  const [barcode, setBarcode] = useState('');
-  const [servingSize, setServingSize] = useState('1');
-  const [servingUnit, setServingUnit] = useState('serving');
-  const [calories, setCalories] = useState('');
-  const [protein, setProtein] = useState('');
-  const [carbs, setCarbs] = useState('');
-  const [fat, setFat] = useState('');
+  const [name, setName] = useState(getParamValue(params.name) || '');
+  const [brand, setBrand] = useState(getParamValue(params.brand) || '');
+  const [barcode, setBarcode] = useState(getParamValue(params.barcode) || '');
+  const [servingSize, setServingSize] = useState(getParamValue(params.servingSize) || '1');
+  const [servingUnit, setServingUnit] = useState(getParamValue(params.servingUnit) || 'serving');
+  const [calories, setCalories] = useState(getParamValue(params.calories) || '');
+  const [protein, setProtein] = useState(getParamValue(params.protein) || '');
+  const [carbs, setCarbs] = useState(getParamValue(params.carbs) || '');
+  const [fat, setFat] = useState(getParamValue(params.fat) || '');
   const [fiber, setFiber] = useState('');
   const [sugar, setSugar] = useState('');
   const [sodium, setSodium] = useState('');
@@ -101,6 +120,8 @@ function SubmitFoodScreen() {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showUnitPicker, setShowUnitPicker] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isReporting, setIsReporting] = useState(false);
+  const [reportQueued, setReportQueued] = useState(false);
 
   // ---- Macro calorie calculation ----
   const calculatedCalories = useMemo(() => {
@@ -126,6 +147,7 @@ function SubmitFoodScreen() {
 
   // Selected category info
   const selectedCategory = CATEGORIES.find((c) => c.value === category) || CATEGORIES[9];
+  const isBusy = isReportMode ? isReporting : isSubmitting;
 
   // ---- Handlers ----
 
@@ -181,6 +203,53 @@ function SubmitFoodScreen() {
       if (!proceed) return;
     }
 
+    if (isReportMode) {
+      setIsReporting(true);
+
+      try {
+        const servingDescription = [servingSize.trim(), servingUnit.trim()]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+
+        const result = await submitFoodQualityReport({
+          reason: 'incorrect_nutrition',
+          name: name.trim(),
+          brand: normalizeOptionalText(brand),
+          barcode: normalizeOptionalText(barcode),
+          serving: normalizeOptionalText(servingDescription),
+          calories: parseInt(calories, 10) || 0,
+          protein: parseFloat(protein) || 0,
+          carbs: parseFloat(carbs) || 0,
+          fat: parseFloat(fat) || 0,
+          source: normalizeOptionalText(source),
+          sourceLabel: normalizeOptionalText(sourceLabel),
+          reportedBy: user?.id || null,
+        });
+
+        if (result.success) {
+          hapticSuccess();
+          setReportQueued(result.queued);
+          setSubmitted(true);
+          setTimeout(() => {
+            router.back();
+          }, 1800);
+          return;
+        }
+      } catch {
+        // Fall through to the shared error state below.
+      } finally {
+        setIsReporting(false);
+      }
+
+      hapticError();
+      Alert.alert(
+        'Correction Failed',
+        'Could not record this correction. Please try again.'
+      );
+      return;
+    }
+
     const result = await submitFood({
       name: name.trim(),
       brand: brand.trim() || undefined,
@@ -200,21 +269,22 @@ function SubmitFoodScreen() {
     if (result) {
       hapticSuccess();
       setSubmitted(true);
-      // Navigate back after a short delay to show success
       setTimeout(() => {
         router.back();
       }, 1800);
-    } else {
-      hapticError();
-      Alert.alert(
-        'Submission Failed',
-        hookError || 'Something went wrong. Please try again.'
-      );
+      return;
     }
+
+    hapticError();
+    Alert.alert(
+      'Submission Failed',
+      hookError || 'Something went wrong. Please try again.'
+    );
   }, [
     name, brand, barcode, calories, protein, carbs, fat, fiber, sugar, sodium,
     servingSize, servingUnit, category, hasCalorieMismatch, enteredCalories,
-    calculatedCalories, submitFood, hookError, router,
+    calculatedCalories, isReportMode, submitFood, hookError, router, source,
+    sourceLabel, user?.id,
   ]);
 
   // ---- Success state ----
@@ -229,14 +299,22 @@ function SubmitFoodScreen() {
             >
               <Check size={40} color={Colors.background} />
             </LinearGradient>
-            <Text style={styles.successTitle}>Food Submitted!</Text>
-            <Text style={styles.successSubtitle}>
-              Your food is pending review. You earned XP for contributing!
+            <Text style={styles.successTitle}>
+              {isReportMode ? 'Correction Recorded' : 'Food Submitted!'}
             </Text>
-            <View style={styles.xpBadge}>
-              <Sparkles size={16} color={Colors.gold} />
-              <Text style={styles.xpBadgeText}>+15 XP</Text>
-            </View>
+            <Text style={styles.successSubtitle}>
+              {isReportMode
+                ? reportQueued
+                  ? 'Your correction was recorded for review. Thanks for flagging it.'
+                  : 'Your correction was sent for review. Thanks for improving nutrition quality.'
+                : 'Your food is pending review. You earned XP for contributing!'}
+            </Text>
+            {!isReportMode && (
+              <View style={styles.xpBadge}>
+                <Sparkles size={16} color={Colors.gold} />
+                <Text style={styles.xpBadgeText}>+15 XP</Text>
+              </View>
+            )}
           </Animated.View>
         </View>
       </SafeAreaView>
@@ -264,7 +342,7 @@ function SubmitFoodScreen() {
           </Pressable>
           <View style={styles.headerCenter}>
             <Users size={18} color={Colors.primary} />
-            <Text style={styles.headerTitle}>Submit Food</Text>
+            <Text style={styles.headerTitle}>{isReportMode ? 'Correct Food' : 'Submit Food'}</Text>
           </View>
           <View style={styles.headerButton} />
         </View>
@@ -280,7 +358,9 @@ function SubmitFoodScreen() {
             <View style={styles.infoBanner}>
               <Users size={16} color={Colors.primary} />
               <Text style={styles.infoBannerText}>
-                Contribute to the community food database. Submitted foods are reviewed and can be used by all users.
+                {isReportMode
+                  ? `Submit a corrected version of this ${qualityLabel ? `${qualityLabel.toLowerCase()} ` : ''}entry from ${sourceLabel}. Corrections are reviewed before they appear in the community database.`
+                  : 'Contribute to the community food database. Submitted foods are reviewed and can be used by all users.'}
               </Text>
             </View>
           </Animated.View>
@@ -388,23 +468,24 @@ function SubmitFoodScreen() {
             </View>
           </Animated.View>
 
-          {/* Category */}
-          <Animated.View entering={FadeInDown.delay(250).duration(400)}>
-            <Text style={styles.sectionLabel}>Category</Text>
-            <Pressable
-              style={styles.pickerButton}
-              onPress={() => {
-                hapticLight();
-                setShowCategoryPicker(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Category: ${selectedCategory.label}`}
-            >
-              <Text style={styles.categoryIcon}>{selectedCategory.icon}</Text>
-              <Text style={styles.pickerButtonText}>{selectedCategory.label}</Text>
-              <ChevronDown size={16} color={Colors.textSecondary} />
-            </Pressable>
-          </Animated.View>
+          {!isReportMode && (
+            <Animated.View entering={FadeInDown.delay(250).duration(400)}>
+              <Text style={styles.sectionLabel}>Category</Text>
+              <Pressable
+                style={styles.pickerButton}
+                onPress={() => {
+                  hapticLight();
+                  setShowCategoryPicker(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Category: ${selectedCategory.label}`}
+              >
+                <Text style={styles.categoryIcon}>{selectedCategory.icon}</Text>
+                <Text style={styles.pickerButtonText}>{selectedCategory.label}</Text>
+                <ChevronDown size={16} color={Colors.textSecondary} />
+              </Pressable>
+            </Animated.View>
+          )}
 
           {/* Nutrition Inputs - Main macros */}
           <Animated.View entering={FadeInDown.delay(300).duration(400)}>
@@ -538,100 +619,108 @@ function SubmitFoodScreen() {
             </Animated.View>
           )}
 
-          {/* Additional nutrition fields */}
-          <Animated.View entering={FadeInDown.delay(350).duration(400)}>
-            <Text style={styles.sectionLabel}>Additional Nutrition</Text>
-            <View style={styles.additionalNutritionRow}>
-              <View style={styles.additionalField}>
-                <View style={styles.additionalFieldHeader}>
-                  <Leaf size={14} color={Colors.success} />
-                  <Text style={styles.additionalFieldLabel}>Fiber</Text>
+          {!isReportMode && (
+            <Animated.View entering={FadeInDown.delay(350).duration(400)}>
+              <Text style={styles.sectionLabel}>Additional Nutrition</Text>
+              <View style={styles.additionalNutritionRow}>
+                <View style={styles.additionalField}>
+                  <View style={styles.additionalFieldHeader}>
+                    <Leaf size={14} color={Colors.success} />
+                    <Text style={styles.additionalFieldLabel}>Fiber</Text>
+                  </View>
+                  <View style={styles.additionalFieldInputWrap}>
+                    <TextInput
+                      style={styles.additionalFieldInput}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      value={fiber}
+                      onChangeText={setFiber}
+                      keyboardType="decimal-pad"
+                      maxLength={5}
+                      accessibilityLabel="Fiber in grams"
+                    />
+                    <Text style={styles.additionalFieldUnit}>g</Text>
+                  </View>
                 </View>
-                <View style={styles.additionalFieldInputWrap}>
-                  <TextInput
-                    style={styles.additionalFieldInput}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={fiber}
-                    onChangeText={setFiber}
-                    keyboardType="decimal-pad"
-                    maxLength={5}
-                    accessibilityLabel="Fiber in grams"
-                  />
-                  <Text style={styles.additionalFieldUnit}>g</Text>
-                </View>
-              </View>
 
-              <View style={styles.additionalField}>
-                <View style={styles.additionalFieldHeader}>
-                  <Cookie size={14} color={Colors.warning} />
-                  <Text style={styles.additionalFieldLabel}>Sugar</Text>
+                <View style={styles.additionalField}>
+                  <View style={styles.additionalFieldHeader}>
+                    <Cookie size={14} color={Colors.warning} />
+                    <Text style={styles.additionalFieldLabel}>Sugar</Text>
+                  </View>
+                  <View style={styles.additionalFieldInputWrap}>
+                    <TextInput
+                      style={styles.additionalFieldInput}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      value={sugar}
+                      onChangeText={setSugar}
+                      keyboardType="decimal-pad"
+                      maxLength={5}
+                      accessibilityLabel="Sugar in grams"
+                    />
+                    <Text style={styles.additionalFieldUnit}>g</Text>
+                  </View>
                 </View>
-                <View style={styles.additionalFieldInputWrap}>
-                  <TextInput
-                    style={styles.additionalFieldInput}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={sugar}
-                    onChangeText={setSugar}
-                    keyboardType="decimal-pad"
-                    maxLength={5}
-                    accessibilityLabel="Sugar in grams"
-                  />
-                  <Text style={styles.additionalFieldUnit}>g</Text>
-                </View>
-              </View>
 
-              <View style={styles.additionalField}>
-                <View style={styles.additionalFieldHeader}>
-                  <Droplets size={14} color={Colors.textSecondary} />
-                  <Text style={styles.additionalFieldLabel}>Sodium</Text>
-                </View>
-                <View style={styles.additionalFieldInputWrap}>
-                  <TextInput
-                    style={styles.additionalFieldInput}
-                    placeholder="0"
-                    placeholderTextColor={Colors.textTertiary}
-                    value={sodium}
-                    onChangeText={setSodium}
-                    keyboardType="decimal-pad"
-                    maxLength={6}
-                    accessibilityLabel="Sodium in milligrams"
-                  />
-                  <Text style={styles.additionalFieldUnit}>mg</Text>
+                <View style={styles.additionalField}>
+                  <View style={styles.additionalFieldHeader}>
+                    <Droplets size={14} color={Colors.textSecondary} />
+                    <Text style={styles.additionalFieldLabel}>Sodium</Text>
+                  </View>
+                  <View style={styles.additionalFieldInputWrap}>
+                    <TextInput
+                      style={styles.additionalFieldInput}
+                      placeholder="0"
+                      placeholderTextColor={Colors.textTertiary}
+                      value={sodium}
+                      onChangeText={setSodium}
+                      keyboardType="decimal-pad"
+                      maxLength={6}
+                      accessibilityLabel="Sodium in milligrams"
+                    />
+                    <Text style={styles.additionalFieldUnit}>mg</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          </Animated.View>
+            </Animated.View>
+          )}
 
           {/* Submit Button */}
           <Animated.View entering={FadeInDown.delay(400).duration(400)} style={styles.submitContainer}>
             <Pressable
               onPress={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isBusy}
               accessibilityRole="button"
-              accessibilityLabel="Submit food to community"
-              accessibilityState={{ disabled: isSubmitting }}
+              accessibilityLabel={isReportMode ? 'Submit nutrition correction' : 'Submit food to community'}
+              accessibilityState={{ disabled: isBusy }}
             >
               <LinearGradient
-                colors={isSubmitting ? Gradients.disabled : Gradients.primary}
+                colors={isBusy ? Gradients.disabled : Gradients.primary}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.submitButton}
               >
-                {isSubmitting ? (
+                {isBusy ? (
                   <ActivityIndicator size="small" color={Colors.background} />
                 ) : (
                   <>
-                    <Users size={20} color={Colors.background} />
-                    <Text style={styles.submitButtonText}>Submit to Community</Text>
+                    {isReportMode ? (
+                      <AlertTriangle size={20} color={Colors.background} />
+                    ) : (
+                      <Users size={20} color={Colors.background} />
+                    )}
+                    <Text style={styles.submitButtonText}>
+                      {isReportMode ? 'Send Correction' : 'Submit to Community'}
+                    </Text>
                   </>
                 )}
               </LinearGradient>
             </Pressable>
             <Text style={styles.submitDisclaimer}>
-              Submissions are reviewed before appearing in the public database.
-              You'll earn XP when your food is approved.
+              {isReportMode
+                ? 'Corrections are reviewed before they are used to improve shared nutrition data.'
+                : 'Submissions are reviewed before appearing in the public database. You\'ll earn XP when your food is approved.'}
             </Text>
           </Animated.View>
 

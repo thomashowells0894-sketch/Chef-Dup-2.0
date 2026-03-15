@@ -6,20 +6,18 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  FlatList,
   TextInput,
   ActivityIndicator,
   Keyboard,
-  Modal,
   Alert,
   ScrollView,
-  Animated,
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import OptimizedFlatList from '../../components/OptimizedFlatList';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { format, isToday, isYesterday, parseISO, subDays } from 'date-fns';
 import {
   Coffee,
   Sun,
@@ -33,15 +31,16 @@ import {
   Utensils,
   Dumbbell,
   Clock,
-  Flame,
   Check,
   ChefHat,
   BookOpen,
   Wand2,
   Mic,
-  Square,
   Heart,
   Zap,
+  RotateCcw,
+  AlertTriangle,
+  TrendingUp,
 } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -51,9 +50,7 @@ import { useFood } from '../../context/FoodContext';
 import { useProfile } from '../../context/ProfileContext';
 import { useFasting } from '../../context/FastingContext';
 import { foodDatabase } from '../../data/foods';
-import { EXERCISES, searchExercises, calculateCaloriesBurned } from '../../data/exercises';
-import BarcodeScanner from '../../components/BarcodeScanner';
-import ProductFoundModal from '../../components/ProductFoundModal';
+import { EXERCISES, searchExercises } from '../../data/exercises';
 import FoodDetailModal from '../../components/FoodDetailModal';
 import RecipeBuilderModal from '../../components/RecipeBuilderModal';
 import QuickLogSheet from '../../components/QuickLogSheet';
@@ -62,19 +59,29 @@ import ExerciseDurationModal from '../../components/ExerciseDurationModal';
 import VoiceRecordingModal from '../../components/VoiceRecordingModal';
 import VoiceResultsSheet from '../../components/VoiceResultsSheet';
 import { useFrequentFoods } from '../../hooks/useFrequentFoods';
+import { productToFood } from '../../services/openFoodFacts';
 import {
-  fetchProductByBarcode,
-  searchProducts,
-  searchProductsGlobal,
-  searchProductsWithUKPreference,
-  productToFood,
-} from '../../services/openFoodFacts';
-import { searchAllSources } from '../../services/foodSearch';
+  getRecentSearches,
+  getTrendingTerms,
+  searchAllSources,
+} from '../../services/foodSearch';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useFavoriteFoods } from '../../hooks/useFavoriteFoods';
 import { useIsPremium } from '../../context/SubscriptionContext';
-import { hapticLight } from '../../lib/haptics';
+import { hapticLight, hapticSuccess } from '../../lib/haptics';
+import {
+  recordAddOpened,
+  recordSearchCompleted,
+  recordQuickAddUsed,
+  recordRepeatLogUsed,
+  recordSearchResultSelected,
+  recordSearchStarted,
+} from '../../lib/activationTracker';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
+import UndoToast from '../../components/UndoToast';
+import { useRecentMealSnapshots } from '../../lib/recentMeals';
+import MyFitnessPalImportCard from '../../components/MyFitnessPalImportCard';
+import { searchLocalFoodDatabase } from '../../lib/localFoodSearch';
 
 const mealTypes = [
   { id: 'breakfast', label: 'Breakfast', icon: Coffee },
@@ -82,6 +89,55 @@ const mealTypes = [
   { id: 'dinner', label: 'Dinner', icon: Sunset },
   { id: 'snacks', label: 'Snack', icon: Moon },
 ];
+
+const STARTER_FOOD_IDS_BY_MEAL = {
+  breakfast: ['eggs', 'greek-yogurt', 'oatmeal', 'banana', 'whole-wheat-bread', 'whey-protein'],
+  lunch: ['chicken-breast', 'brown-rice', 'avocado', 'apple', 'whole-wheat-bread', 'protein-shake'],
+  dinner: ['salmon', 'chicken-breast', 'brown-rice', 'avocado', 'apple', 'whole-wheat-bread'],
+  snacks: ['greek-yogurt', 'protein-shake', 'banana', 'apple', 'peanut-butter', 'rice-cakes'],
+};
+
+function getQualityBadgeTheme(tag) {
+  switch (tag) {
+    case 'verified':
+      return {
+        backgroundColor: Colors.success + '14',
+        borderColor: Colors.success + '30',
+        textColor: Colors.success,
+      };
+    case 'curated':
+      return {
+        backgroundColor: Colors.primary + '14',
+        borderColor: Colors.primary + '30',
+        textColor: Colors.primary,
+      };
+    case 'restaurant':
+      return {
+        backgroundColor: Colors.warning + '14',
+        borderColor: Colors.warning + '30',
+        textColor: Colors.warning,
+      };
+    default:
+      return {
+        backgroundColor: Colors.surfaceElevated,
+        borderColor: Colors.border,
+        textColor: Colors.textSecondary,
+      };
+  }
+}
+
+function getConfidenceTextColor(level) {
+  if (level === 'high') return Colors.success;
+  if (level === 'medium') return Colors.textSecondary;
+  return Colors.warning;
+}
+
+function getParamValue(param) {
+  if (Array.isArray(param)) {
+    return param[0];
+  }
+  return param;
+}
 
 // API search result cache — avoids repeat network calls for common queries
 const API_SEARCH_CACHE = new Map(); // key: query string, value: { products, sources, timestamp }
@@ -105,37 +161,6 @@ function setCachedSearch(query, products, sources) {
     API_SEARCH_CACHE.delete(oldest);
   }
   API_SEARCH_CACHE.set(query.toLowerCase(), { products, sources, timestamp: Date.now() });
-}
-
-// Pre-indexed food search: build trigram index for O(1) lookup instead of O(n) filter
-const FOOD_SEARCH_INDEX = (() => {
-  const index = new Map();
-  foodDatabase.forEach((food, i) => {
-    const name = food.name.toLowerCase();
-    // Index every 2-char substring for fast prefix/contains matching
-    for (let j = 0; j <= name.length - 2; j++) {
-      const bigram = name.substring(j, j + 2);
-      if (!index.has(bigram)) index.set(bigram, []);
-      index.get(bigram).push(i);
-    }
-  });
-  return index;
-})();
-
-function searchFoodIndex(query, limit = 5) {
-  const q = query.toLowerCase();
-  if (q.length < 2) return [];
-  const bigram = q.substring(0, 2);
-  const candidates = FOOD_SEARCH_INDEX.get(bigram);
-  if (!candidates) return [];
-  const results = [];
-  for (const idx of candidates) {
-    if (foodDatabase[idx].name.toLowerCase().includes(q)) {
-      results.push({ ...foodDatabase[idx], barcode: `local-${foodDatabase[idx].id}`, isLocal: true });
-      if (results.length >= limit) break;
-    }
-  }
-  return results;
 }
 
 const addModes = [
@@ -206,7 +231,7 @@ const MealTypeSelector = memo(function MealTypeSelector({ selected, onSelect }) 
   );
 });
 
-// Search/Recent Toggle Component
+// Recent/Library Toggle Component
 const SearchRecentToggle = memo(function SearchRecentToggle({ activeTab, onTabChange, recentCount }) {
   return (
     <View style={styles.searchRecentToggle}>
@@ -220,26 +245,223 @@ const SearchRecentToggle = memo(function SearchRecentToggle({ activeTab, onTabCh
         </Text>
       </Pressable>
       <Pressable
-        style={[styles.toggleButton, activeTab === 'search' && styles.toggleButtonActive]}
-        onPress={() => onTabChange('search')}
+        style={[styles.toggleButton, activeTab === 'browse' && styles.toggleButtonActive]}
+        onPress={() => onTabChange('browse')}
       >
-        <Search size={14} color={activeTab === 'search' ? Colors.primary : Colors.textSecondary} />
-        <Text style={[styles.toggleButtonText, activeTab === 'search' && styles.toggleButtonTextActive]}>
-          Search
+        <BookOpen size={14} color={activeTab === 'browse' ? Colors.primary : Colors.textSecondary} />
+        <Text style={[styles.toggleButtonText, activeTab === 'browse' && styles.toggleButtonTextActive]}>
+          Library
         </Text>
       </Pressable>
     </View>
   );
 });
 
+const SearchSuggestionChips = memo(function SearchSuggestionChips({
+  recentSearches,
+  trendingTerms,
+  onSelect,
+}) {
+  if (recentSearches.length === 0 && trendingTerms.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.searchSuggestionSection}>
+      {recentSearches.length > 0 && (
+        <View style={styles.searchSuggestionBlock}>
+          <View style={styles.searchSuggestionHeader}>
+            <Clock size={14} color={Colors.textSecondary} />
+            <Text style={styles.searchSuggestionLabel}>Recent Searches</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.searchSuggestionScroll}
+          >
+            {recentSearches.slice(0, 8).map((item) => (
+              <Pressable
+                key={`recent-${item.query}`}
+                style={styles.searchSuggestionChip}
+                onPress={() => onSelect(item.query)}
+              >
+                <Text style={styles.searchSuggestionChipText}>{item.query}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {trendingTerms.length > 0 && (
+        <View style={styles.searchSuggestionBlock}>
+          <View style={styles.searchSuggestionHeader}>
+            <TrendingUp size={14} color={Colors.primary} />
+            <Text style={styles.searchSuggestionLabel}>Your Top Searches</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.searchSuggestionScroll}
+          >
+            {trendingTerms.slice(0, 6).map((item) => (
+              <Pressable
+                key={`trend-${item.term}`}
+                style={[styles.searchSuggestionChip, styles.searchSuggestionChipTrending]}
+                onPress={() => onSelect(item.term)}
+              >
+                <Text
+                  style={[
+                    styles.searchSuggestionChipText,
+                    styles.searchSuggestionChipTextTrending,
+                  ]}
+                >
+                  {item.term}
+                </Text>
+                <Text style={styles.searchSuggestionCount}>{item.count}x</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+});
+
+const FastCaptureAction = memo(function FastCaptureAction({
+  icon: Icon,
+  label,
+  hint,
+  tone = 'default',
+  onPress,
+}) {
+  const toneStyles = {
+    default: {
+      backgroundColor: Colors.surface,
+      borderColor: Colors.border,
+      iconColor: Colors.primary,
+    },
+    primary: {
+      backgroundColor: Colors.primary + '18',
+      borderColor: Colors.primary + '45',
+      iconColor: Colors.primary,
+    },
+    success: {
+      backgroundColor: Colors.success + '14',
+      borderColor: Colors.success + '35',
+      iconColor: Colors.success,
+    },
+  };
+
+  const activeTone = toneStyles[tone] || toneStyles.default;
+
+  return (
+    <Pressable
+      style={[
+        styles.fastCaptureAction,
+        {
+          backgroundColor: activeTone.backgroundColor,
+          borderColor: activeTone.borderColor,
+        },
+      ]}
+      onPress={onPress}
+    >
+      <View style={styles.fastCaptureActionIcon}>
+        <Icon size={18} color={activeTone.iconColor} strokeWidth={2.4} />
+      </View>
+      <Text style={styles.fastCaptureActionLabel}>{label}</Text>
+      <Text style={styles.fastCaptureActionHint}>{hint}</Text>
+    </Pressable>
+  );
+});
+
+const FastCapturePanel = memo(function FastCapturePanel({
+  selectedMeal,
+  onOpenBarcodeLookup,
+  onOpenQuickCal,
+  onOpenCustomFood,
+  onOpenFoodLens,
+  onOpenVoice,
+  isRecording,
+  isProcessingVoice,
+}) {
+  const activeMeal = mealTypes.find((meal) => meal.id === selectedMeal);
+  const mealLabel = activeMeal?.label || 'Meal';
+
+  return (
+    <View style={styles.fastCapturePanel}>
+      <View style={styles.fastCaptureHeader}>
+        <View>
+          <Text style={styles.fastCaptureEyebrow}>Fast Capture</Text>
+          <Text style={styles.fastCaptureTitle}>2 taps to log {mealLabel.toLowerCase()}</Text>
+        </View>
+        <View style={styles.fastCaptureMealBadge}>
+          <Text style={styles.fastCaptureMealBadgeText}>{mealLabel}</Text>
+        </View>
+      </View>
+
+      <View style={styles.fastCaptureGrid}>
+        <FastCaptureAction
+          icon={ScanBarcode}
+          label="Barcode"
+          hint="Best for packaged food"
+          tone="primary"
+          onPress={onOpenBarcodeLookup}
+        />
+        <FastCaptureAction
+          icon={Zap}
+          label="Quick Cals"
+          hint="Log calories fast"
+          tone="success"
+          onPress={onOpenQuickCal}
+        />
+        <FastCaptureAction
+          icon={Plus}
+          label="Custom Food"
+          hint="Add your own item"
+          onPress={onOpenCustomFood}
+        />
+      </View>
+
+      <View style={styles.fastCaptureSecondaryRow}>
+        <Pressable style={styles.fastCaptureSecondaryButton} onPress={onOpenFoodLens}>
+          <Camera size={16} color={Colors.textSecondary} />
+          <Text style={styles.fastCaptureSecondaryText}>Photo</Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.fastCaptureSecondaryButton,
+            isRecording && styles.fastCaptureSecondaryButtonActive,
+          ]}
+          onPress={onOpenVoice}
+          disabled={isProcessingVoice}
+        >
+          {isProcessingVoice ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <Mic size={16} color={isRecording ? Colors.background : Colors.textSecondary} />
+          )}
+          <Text
+            style={[
+              styles.fastCaptureSecondaryText,
+              isRecording && styles.fastCaptureSecondaryTextActive,
+            ]}
+          >
+            {isRecording ? 'Recording' : 'Voice'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
 // Recent Food Item Component (for 1-tap adding)
-const RecentFoodItem = memo(function RecentFoodItem({ item, onPress, index = 0 }) {
+const RecentFoodItem = memo(function RecentFoodItem({ item, onPress, onQuickAdd, index = 0 }) {
   return (
     <ReAnimated.View entering={FadeInDown.delay(index * 30).duration(300)}>
       <Pressable style={styles.recentFoodItem} onPress={() => onPress(item)}>
         <View style={styles.recentFoodIcon}>
           <Text style={styles.recentFoodIconText}>
-            {item.name?.charAt(0)?.toUpperCase() || '?'}
+            {item.emoji || item.name?.charAt(0)?.toUpperCase() || '?'}
           </Text>
         </View>
         <View style={styles.recentFoodInfo}>
@@ -254,17 +476,29 @@ const RecentFoodItem = memo(function RecentFoodItem({ item, onPress, index = 0 }
           <Text style={styles.recentFoodCaloriesValue}>{item.calories}</Text>
           <Text style={styles.recentFoodCaloriesLabel}>kcal</Text>
         </View>
-        <View style={styles.recentFoodAddButton}>
+        <Pressable
+          style={styles.recentFoodAddButton}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            onQuickAdd(item);
+          }}
+          hitSlop={8}
+        >
           <Plus size={16} color={Colors.background} />
-        </View>
+        </Pressable>
       </Pressable>
     </ReAnimated.View>
   );
 });
 
-const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuickAdd, index = 0 }) {
+const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuickAdd, onReport, index = 0 }) {
   const hasCalories = item.calories !== null && item.calories !== undefined;
   const canQuickAdd = hasCalories && item.calories > 0;
+  const badgeTheme = getQualityBadgeTheme(item.qualityTag);
+  const trustNote =
+    item.confidenceLevel === 'review' && item.qualityIssues?.length
+      ? item.qualityIssues[0]
+      : item.confidenceReason;
 
   return (
     <ReAnimated.View entering={FadeInDown.delay(index * 30).duration(300)}>
@@ -287,6 +521,36 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
             {item.brand}
           </Text>
         )}
+        {(item.qualityLabel || trustNote) && (
+          <View style={styles.resultTrustRow}>
+            {item.qualityLabel && (
+              <View
+                style={[
+                  styles.resultQualityBadge,
+                  {
+                    backgroundColor: badgeTheme.backgroundColor,
+                    borderColor: badgeTheme.borderColor,
+                  },
+                ]}
+              >
+                <Text style={[styles.resultQualityBadgeText, { color: badgeTheme.textColor }]}>
+                  {item.qualityLabel}
+                </Text>
+              </View>
+            )}
+            {trustNote && (
+              <Text
+                style={[
+                  styles.resultConfidenceText,
+                  { color: getConfidenceTextColor(item.confidenceLevel) },
+                ]}
+                numberOfLines={1}
+              >
+                {trustNote}
+              </Text>
+            )}
+          </View>
+        )}
         <View style={styles.resultMacros}>
           <Text style={styles.resultMacroText}>
             <Text style={{ color: Colors.protein }}>P</Text>{' '}
@@ -304,36 +568,61 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
           </Text>
         </View>
       </View>
-      <View style={styles.resultCalories}>
-        <Text style={[styles.resultCaloriesValue, !hasCalories && styles.resultCaloriesNA]}>
-          {hasCalories ? item.calories : 'N/A'}
-        </Text>
-        {hasCalories && <Text style={styles.resultCaloriesLabel}>kcal</Text>}
-      </View>
-      {canQuickAdd ? (
-        <Pressable
-          style={styles.quickAddBtnInline}
-          onPress={(e) => { e.stopPropagation?.(); onQuickAdd?.(item); }}
-          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-        >
-          <Check size={14} color={Colors.background} />
-        </Pressable>
-      ) : (
-        <View style={styles.resultAddButton}>
-          <Plus size={16} color={Colors.background} />
+      <View style={styles.resultTrailing}>
+        <View style={styles.resultCalories}>
+          <Text style={[styles.resultCaloriesValue, !hasCalories && styles.resultCaloriesNA]}>
+            {hasCalories ? item.calories : 'N/A'}
+          </Text>
+          {hasCalories && <Text style={styles.resultCaloriesLabel}>kcal</Text>}
         </View>
-      )}
+        <View style={styles.resultActionRow}>
+          {item.reportable && (
+            <Pressable
+              style={styles.resultReportButton}
+              onPress={(e) => { e.stopPropagation?.(); onReport?.(item); }}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <AlertTriangle size={13} color={Colors.warning} />
+            </Pressable>
+          )}
+          {canQuickAdd ? (
+            <Pressable
+              style={styles.quickAddBtnInline}
+              onPress={(e) => { e.stopPropagation?.(); onQuickAdd?.(item); }}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <Check size={14} color={Colors.background} />
+            </Pressable>
+          ) : (
+            <View style={styles.resultAddButton}>
+              <Plus size={16} color={Colors.background} />
+            </View>
+          )}
+        </View>
+      </View>
     </Pressable>
     </ReAnimated.View>
   );
 });
 
-const LocalFoodItem = memo(function LocalFoodItem({ item, onPress, index = 0 }) {
+const LocalFoodItem = memo(function LocalFoodItem({ item, onPress, onQuickAdd, index = 0 }) {
   return (
     <ReAnimated.View entering={FadeInDown.delay(index * 30).duration(300)}>
       <Pressable style={styles.localFoodItem} onPress={() => onPress(item)}>
-        <Text style={styles.localFoodName}>{item.name}</Text>
-        <Text style={styles.localFoodCalories}>{item.calories} kcal</Text>
+        <View style={styles.localFoodInfo}>
+          <Text style={styles.localFoodName}>{item.name}</Text>
+          <Text style={styles.localFoodCalories}>{item.calories} kcal</Text>
+        </View>
+        <Pressable
+          style={styles.localFoodQuickAdd}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            onQuickAdd(item);
+          }}
+          hitSlop={8}
+        >
+          <Plus size={16} color={Colors.background} />
+        </Pressable>
       </Pressable>
     </ReAnimated.View>
   );
@@ -362,7 +651,7 @@ const ExerciseItem = memo(function ExerciseItem({ exercise, onPress }) {
 });
 
 // Recipe item component
-const RecipeItem = memo(function RecipeItem({ recipe, onPress }) {
+const RecipeItem = memo(function RecipeItem({ recipe, onPress, onQuickAdd }) {
   return (
     <Pressable style={styles.recipeItem} onPress={() => onPress(recipe)}>
       <View style={styles.recipeEmoji}>
@@ -393,9 +682,16 @@ const RecipeItem = memo(function RecipeItem({ recipe, onPress }) {
         <Text style={styles.recipeCaloriesValue}>{recipe.calories}</Text>
         <Text style={styles.recipeCaloriesLabel}>cal</Text>
       </View>
-      <View style={styles.recipeAddButton}>
+      <Pressable
+        style={styles.recipeAddButton}
+        onPress={(e) => {
+          e.stopPropagation?.();
+          onQuickAdd(recipe);
+        }}
+        hitSlop={8}
+      >
         <Plus size={16} color={Colors.background} />
-      </View>
+      </Pressable>
     </Pressable>
   );
 });
@@ -426,14 +722,89 @@ const FavoriteFoodItem = memo(function FavoriteFoodItem({ item, onAdd, index }) 
   );
 });
 
+function formatRecentMealDate(dateKey) {
+  const date = parseISO(dateKey);
+  if (isToday(date)) return 'Today';
+  if (isYesterday(date)) return 'Yesterday';
+  return format(date, 'EEE, MMM d');
+}
+
+const RecentMealCard = memo(function RecentMealCard({ snapshot, selectedMeal, onPress, index = 0 }) {
+  const mealLabel = mealTypes.find((meal) => meal.id === snapshot.mealType)?.label || 'Meal';
+  const targetMealLabel = mealTypes.find((meal) => meal.id === selectedMeal)?.label || 'Meal';
+  const preview = snapshot.items.slice(0, 2).map((item) => item.name).join(' • ');
+  const remainingCount = Math.max(snapshot.itemCount - 2, 0);
+
+  return (
+    <ReAnimated.View entering={FadeInDown.delay(index * 40).duration(280)}>
+      <Pressable style={styles.recentMealCard} onPress={() => onPress(snapshot)}>
+        <View style={styles.recentMealHeader}>
+          <View>
+            <Text style={styles.recentMealDate}>{formatRecentMealDate(snapshot.dateKey)}</Text>
+            <Text style={styles.recentMealTitle}>{mealLabel}</Text>
+          </View>
+          <View style={styles.recentMealBadge}>
+            <Text style={styles.recentMealBadgeText}>Log to {targetMealLabel}</Text>
+          </View>
+        </View>
+        <Text style={styles.recentMealPreview} numberOfLines={2}>
+          {preview}
+          {remainingCount > 0 ? ` +${remainingCount} more` : ''}
+        </Text>
+        <View style={styles.recentMealFooter}>
+          <Text style={styles.recentMealMeta}>
+            {snapshot.itemCount} item{snapshot.itemCount !== 1 ? 's' : ''}
+          </Text>
+          <Text style={styles.recentMealCalories}>{snapshot.totals.calories} kcal</Text>
+        </View>
+      </Pressable>
+    </ReAnimated.View>
+  );
+});
+
+const RepeatYesterdayChip = memo(function RepeatYesterdayChip({
+  mealType,
+  itemCount,
+  disabled,
+  onPress,
+}) {
+  const meal = mealTypes.find((entry) => entry.id === mealType);
+  const Icon = meal?.icon || Coffee;
+
+  return (
+    <Pressable
+      style={[styles.repeatChip, disabled && styles.repeatChipDisabled]}
+      onPress={() => onPress(mealType)}
+      disabled={disabled}
+    >
+      <Icon size={15} color={disabled ? Colors.textTertiary : Colors.primary} />
+      <Text style={[styles.repeatChipLabel, disabled && styles.repeatChipLabelDisabled]}>
+        {meal?.label || mealType}
+      </Text>
+      <Text style={[styles.repeatChipCount, disabled && styles.repeatChipCountDisabled]}>
+        {itemCount}
+      </Text>
+    </Pressable>
+  );
+});
+
 
 function AddScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const mealParam = getParamValue(params.meal);
+  const queryParam = getParamValue(params.query);
+  const focusParam = getParamValue(params.focus);
+  const sourceParam = getParamValue(params.source);
+  const isOnboardingHandoff = sourceParam === 'onboarding_complete';
   const {
     addFood,
     addExercise,
+    dayData,
+    removeFood,
     recentLogs,
+    refreshDate,
+    selectedDateKey,
     getDefaultMealType,
     recipes,
     recentFoods,
@@ -444,10 +815,17 @@ function AddScreenInner() {
   const { isPremium } = useIsPremium();
   const { recordMealLogged } = useFasting();
   const { favorites } = useFavoriteFoods();
-  const { recordFood, getTopFoods } = useFrequentFoods();
+  const { frequentFoods, getTopFoods, getRecentFoods } = useFrequentFoods();
+  const { recentMeals } = useRecentMealSnapshots(7);
   const [mode, setMode] = useState('food');
   const [quickLogVisible, setQuickLogVisible] = useState(false);
   const [quickCalVisible, setQuickCalVisible] = useState(false);
+  const [undoToast, setUndoToast] = useState({
+    visible: false,
+    message: '',
+    mealType: 'snacks',
+    entryIds: [],
+  });
 
   // Recipe builder state
   const [recipeBuilderVisible, setRecipeBuilderVisible] = useState(false);
@@ -455,8 +833,13 @@ function AddScreenInner() {
   const [isAddingIngredient, setIsAddingIngredient] = useState(false);
 
   // Use meal from navigation params, or default based on time of day
-  const initialMeal = params.meal || getDefaultMealType();
+  const initialMeal = mealParam || getDefaultMealType();
   const [selectedMeal, setSelectedMeal] = useState(initialMeal);
+  const selectedMealLabel = mealTypes.find((meal) => meal.id === selectedMeal)?.label || 'Meal';
+  const yesterdayKey = useMemo(
+    () => format(subDays(parseISO(selectedDateKey), 1), 'yyyy-MM-dd'),
+    [selectedDateKey]
+  );
 
   // Food search state — MUST be declared before any useEffect that references them
   const [searchQuery, setSearchQuery] = useState('');
@@ -464,21 +847,25 @@ function AddScreenInner() {
   const [isSearching, setIsSearching] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [searchError, setSearchError] = useState(null);
-  const [searchSources, setSearchSources] = useState({ local: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
+  const [searchSources, setSearchSources] = useState({
+    local: 0,
+    restaurant: 0,
+    openFoodFacts: 0,
+    usda: 0,
+    fatSecret: 0,
+    nutritionix: 0,
+  });
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [trendingTerms, setTrendingTerms] = useState([]);
   const debouncedQuery = useDebounce(searchQuery, 80);
+  const lastTrackedSearchRef = useRef('');
 
-  // Tab state: 'recent' or 'search'
+  // Tab state: 'recent' or 'browse'
   const [activeTab, setActiveTab] = useState('recent');
 
   // Exercise search state
   const [exerciseQuery, setExerciseQuery] = useState('');
   const [filteredExercises, setFilteredExercises] = useState(EXERCISES);
-
-  // Barcode scanner state
-  const [scannerVisible, setScannerVisible] = useState(false);
-  const [productModalVisible, setProductModalVisible] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [scanError, setScanError] = useState(null);
 
   // Food detail modal state
   const [foodDetailModalVisible, setFoodDetailModalVisible] = useState(false);
@@ -495,8 +882,25 @@ function AddScreenInner() {
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceFoods, setVoiceFoods] = useState([]);
   const [addedVoiceIndices, setAddedVoiceIndices] = useState(new Set());
+  const searchInputRef = useRef(null);
+  const hasAutoFocusedSearchRef = useRef(false);
   const recordingRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
+
+  const loadSearchMetadata = useCallback(async () => {
+    try {
+      const [recent, trending] = await Promise.all([
+        getRecentSearches(8),
+        getTrendingTerms(6),
+      ]);
+      setRecentSearches(recent);
+      setTrendingTerms(trending);
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[add] Failed to load search metadata:', error);
+      }
+    }
+  }, []);
 
   // Cleanup recording on unmount to prevent resource leaks
   useEffect(() => {
@@ -522,7 +926,13 @@ function AddScreenInner() {
         'Voice food logging requires FuelIQ Pro. Upgrade to unlock AI-powered voice logging and more.',
         [
           { text: 'Not Now', style: 'cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/paywall') },
+          {
+            text: 'Upgrade',
+            onPress: () => router.push({
+              pathname: '/paywall',
+              params: { source: 'voice_logging', trigger: 'feature_gate' },
+            }),
+          },
         ]
       );
       return;
@@ -562,11 +972,11 @@ function AddScreenInner() {
       recordingTimeoutRef.current = setTimeout(() => {
         handleStopRecordingRef.current?.();
       }, 15000);
-    } catch (error) {
+    } catch {
       Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch((e) => { if (__DEV__) console.warn('[add] Failed to reset audio mode:', e); });
       Alert.alert('Error', 'Could not start recording. Please try again.');
     }
-  }, [isProcessingVoice]);
+  }, [isPremium, isProcessingVoice, router]);
 
   const handleStopRecording = useCallback(async () => {
     hapticLight();
@@ -597,7 +1007,7 @@ function AddScreenInner() {
 
       // Read file as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       // Clean up temp file
@@ -621,111 +1031,237 @@ function AddScreenInner() {
   // Keep ref in sync so auto-stop timeout calls the latest version
   handleStopRecordingRef.current = handleStopRecording;
 
-  const handleAddVoiceFood = useCallback((food, mealType, foodIndex) => {
-    const foodEntry = {
-      id: Crypto.randomUUID(),
-      name: food.name,
-      emoji: food.emoji || '🍽️',
-      calories: food.calories || 0,
-      protein: food.protein || 0,
-      carbs: food.carbs || 0,
-      fat: food.fat || 0,
-      serving: food.serving || '1 serving',
-      servingSize: 1,
-      servingUnit: 'serving',
-    };
+  const hideUndoToast = useCallback(() => {
+    setUndoToast((current) => ({ ...current, visible: false }));
+  }, []);
 
-    addFood(foodEntry, mealType);
+  const handleUndoLastLog = useCallback(async () => {
+    const { entryIds, mealType } = undoToast;
+    for (const entryId of entryIds) {
+      await removeFood(entryId, mealType);
+    }
+  }, [removeFood, undoToast]);
+
+  const toLoggedFoodEntry = useCallback((food, options = {}) => ({
+    id: Crypto.randomUUID(),
+    clientRequestId: Crypto.randomUUID(),
+    name: food.name,
+    emoji: food.emoji || '🍽️',
+    calories: food.calories || 0,
+    protein: food.protein || 0,
+    carbs: food.carbs || 0,
+    fat: food.fat || 0,
+    serving: food.serving || '1 serving',
+    servingSize: food.servingSize || 1,
+    servingUnit: food.servingUnit || 'serving',
+    image: food.image || null,
+    brand: food.brand || '',
+    barcode: food.barcode || '',
+    skipHaptic: options.skipHaptic || false,
+  }), []);
+
+  const logFoodsInstant = useCallback(async (foods, mealType = selectedMeal, message) => {
+    const normalizedFoods = Array.isArray(foods) ? foods : [foods];
+    if (normalizedFoods.length === 0) return [];
+
+    const shouldBatchHaptic = normalizedFoods.length > 1;
+    const entries = normalizedFoods.map((food) => toLoggedFoodEntry(food, { skipHaptic: shouldBatchHaptic }));
+    await Promise.all(entries.map((entry) => addFood(entry, mealType)));
+    if (shouldBatchHaptic) {
+      await hapticSuccess();
+    }
     recordMealLogged(mealType);
-    recordFood(foodEntry);
+    const mealLabel = mealTypes.find((meal) => meal.id === mealType)?.label || 'meal';
+    setUndoToast({
+      visible: true,
+      message: message || (
+        entries.length === 1
+          ? `${entries[0].name} logged`
+          : `${entries.length} items logged to ${mealLabel.toLowerCase()}`
+      ),
+      mealType,
+      entryIds: entries.map((entry) => entry.clientRequestId || entry.id),
+    });
+    return entries;
+  }, [addFood, recordMealLogged, selectedMeal, toLoggedFoodEntry]);
+
+  const logFoodInstant = useCallback(
+    async (food, mealType = selectedMeal, message) => {
+      const [entry] = await logFoodsInstant([food], mealType, message);
+      return entry;
+    },
+    [logFoodsInstant, selectedMeal]
+  );
+
+  const handleAddVoiceFood = useCallback((food, mealType, foodIndex) => {
+    logFoodInstant(food, mealType);
 
     // Inline confirmation — button switches to checkmark
     setAddedVoiceIndices(prev => new Set(prev).add(foodIndex));
-  }, [addFood, recordMealLogged, recordFood]);
+  }, [logFoodInstant]);
 
   const handleAddAllVoiceFoods = useCallback(() => {
     if (voiceFoods.length === 0) return;
 
-    voiceFoods.forEach((food, idx) => {
-      if (addedVoiceIndices.has(idx)) return; // skip already added
-      const foodEntry = {
-        id: Crypto.randomUUID(),
-        name: food.name,
-        emoji: food.emoji || '🍽️',
-        calories: food.calories || 0,
-        protein: food.protein || 0,
-        carbs: food.carbs || 0,
-        fat: food.fat || 0,
-        serving: food.serving || '1 serving',
-        servingSize: 1,
-        servingUnit: 'serving',
-      };
-      addFood(foodEntry, selectedMeal);
-      recordFood(foodEntry);
-    });
-    recordMealLogged(selectedMeal);
+    const foodsToLog = voiceFoods.filter((_, idx) => !addedVoiceIndices.has(idx));
+    if (foodsToLog.length === 0) return;
+
+    logFoodsInstant(foodsToLog, selectedMeal, `${foodsToLog.length} voice foods logged`);
 
     setVoiceFoods([]);
     setAddedVoiceIndices(new Set());
     setVoiceResultsVisible(false);
-  }, [voiceFoods, selectedMeal, addFood, recordMealLogged, recordFood, addedVoiceIndices]);
+  }, [voiceFoods, addedVoiceIndices, logFoodsInstant, selectedMeal]);
 
   // Quick-add a favorite food
   const handleAddFavorite = useCallback((food) => {
-    const foodEntry = {
-      id: Crypto.randomUUID(),
-      name: food.name,
-      emoji: food.emoji || '?',
-      calories: food.calories || 0,
-      protein: food.protein || 0,
-      carbs: food.carbs || 0,
-      fat: food.fat || 0,
-      serving: food.serving || '1 serving',
-      servingSize: 1,
-      servingUnit: 'serving',
-    };
-    addFood(foodEntry, selectedMeal);
-    recordMealLogged(selectedMeal);
-    recordFood(foodEntry);
-  }, [addFood, selectedMeal, recordMealLogged, recordFood]);
+    recordQuickAddUsed({
+      source: 'favorite_food',
+      mealType: selectedMeal,
+    });
+    logFoodInstant(food, selectedMeal);
+  }, [logFoodInstant, selectedMeal]);
 
   // Quick-log a frequent food (from QuickLogSheet or horizontal scroll)
   const handleQuickLog = useCallback((food, mealType) => {
-    hapticLight();
     const effectiveMeal = mealType || selectedMeal;
-    const foodEntry = {
-      id: Crypto.randomUUID(),
-      name: food.name,
-      emoji: food.emoji || '?',
-      calories: food.calories || 0,
-      protein: food.protein || 0,
-      carbs: food.carbs || 0,
-      fat: food.fat || 0,
-      serving: food.serving || '1 serving',
-      servingSize: 1,
-      servingUnit: food.servingUnit || 'serving',
-    };
-    addFood(foodEntry, effectiveMeal);
-    recordMealLogged(effectiveMeal);
-    recordFood(foodEntry);
-  }, [addFood, selectedMeal, recordMealLogged, recordFood]);
+    recordQuickAddUsed({
+      source: 'frequent_food',
+      mealType: effectiveMeal,
+    });
+    recordRepeatLogUsed({
+      source: 'frequent_food',
+      mealType: effectiveMeal,
+    }).catch(() => {});
+    logFoodInstant(food, effectiveMeal);
+  }, [logFoodInstant, selectedMeal]);
 
   // Quick Cal log handler
   const handleQuickCalLog = useCallback((food, mealType) => {
-    addFood(food, mealType);
-    recordMealLogged(mealType);
-    recordFood(food);
-  }, [addFood, recordMealLogged, recordFood]);
+    recordQuickAddUsed({
+      source: 'quick_cal',
+      mealType,
+    });
+    logFoodInstant(food, mealType);
+  }, [logFoodInstant]);
+
+  const handleQuickAddLocalFood = useCallback((food) => {
+    recordQuickAddUsed({
+      source: 'local_food',
+      mealType: selectedMeal,
+    });
+    logFoodInstant(food, selectedMeal);
+  }, [logFoodInstant, selectedMeal]);
+
+  const handleStarterFoodAdd = useCallback((food) => {
+    recordQuickAddUsed({
+      source: 'starter_pick',
+      mealType: selectedMeal,
+    });
+    logFoodInstant(food, selectedMeal);
+  }, [logFoodInstant, selectedMeal]);
+
+  const handleQuickAddRecipe = useCallback((recipe) => {
+    recordQuickAddUsed({
+      source: 'recipe',
+      mealType: selectedMeal,
+    });
+    logFoodInstant({
+      ...recipe,
+      serving: `1 serving (1/${recipe.servings} recipe)`,
+      servingSize: 1,
+      servingUnit: 'serving',
+    }, selectedMeal);
+  }, [logFoodInstant, selectedMeal]);
 
   // Frequent foods for horizontal quick-add strip
-  const topFrequentFoods = useMemo(() => getTopFoods(5), [getTopFoods]);
+  const topFrequentFoods = useMemo(() => getTopFoods(5), [frequentFoods, getTopFoods]);
+  const lastTwentyFoods = useMemo(() => {
+    const localRecentFoods = getRecentFoods(20);
+    const seenNames = new Set(localRecentFoods.map((food) => food.name?.toLowerCase().trim()));
+    const fallbackFoods = (recentFoods || [])
+      .filter((food) => {
+        const normalizedName = food.name?.toLowerCase().trim();
+        return normalizedName && !seenNames.has(normalizedName);
+      })
+      .slice(0, 20);
+
+    return [...localRecentFoods, ...fallbackFoods].slice(0, 20);
+  }, [frequentFoods, getRecentFoods, recentFoods]);
+  const recentMealSnapshots = useMemo(
+    () => recentMeals.filter((snapshot) => snapshot.items?.length > 0).slice(0, 7),
+    [recentMeals]
+  );
+  const starterFoods = useMemo(() => {
+    const ids = STARTER_FOOD_IDS_BY_MEAL[selectedMeal] || STARTER_FOOD_IDS_BY_MEAL.snacks;
+    return ids
+      .map((id) => foodDatabase.find((food) => food.id === id))
+      .filter(Boolean);
+  }, [selectedMeal]);
+  const yesterdayMeals = useMemo(
+    () => dayData?.[yesterdayKey]?.meals || null,
+    [dayData, yesterdayKey]
+  );
+  const repeatYesterdayOptions = useMemo(
+    () =>
+      mealTypes.map((meal) => ({
+        ...meal,
+        itemCount: yesterdayMeals?.[meal.id]?.length || 0,
+      })),
+    [yesterdayMeals]
+  );
 
   // Update selected meal when params change
   useEffect(() => {
-    if (params.meal) {
-      setSelectedMeal(params.meal);
+    if (mealParam) {
+      setSelectedMeal(mealParam);
     }
-  }, [params.meal]);
+  }, [mealParam]);
+
+  useEffect(() => {
+    if (focusParam === 'browse') {
+      setActiveTab('browse');
+      return;
+    }
+
+    if (focusParam === 'recent') {
+      setActiveTab('recent');
+    }
+  }, [focusParam]);
+
+  useEffect(() => {
+    if (typeof queryParam === 'string' && queryParam.length > 0) {
+      setMode('food');
+      setSearchQuery(queryParam);
+    }
+  }, [queryParam]);
+
+  useEffect(() => {
+    if (!isOnboardingHandoff || mode !== 'food' || hasAutoFocusedSearchRef.current) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      searchInputRef.current?.focus();
+      hasAutoFocusedSearchRef.current = true;
+    }, 250);
+
+    return () => clearTimeout(timeoutId);
+  }, [isOnboardingHandoff, mode]);
+
+  useEffect(() => {
+    const source = typeof sourceParam === 'string' && sourceParam.length > 0
+      ? sourceParam
+      : typeof queryParam === 'string' && queryParam.length > 0
+        ? 'search_handoff'
+        : params.quickCal === 'true'
+          ? 'quick_cal'
+          : mealParam
+            ? 'meal_shortcut'
+            : 'tab';
+
+    recordAddOpened(source, initialMeal);
+  }, [initialMeal, mealParam, params.quickCal, queryParam, sourceParam]);
 
   // Handle quickCal deep link
   useEffect(() => {
@@ -737,9 +1273,19 @@ function AddScreenInner() {
   // Fetch recent foods on mount
   useEffect(() => {
     fetchRecentFoods();
-  }, []);
+  }, [fetchRecentFoods]);
 
-  // Only reset to recent tab when search is fully cleared (not while typing)
+  useEffect(() => {
+    loadSearchMetadata();
+  }, [loadSearchMetadata]);
+
+  useEffect(() => {
+    if (!dayData?.[yesterdayKey]) {
+      refreshDate(yesterdayKey);
+    }
+  }, [dayData, refreshDate, yesterdayKey]);
+
+  // Keep browsing simple: typing always searches, clearing returns to recents.
   useEffect(() => {
     if (mode === 'food' && searchQuery.length === 0) {
       setActiveTab('recent');
@@ -771,14 +1317,24 @@ function AddScreenInner() {
         setSearchResults([]);
         setSearchError(null);
         setIsTyping(false);
+        lastTrackedSearchRef.current = '';
         return;
       }
 
       setIsTyping(false);
       setSearchError(null);
+      const startedAt = Date.now();
+      const normalizedQuery = debouncedQuery.trim().toLowerCase();
+      if (lastTrackedSearchRef.current !== normalizedQuery) {
+        lastTrackedSearchRef.current = normalizedQuery;
+        recordSearchStarted({
+          query: debouncedQuery,
+          meal: selectedMeal,
+        });
+      }
 
       // Phase 1: Show local matches INSTANTLY via pre-built index (O(1) vs O(n))
-      const localMatches = searchFoodIndex(debouncedQuery, 5);
+      const localMatches = searchLocalFoodDatabase(debouncedQuery, 5);
 
       // Render local results immediately -- user sees results in <50ms
       if (localMatches.length > 0) {
@@ -788,10 +1344,16 @@ function AddScreenInner() {
       // Phase 2: Check cache first, then fetch API results
       const cached = getCachedSearch(debouncedQuery);
       if (cached) {
-        if (!cancelled) {
-          setSearchResults(cached.products);
-          setSearchSources(cached.sources);
-        }
+        if (cancelled) return;
+        setSearchResults(cached.products);
+        setSearchSources(cached.sources);
+        recordSearchCompleted({
+          query: debouncedQuery,
+          meal: selectedMeal,
+          resultCount: cached.products.length,
+          latencyMs: Date.now() - startedAt,
+          fromCache: true,
+        });
         return;
       }
 
@@ -806,11 +1368,25 @@ function AddScreenInner() {
           setSearchSources(results.sources);
           setCachedSearch(debouncedQuery, results.products, results.sources);
         }
-      } catch (error) {
+        recordSearchCompleted({
+          query: debouncedQuery,
+          meal: selectedMeal,
+          resultCount: results.products.length,
+          latencyMs: Date.now() - startedAt,
+        });
+        loadSearchMetadata();
+      } catch {
         if (cancelled) return;
         if (localMatches.length === 0) {
           setSearchError('Could not reach food databases. Showing local foods only.');
         }
+        recordSearchCompleted({
+          query: debouncedQuery,
+          meal: selectedMeal,
+          resultCount: localMatches.length,
+          latencyMs: Date.now() - startedAt,
+          degraded: true,
+        });
       } finally {
         if (!cancelled) {
           setIsSearching(false);
@@ -823,12 +1399,12 @@ function AddScreenInner() {
     }
 
     return () => { cancelled = true; };
-  }, [debouncedQuery, mode]);
+  }, [debouncedQuery, isPremium, loadSearchMetadata, mode, selectedMeal]);
 
   // Filter local foods based on search (for quick-add section when not searching API)
   const filteredLocalFoods = useMemo(() => {
     if (searchQuery.length < 2) return foodDatabase;
-    return searchFoodIndex(searchQuery, 50);
+    return searchLocalFoodDatabase(searchQuery, 50);
   }, [searchQuery]);
 
   // Filter recipes based on search query
@@ -844,6 +1420,13 @@ function AddScreenInner() {
   const handleSelectResult = useCallback((product) => {
     hapticLight();
     Keyboard.dismiss();
+    recordSearchResultSelected({
+      meal: selectedMeal,
+      name: product.name,
+      sourceLabel: product.sourceLabel,
+      confidenceLevel: product.confidenceLevel,
+      quickAdd: false,
+    });
     const food = productToFood(product);
     setSelectedFood({
       ...food,
@@ -852,8 +1435,25 @@ function AddScreenInner() {
       serving: product.serving || '100g',
       servingSize: product.servingSize || 100,
       servingUnit: product.servingUnit || 'g',
+      source: product.source,
+      sourceLabel: product.sourceLabel,
+      qualityTag: product.qualityTag,
+      qualityLabel: product.qualityLabel,
+      trustScore: product.trustScore,
+      confidenceScore: product.confidenceScore,
+      confidenceLevel: product.confidenceLevel,
+      confidenceReason: product.confidenceReason,
+      qualityIssues: product.qualityIssues,
+      reportable: product.reportable,
     });
     setFoodDetailModalVisible(true);
+  }, [selectedMeal]);
+
+  const handleSearchSuggestionPress = useCallback((query) => {
+    hapticLight();
+    setMode('food');
+    setActiveTab('recent');
+    setSearchQuery(query);
   }, []);
 
   // Handle selecting a local food - open FoodDetailModal
@@ -862,23 +1462,26 @@ function AddScreenInner() {
     Keyboard.dismiss();
     setSelectedFood({
       ...food,
-      serving: '1 serving',
-      servingSize: 1,
-      servingUnit: 'serving',
+      serving: food.serving || '1 serving',
+      servingSize: food.servingSize || 1,
+      servingUnit: food.servingUnit || 'serving',
+      qualityTag: food.qualityTag || (food.isLocal ? 'curated' : undefined),
+      qualityLabel: food.qualityLabel || (food.isLocal ? 'Curated' : undefined),
+      confidenceReason: food.confidenceReason || (food.isLocal ? 'Curated nutrition data' : undefined),
+      sourceLabel: food.sourceLabel || (food.isLocal ? 'FuelIQ' : undefined),
+      reportable: food.reportable ?? Boolean(food.isLocal),
     });
     setFoodDetailModalVisible(true);
   }, []);
 
   // Handle confirming food from FoodDetailModal
   const handleConfirmFoodDetail = useCallback((food, mealType) => {
-    addFood(food, mealType);
-    recordMealLogged(mealType);
-    recordFood(food);
+    logFoodInstant(food, mealType);
     setFoodDetailModalVisible(false);
     setSelectedFood(null);
     setSearchQuery('');
-    router.navigate('/');
-  }, [addFood, recordMealLogged, recordFood, router]);
+    setActiveTab('recent');
+  }, [logFoodInstant]);
 
   // Close food detail modal
   const handleCloseFoodDetail = useCallback(() => {
@@ -928,19 +1531,6 @@ function AddScreenInner() {
     router.push('/create-recipe');
   };
 
-  // Handle confirming product from modal
-  const handleConfirmProduct = useCallback((mealType) => {
-    if (selectedProduct) {
-      const food = productToFood(selectedProduct);
-      addFood(food, mealType);
-      recordMealLogged(mealType); // Notify fasting tracker
-      setProductModalVisible(false);
-      setSelectedProduct(null);
-      setSearchQuery('');
-      router.navigate('/');
-    }
-  }, [selectedProduct, addFood, recordMealLogged, router]);
-
   // Exercise handlers
   const handleSelectExercise = useCallback((exercise) => {
     hapticLight();
@@ -954,24 +1544,85 @@ function AddScreenInner() {
     setExerciseModalVisible(false);
     setSelectedExercise(null);
     setExerciseQuery('');
-    router.navigate('/');
-  }, [addExercise, router]);
+  }, [addExercise]);
 
-  // Barcode scanner handlers
-  const handleOpenScanner = () => {
-    Keyboard.dismiss();
-    // Navigate to standalone scanner screen for faster experience
-    router.push({
-      pathname: '/scanner',
-      params: { meal: selectedMeal },
+  const handleRecentMealRepeat = useCallback((snapshot) => {
+    recordQuickAddUsed({
+      source: 'recent_meal',
+      mealType: selectedMeal,
+      itemCount: snapshot.itemCount,
     });
-  };
+    recordRepeatLogUsed({
+      source: 'recent_meal',
+      mealType: selectedMeal,
+      itemCount: snapshot.itemCount,
+    }).catch(() => {});
+    logFoodsInstant(
+      snapshot.items,
+      selectedMeal,
+      `${snapshot.itemCount} items repeated to ${mealTypes.find((meal) => meal.id === selectedMeal)?.label?.toLowerCase() || 'meal'}`
+    );
+  }, [logFoodsInstant, selectedMeal]);
 
-  // Barcode lookup screen (Open Food Facts)
+  const handleRepeatYesterday = useCallback((mealType) => {
+    const foods = (yesterdayMeals?.[mealType] || []).map((food) => ({
+      ...food,
+      id: undefined,
+    }));
+    if (foods.length === 0) return;
+
+    recordQuickAddUsed({
+      source: 'repeat_yesterday',
+      mealType: selectedMeal,
+      itemCount: foods.length,
+    });
+    recordRepeatLogUsed({
+      source: 'repeat_yesterday',
+      mealType: selectedMeal,
+      itemCount: foods.length,
+    }).catch(() => {});
+    logFoodsInstant(
+      foods,
+      selectedMeal,
+      `Repeated yesterday's ${mealTypes.find((meal) => meal.id === mealType)?.label?.toLowerCase() || 'meal'}`
+    );
+  }, [logFoodsInstant, selectedMeal, yesterdayMeals]);
+
+  const handleReportFood = useCallback((food) => {
+    Keyboard.dismiss();
+    setFoodDetailModalVisible(false);
+    setSelectedFood(null);
+    const normalizedName = food.brand
+      ? food.name.replace(new RegExp(`\\s*\\(${food.brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)$`, 'i'), '')
+      : food.name;
+    router.push({
+      pathname: '/submit-food',
+      params: {
+        report: 'true',
+        source: food.source || '',
+        sourceLabel: food.sourceLabel || 'Search',
+        qualityLabel: food.qualityLabel || '',
+        name: normalizedName || '',
+        brand: food.brand || '',
+        barcode: food.barcode || '',
+        calories: String(food.calories || 0),
+        protein: String(food.protein || 0),
+        carbs: String(food.carbs || 0),
+        fat: String(food.fat || 0),
+        servingSize: String(food.servingSize || 1),
+        servingUnit: food.servingUnit || 'serving',
+      },
+    });
+  }, [router]);
+
+  // Barcode lookup screen (Open Food Facts + manual fallback)
   const handleOpenBarcodeLookup = () => {
     hapticLight();
     Keyboard.dismiss();
-    router.push('/barcode');
+    router.push({
+      pathname: '/barcode',
+      params: { meal: selectedMeal },
+    });
   };
 
   // AI Food Lens handler
@@ -991,53 +1642,16 @@ function AddScreenInner() {
     router.push('/generate-workout');
   };
 
-  const handleCloseScanner = () => {
-    setScannerVisible(false);
-  };
-
-  const handleBarcodeScanned = async (barcode) => {
-    try {
-      const product = await fetchProductByBarcode(barcode);
-
-      if (product) {
-        // If product has complete nutrition data, auto-log it (skip modal)
-        if (product.calories > 0 && product.name) {
-          const foodItem = {
-            name: product.name,
-            brand: product.brand || '',
-            calories: product.calories,
-            protein: product.protein || 0,
-            carbs: product.carbs || 0,
-            fat: product.fat || 0,
-            serving: product.serving || '1 serving',
-            barcode: product.barcode || barcode,
-          };
-          await addFood(foodItem, selectedMeal);
-          await hapticSuccess();
-          setScannerVisible(false);
-          return;
-        }
-        // Incomplete data — show modal for user to review/edit
-        setSelectedProduct(product);
-        setScannerVisible(false);
-        setProductModalVisible(true);
-      } else {
-        setScanError('Product not found in database');
-        setScannerVisible(false);
-        setProductModalVisible(true);
-      }
-    } catch (error) {
-      setScanError('Failed to look up product. Please try again.');
-      setScannerVisible(false);
-      setProductModalVisible(true);
-    }
-  };
-
-  const handleCloseProductModal = useCallback(() => {
-    setProductModalVisible(false);
-    setSelectedProduct(null);
-    setScanError(null);
-  }, []);
+  const handleOpenImportSwitcher = useCallback(async () => {
+    await hapticLight();
+    Keyboard.dismiss();
+    router.push({
+      pathname: '/import-myfitnesspal',
+      params: {
+        source: isOnboardingHandoff ? 'onboarding_add_empty_state' : 'add_empty_state',
+      },
+    });
+  }, [isOnboardingHandoff, router]);
 
   const clearSearch = () => {
     if (mode === 'food') {
@@ -1046,7 +1660,14 @@ function AddScreenInner() {
       setIsTyping(false);
       setIsSearching(false);
       setSearchError(null);
-      setSearchSources({ local: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
+      setSearchSources({
+        local: 0,
+        restaurant: 0,
+        openFoodFacts: 0,
+        usda: 0,
+        fatSecret: 0,
+        nutritionix: 0,
+      });
     } else {
       setExerciseQuery('');
     }
@@ -1058,37 +1679,94 @@ function AddScreenInner() {
 
   // 1-tap quick add: log food with 1 serving, skip FoodDetailModal
   const handleQuickAddResult = useCallback(async (product) => {
-    hapticLight();
     Keyboard.dismiss();
+    recordSearchResultSelected({
+      meal: selectedMeal,
+      name: product.name,
+      sourceLabel: product.sourceLabel,
+      confidenceLevel: product.confidenceLevel,
+      quickAdd: true,
+    });
+    recordQuickAddUsed({
+      source: 'search_result',
+      mealType: selectedMeal,
+    });
     const food = productToFood(product);
-    await addFood(food, selectedMeal);
-  }, [addFood, selectedMeal]);
+    await logFoodInstant(food, selectedMeal);
+  }, [logFoodInstant, selectedMeal]);
 
   // Stable renderItem and keyExtractor callbacks for FlatList optimization
   const renderSearchResult = useCallback(({ item, index }) => (
-    <SearchResultItem item={item} index={index} onPress={handleSelectResult} onQuickAdd={handleQuickAddResult} />
-  ), [handleSelectResult, handleQuickAddResult]);
+    <SearchResultItem
+      item={item}
+      index={index}
+      onPress={handleSelectResult}
+      onQuickAdd={handleQuickAddResult}
+      onReport={handleReportFood}
+    />
+  ), [handleSelectResult, handleQuickAddResult, handleReportFood]);
 
   const renderRecentFood = useCallback(({ item, index }) => (
-    <RecentFoodItem item={item} index={index} onPress={handleSelectLocalFood} />
-  ), [handleSelectLocalFood]);
+    <RecentFoodItem
+      item={item}
+      index={index}
+      onPress={handleSelectLocalFood}
+      onQuickAdd={handleQuickAddLocalFood}
+    />
+  ), [handleQuickAddLocalFood, handleSelectLocalFood]);
 
   const renderLocalFood = useCallback(({ item, index }) => (
-    <LocalFoodItem item={item} index={index} onPress={handleSelectLocalFood} />
-  ), [handleSelectLocalFood]);
+    <LocalFoodItem
+      item={item}
+      index={index}
+      onPress={handleSelectLocalFood}
+      onQuickAdd={handleQuickAddLocalFood}
+    />
+  ), [handleQuickAddLocalFood, handleSelectLocalFood]);
 
   const renderExercise = useCallback(({ item }) => (
     <ExerciseItem exercise={item} onPress={handleSelectExercise} />
   ), [handleSelectExercise]);
 
-  const searchKeyExtractor = useCallback((item) => item.barcode, []);
-  const idKeyExtractor = useCallback((item) => item.id, []);
+  const searchKeyExtractor = useCallback((item) => item.barcode || item.id || item.name, []);
+  const idKeyExtractor = useCallback((item) => String(item.id || item.name), []);
+  const isShowingSearchResults = mode === 'food' && searchQuery.trim().length >= 2;
+  const showFirstLogPrompt = (
+    isOnboardingHandoff &&
+    mode === 'food' &&
+    searchQuery.trim().length === 0 &&
+    frequentFoods.length === 0 &&
+    recentMeals.length === 0
+  );
+  const hasAddScreenHistory = (
+    topFrequentFoods.length > 0 ||
+    recentMealSnapshots.length > 0 ||
+    lastTwentyFoods.length > 0 ||
+    favorites.length > 0
+  );
+  const showImportSwitcherCard = (
+    mode === 'food' &&
+    searchQuery.trim().length === 0 &&
+    !recentFoodsLoading &&
+    !hasAddScreenHistory
+  );
+  const showStarterPicks = showFirstLogPrompt && starterFoods.length > 0;
+  const searchPlaceholder = mode === 'food'
+    ? isOnboardingHandoff
+      ? `Search your first ${selectedMealLabel.toLowerCase()}...`
+      : 'Search foods...'
+    : 'Search exercises...';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="add-screen">
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Add {mode === 'food' ? 'Food' : 'Exercise'}</Text>
+        <Text style={styles.title}>{mode === 'food' ? 'Log Fast' : 'Add Exercise'}</Text>
+        <Text style={styles.subtitle}>
+          {mode === 'food'
+            ? 'Search, scan, or quick-add without leaving the logging flow.'
+            : 'Search and log movement with minimal friction.'}
+        </Text>
       </View>
 
       {/* Mode Selector */}
@@ -1100,8 +1778,9 @@ function AddScreenInner() {
           <Search size={20} color={Colors.textSecondary} />
           <TextInput
             testID="food-search-input"
+            ref={searchInputRef}
             style={styles.searchInput}
-            placeholder={mode === 'food' ? 'Search foods...' : 'Search exercises...'}
+            placeholder={searchPlaceholder}
             placeholderTextColor={Colors.textTertiary}
             value={currentQuery}
             onChangeText={setCurrentQuery}
@@ -1115,44 +1794,69 @@ function AddScreenInner() {
             </Pressable>
           )}
         </View>
-        {mode === 'food' && (
-          <>
-            <Pressable
-              style={styles.quickCalButton}
-              onPress={() => setQuickCalVisible(true)}
-            >
-              <Zap size={22} color={Colors.warning} fill={Colors.warning} />
-            </Pressable>
-            <Pressable
-              style={[styles.micButton, isRecording && styles.micButtonRecording]}
-              onPress={isRecording ? handleStopRecording : handleStartRecording}
-              disabled={isProcessingVoice}
-            >
-              {isProcessingVoice ? (
-                <ActivityIndicator size="small" color={Colors.primary} />
-              ) : (
-                <Mic size={22} color={isRecording ? '#fff' : Colors.primary} />
-              )}
-            </Pressable>
-            <Pressable style={styles.aiScanButton} onPress={handleOpenFoodLens}>
-              <Camera size={22} color="#fff" />
-            </Pressable>
-            <Pressable style={styles.scanButton} onPress={handleOpenBarcodeLookup}>
-              <ScanBarcode size={22} color={Colors.primary} />
-            </Pressable>
-            <Pressable
-              style={styles.customFoodButton}
-              onPress={() => router.push({ pathname: '/create-food', params: { meal: selectedMeal } })}
-            >
-              <Plus size={22} color={Colors.success} />
-            </Pressable>
-          </>
-        )}
       </View>
 
       {/* Food Mode Content */}
       {mode === 'food' && (
         <>
+          <MealTypeSelector selected={selectedMeal} onSelect={setSelectedMeal} />
+
+          {showFirstLogPrompt && (
+            <View style={styles.firstLogPrompt}>
+              <View style={styles.firstLogPromptIcon}>
+                <Utensils size={18} color={Colors.primary} strokeWidth={2.3} />
+              </View>
+              <View style={styles.firstLogPromptCopy}>
+                <Text style={styles.firstLogPromptEyebrow}>First win</Text>
+                <Text style={styles.firstLogPromptTitle}>
+                  Log your first {selectedMealLabel.toLowerCase()} now
+                </Text>
+                <Text style={styles.firstLogPromptBody}>
+                  Search something you actually ate. If search feels slow, use Scan or Quick Cal just below.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {showImportSwitcherCard && (
+            <MyFitnessPalImportCard
+              eyebrow={isOnboardingHandoff ? 'Switch Instead' : 'Have History Elsewhere?'}
+              title="Already logged meals in MyFitnessPal?"
+              body="Import your diary first, then use repeat meals and quick add from day one."
+              buttonLabel="Import MyFitnessPal diary"
+              onPress={handleOpenImportSwitcher}
+              style={styles.importSwitcherCard}
+            />
+          )}
+
+          <FastCapturePanel
+            selectedMeal={selectedMeal}
+            onOpenBarcodeLookup={handleOpenBarcodeLookup}
+            onOpenQuickCal={() => setQuickCalVisible(true)}
+            onOpenCustomFood={() => router.push({ pathname: '/create-food', params: { meal: selectedMeal } })}
+            onOpenFoodLens={handleOpenFoodLens}
+            onOpenVoice={isRecording ? handleStopRecording : handleStartRecording}
+            isRecording={isRecording}
+            isProcessingVoice={isProcessingVoice}
+          />
+
+          {showStarterPicks && (
+            <View style={styles.favoritesSection}>
+              <View style={styles.favoritesSectionHeader}>
+                <Wand2 size={16} color={Colors.primary} />
+                <Text style={styles.sectionLabel}>Starter Picks</Text>
+              </View>
+              {starterFoods.map((food, index) => (
+                <FavoriteFoodItem
+                  key={food.id || food.name}
+                  item={food}
+                  onAdd={handleStarterFoodAdd}
+                  index={index}
+                />
+              ))}
+            </View>
+          )}
+
           {/* Quick Add Frequent Foods Strip */}
           {topFrequentFoods.length > 0 && (
             <ReAnimated.View entering={FadeInDown.delay(50).springify().mass(0.5).damping(10)}>
@@ -1189,18 +1893,15 @@ function AddScreenInner() {
             </ReAnimated.View>
           )}
 
-          {/* Meal Type Selector */}
-          <MealTypeSelector selected={selectedMeal} onSelect={setSelectedMeal} />
-
           {/* Search/Recent Toggle */}
           <SearchRecentToggle
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            recentCount={recentFoods.length}
+            recentCount={lastTwentyFoods.length}
           />
 
           {/* Content */}
-          {activeTab === 'search' && searchQuery.length >= 2 ? (
+          {isShowingSearchResults ? (
             // Search Results
             <View style={styles.resultsContainer}>
               {(isTyping || isSearching) ? (
@@ -1235,10 +1936,11 @@ function AddScreenInner() {
                   removeClippedSubviews={true}
                   ListHeaderComponent={
                     <Text style={styles.resultsHeader}>
-                      {searchResults.length} results
+                      {searchResults.length} matches
                       {(searchSources.openFoodFacts > 0 || searchSources.usda > 0 || searchSources.fatSecret > 0 || searchSources.nutritionix > 0)
                         ? ` from ${[
                             searchSources.local > 0 && 'local',
+                            searchSources.restaurant > 0 && 'restaurant',
                             searchSources.usda > 0 && 'USDA',
                             searchSources.fatSecret > 0 && 'FatSecret',
                             searchSources.openFoodFacts > 0 && 'OpenFoodFacts',
@@ -1251,16 +1953,16 @@ function AddScreenInner() {
               )}
             </View>
           ) : activeTab === 'recent' ? (
-            // Recent Foods with Favorites section
+            // Logging speed surfaces: repeat, recent meals, favorites, last 20 foods
             <View style={styles.resultsContainer}>
-              {recentFoodsLoading ? (
+              {recentFoodsLoading && lastTwentyFoods.length === 0 && recentMealSnapshots.length === 0 ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color={Colors.primary} />
                   <Text style={styles.loadingText}>Loading recent foods...</Text>
                 </View>
               ) : (
                 <OptimizedFlatList
-                  data={recentFoods}
+                  data={lastTwentyFoods}
                   keyExtractor={idKeyExtractor}
                   renderItem={renderRecentFood}
                   contentContainerStyle={styles.resultsList}
@@ -1272,6 +1974,55 @@ function AddScreenInner() {
                   removeClippedSubviews={true}
                   ListHeaderComponent={
                     <>
+                      <View style={styles.focusSection}>
+                        <View style={styles.focusSectionHeader}>
+                          <RotateCcw size={16} color={Colors.primary} />
+                          <Text style={styles.focusSectionLabel}>Repeat Yesterday</Text>
+                        </View>
+                        <View style={styles.repeatChipRow}>
+                          {repeatYesterdayOptions.map((meal) => (
+                            <RepeatYesterdayChip
+                              key={meal.id}
+                              mealType={meal.id}
+                              itemCount={meal.itemCount}
+                              disabled={meal.itemCount === 0}
+                              onPress={handleRepeatYesterday}
+                            />
+                          ))}
+                        </View>
+                      </View>
+
+                      <SearchSuggestionChips
+                        recentSearches={recentSearches}
+                        trendingTerms={trendingTerms}
+                        onSelect={handleSearchSuggestionPress}
+                      />
+
+                      <View style={styles.focusSection}>
+                        <View style={styles.focusSectionHeader}>
+                          <Clock size={16} color={Colors.primary} />
+                          <Text style={styles.focusSectionLabel}>Last 7 Meals</Text>
+                        </View>
+                        {recentMealSnapshots.length === 0 ? (
+                          <View style={styles.focusEmptyCard}>
+                            <Text style={styles.focusEmptyTitle}>No recent meals yet</Text>
+                            <Text style={styles.focusEmptyHint}>
+                              Full meals you log will appear here for 1-tap repeats
+                            </Text>
+                          </View>
+                        ) : (
+                          recentMealSnapshots.map((snapshot, index) => (
+                            <RecentMealCard
+                              key={snapshot.id}
+                              snapshot={snapshot}
+                              selectedMeal={selectedMeal}
+                              onPress={handleRecentMealRepeat}
+                              index={index}
+                            />
+                          ))
+                        )}
+                      </View>
+
                       {/* Favorites Section */}
                       <View style={styles.favoritesSection}>
                         <View style={styles.favoritesSectionHeader}>
@@ -1298,13 +2049,13 @@ function AddScreenInner() {
                         )}
                       </View>
 
-                      {/* Recent header */}
-                      {recentFoods.length > 0 && (
+                      {/* Last 20 foods header */}
+                      {lastTwentyFoods.length > 0 && (
                         <Text style={styles.resultsHeader}>
-                          {recentFoods.length} recently logged foods
+                          {lastTwentyFoods.length} recently logged foods
                         </Text>
                       )}
-                      {recentFoods.length === 0 && (
+                      {lastTwentyFoods.length === 0 && (
                         <View style={styles.favoritesEmptyCard}>
                           <Clock size={32} color={Colors.textTertiary} />
                           <Text style={styles.favoritesEmptyTitle}>No recent foods yet</Text>
@@ -1362,6 +2113,7 @@ function AddScreenInner() {
                           key={recipe.id}
                           recipe={recipe}
                           onPress={handleSelectRecipe}
+                          onQuickAdd={handleQuickAddRecipe}
                         />
                       ))}
                       {recipes.length > 5 && searchQuery.length === 0 && (
@@ -1448,26 +2200,6 @@ function AddScreenInner() {
       )}
 
       {/* Lazy-mounted modals — only render when visible to reduce memory */}
-
-      {scannerVisible && (
-        <BarcodeScanner
-          visible={scannerVisible}
-          onClose={handleCloseScanner}
-          onBarcodeScanned={handleBarcodeScanned}
-        />
-      )}
-
-      {productModalVisible && (
-        <ProductFoundModal
-          visible={productModalVisible}
-          product={selectedProduct}
-          error={scanError}
-          onClose={handleCloseProductModal}
-          onConfirm={handleConfirmProduct}
-          defaultMeal={selectedMeal}
-        />
-      )}
-
       {foodDetailModalVisible && (
         <FoodDetailModal
           visible={foodDetailModalVisible}
@@ -1475,6 +2207,7 @@ function AddScreenInner() {
           mealType={selectedMeal}
           onClose={handleCloseFoodDetail}
           onConfirm={isAddingIngredient ? handleConfirmAsIngredient : handleConfirmFoodDetail}
+          onReport={handleReportFood}
         />
       )}
 
@@ -1538,6 +2271,13 @@ function AddScreenInner() {
           initialMealType={selectedMeal}
         />
       )}
+
+      <UndoToast
+        visible={undoToast.visible}
+        message={undoToast.message}
+        onUndo={handleUndoLastLog}
+        onDismiss={hideUndoToast}
+      />
     </SafeAreaView>
   );
 }
@@ -1556,6 +2296,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xxxl,
     fontWeight: FontWeight.bold,
     color: Colors.text,
+  },
+  subtitle: {
+    marginTop: Spacing.xs,
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
+    lineHeight: 22,
   },
   modeSelectorContainer: {
     flexDirection: 'row',
@@ -1591,6 +2337,51 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
+  firstLogPrompt: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.primary + '2A',
+    backgroundColor: Colors.primary + '12',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  firstLogPromptIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  firstLogPromptCopy: {
+    flex: 1,
+  },
+  firstLogPromptEyebrow: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  firstLogPromptTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  firstLogPromptBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  importSwitcherCard: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
   searchInputContainer: {
     flex: 1,
     flexDirection: 'row',
@@ -1606,6 +2397,108 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     color: Colors.text,
     height: '100%',
+  },
+  fastCapturePanel: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: Spacing.md,
+  },
+  fastCaptureHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+  },
+  fastCaptureEyebrow: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  fastCaptureTitle: {
+    marginTop: 4,
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  fastCaptureMealBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary + '16',
+    borderWidth: 1,
+    borderColor: Colors.primary + '25',
+  },
+  fastCaptureMealBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
+  fastCaptureGrid: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  fastCaptureAction: {
+    flex: 1,
+    minHeight: 92,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  fastCaptureActionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  fastCaptureActionLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  fastCaptureActionHint: {
+    marginTop: 4,
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  fastCaptureSecondaryRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  fastCaptureSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    flex: 1,
+    minHeight: 42,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  fastCaptureSecondaryButtonActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  fastCaptureSecondaryText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+    color: Colors.textSecondary,
+  },
+  fastCaptureSecondaryTextActive: {
+    color: Colors.background,
+    fontWeight: FontWeight.semibold,
   },
   aiScanButton: {
     width: 48,
@@ -1693,6 +2586,55 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: FontWeight.semibold,
   },
+  searchSuggestionSection: {
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  searchSuggestionBlock: {
+    gap: Spacing.xs,
+  },
+  searchSuggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  searchSuggestionLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+  },
+  searchSuggestionScroll: {
+    paddingRight: Spacing.md,
+    gap: Spacing.sm,
+  },
+  searchSuggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  searchSuggestionChipTrending: {
+    backgroundColor: Colors.primary + '12',
+    borderColor: Colors.primary + '28',
+  },
+  searchSuggestionChipText: {
+    fontSize: FontSize.sm,
+    color: Colors.text,
+    fontWeight: FontWeight.medium,
+  },
+  searchSuggestionChipTextTrending: {
+    color: Colors.primary,
+  },
+  searchSuggestionCount: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+  },
   // Recent Food Item styles
   recentFoodItem: {
     flexDirection: 'row',
@@ -1749,6 +2691,140 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  focusSection: {
+    marginBottom: Spacing.md,
+  },
+  focusSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  focusSectionLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  repeatChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  repeatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  repeatChipDisabled: {
+    opacity: 0.55,
+  },
+  repeatChipLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+    color: Colors.text,
+  },
+  repeatChipLabelDisabled: {
+    color: Colors.textSecondary,
+  },
+  repeatChipCount: {
+    minWidth: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary + '16',
+    color: Colors.primary,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    textAlign: 'center',
+  },
+  repeatChipCountDisabled: {
+    backgroundColor: Colors.surfaceElevated,
+    color: Colors.textTertiary,
+  },
+  focusEmptyCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  focusEmptyTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  focusEmptyHint: {
+    marginTop: 4,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  recentMealCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.sm,
+  },
+  recentMealHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  recentMealDate: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    fontWeight: FontWeight.semibold,
+  },
+  recentMealTitle: {
+    marginTop: 4,
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  recentMealBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary + '16',
+  },
+  recentMealBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
+  recentMealPreview: {
+    marginTop: Spacing.sm,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  recentMealFooter: {
+    marginTop: Spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  recentMealMeta: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+  },
+  recentMealCalories: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
   },
   resultsContainer: {
     flex: 1,
@@ -1838,6 +2914,30 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 1,
   },
+  resultTrustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  resultQualityBadge: {
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  resultQualityBadgeText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  resultConfidenceText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.medium,
+  },
   resultMacros: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1854,7 +2954,11 @@ const styles = StyleSheet.create({
   },
   resultCalories: {
     alignItems: 'flex-end',
-    marginRight: Spacing.sm,
+  },
+  resultTrailing: {
+    alignItems: 'flex-end',
+    gap: 8,
+    marginLeft: Spacing.sm,
   },
   resultCaloriesValue: {
     fontSize: FontSize.lg,
@@ -1877,6 +2981,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  resultActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  resultReportButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.warning + '16',
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   quickAddBtnInline: {
     width: 28,
     height: 28,
@@ -1890,12 +3009,14 @@ const styles = StyleSheet.create({
   },
   localFoodItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.sm,
+  },
+  localFoodInfo: {
+    flex: 1,
   },
   localFoodName: {
     fontSize: FontSize.md,
@@ -1905,6 +3026,15 @@ const styles = StyleSheet.create({
   localFoodCalories: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
+  },
+  localFoodQuickAdd: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: Spacing.sm,
   },
   sectionLabel: {
     fontSize: FontSize.sm,

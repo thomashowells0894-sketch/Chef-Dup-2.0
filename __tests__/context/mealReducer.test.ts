@@ -161,6 +161,34 @@ describe('mealReducer', () => {
 
       expect(state.recentLogs).toHaveLength(0);
     });
+
+    it('removes food by clientRequestId after optimistic replacement', () => {
+      let state = mealReducer(initialState, {
+        type: 'ADD_FOOD',
+        payload: {
+          food: {
+            id: 'server-1',
+            clientRequestId: 'client-1',
+            name: 'Protein Bar',
+            calories: 200,
+            protein: 20,
+            carbs: 18,
+            fat: 7,
+            serving: '1 bar',
+          },
+          mealType: 'snacks',
+          dateKey: '2024-01-15',
+        },
+      });
+
+      state = mealReducer(state, {
+        type: 'REMOVE_FOOD',
+        payload: { logId: 'client-1', mealType: 'snacks', dateKey: '2024-01-15' },
+      });
+
+      expect(state.dayData['2024-01-15']!.meals.snacks).toHaveLength(0);
+      expect(state.dayData['2024-01-15']!.totals.calories).toBe(0);
+    });
   });
 
   describe('RESET_DAY', () => {

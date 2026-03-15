@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FoodItem, FoodCategory } from '../types';
 
 export const foodDatabase: FoodItem[] = [

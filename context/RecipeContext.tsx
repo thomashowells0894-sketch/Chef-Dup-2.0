@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticSuccess, hapticLight } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
@@ -200,22 +199,24 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     // Best-effort Supabase sync (fire and forget)
     const merged = updatedRecipes.find((r) => r.id === recipeId);
     if (merged) {
-      supabase
-        .from('recipes')
-        .update({
-          name: merged.name,
-          emoji: merged.emoji,
-          servings: merged.servings,
-          total_calories: merged.totalMacros?.calories ?? merged.calories,
-          total_protein: merged.totalMacros?.protein ?? merged.protein,
-          total_carbs: merged.totalMacros?.carbs ?? merged.carbs,
-          total_fat: merged.totalMacros?.fat ?? merged.fat,
-        })
-        .eq('id', recipeId)
-        .then(() => {})
-        .catch((err: any) => {
+      void (async () => {
+        try {
+          await supabase
+            .from('recipes')
+            .update({
+              name: merged.name,
+              emoji: merged.emoji,
+              servings: merged.servings,
+              total_calories: merged.totalMacros?.calories ?? merged.calories,
+              total_protein: merged.totalMacros?.protein ?? merged.protein,
+              total_carbs: merged.totalMacros?.carbs ?? merged.carbs,
+              total_fat: merged.totalMacros?.fat ?? merged.fat,
+            })
+            .eq('id', recipeId);
+        } catch (err: any) {
           if (__DEV__) console.error('[Recipe] Supabase update sync failed:', err.message);
-        });
+        }
+      })();
     }
 
     await triggerHaptic('success');
@@ -232,14 +233,16 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Best-effort Supabase sync (fire and forget)
-    supabase
-      .from('recipes')
-      .delete()
-      .eq('id', recipeId)
-      .then(() => {})
-      .catch((err: any) => {
+    void (async () => {
+      try {
+        await supabase
+          .from('recipes')
+          .delete()
+          .eq('id', recipeId);
+      } catch (err: any) {
         if (__DEV__) console.error('[Recipe] Supabase delete sync failed:', err.message);
-      });
+      }
+    })();
 
     await triggerHaptic('light');
   }, [triggerHaptic]);

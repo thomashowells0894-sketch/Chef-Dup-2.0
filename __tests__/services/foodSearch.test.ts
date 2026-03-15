@@ -16,14 +16,17 @@
 
 // Mock all upstream search modules
 const mockSearchProductsGlobal = jest.fn();
+const mockFetchProductByBarcode = jest.fn();
 const mockSearchUSDA = jest.fn();
 const mockSearchFatSecret = jest.fn();
 const mockSearchNutritionix = jest.fn();
 const mockIsFatSecretConfigured = jest.fn();
 const mockIsNutritionixConfigured = jest.fn();
+const mockSearchRestaurantFoods = jest.fn();
 
 jest.mock('../../services/openFoodFacts', () => ({
   searchProductsGlobal: (...args: any[]) => mockSearchProductsGlobal(...args),
+  fetchProductByBarcode: (...args: any[]) => mockFetchProductByBarcode(...args),
 }));
 
 jest.mock('../../services/usdaFoodData', () => ({
@@ -41,13 +44,16 @@ jest.mock('../../services/nutritionix', () => ({
 }));
 
 jest.mock('../../data/restaurantFoods', () => ({
-  searchRestaurantFoods: jest.fn(() => []),
+  searchRestaurantFoods: (...args: any[]) => mockSearchRestaurantFoods(...args),
 }));
 
 import {
   searchAllSources,
+  assessSearchResultTrust,
   bigramSimilarity,
   expandAbbreviations,
+  looksLikeBarcodeQuery,
+  normalizeBarcodeQuery,
   normalizeServing,
   nutritionCompletenessScore,
   loadRecentSearches,
@@ -63,11 +69,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Default: all external sources return empty, optional sources not configured
   mockSearchProductsGlobal.mockResolvedValue({ products: [], count: 0 });
+  mockFetchProductByBarcode.mockResolvedValue(null);
   mockSearchUSDA.mockResolvedValue({ products: [], count: 0 });
   mockSearchFatSecret.mockResolvedValue({ products: [], count: 0 });
   mockSearchNutritionix.mockResolvedValue({ products: [], count: 0 });
   mockIsFatSecretConfigured.mockReturnValue(false);
   mockIsNutritionixConfigured.mockReturnValue(false);
+  mockSearchRestaurantFoods.mockReturnValue([]);
   // Reset AsyncStorage mock
   (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
   (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
@@ -171,6 +179,76 @@ describe('expandAbbreviations', () => {
   it('expands yogurt abbreviations', () => {
     expect(expandAbbreviations('yog')).toBe('yogurt');
     expect(expandAbbreviations('yogrt')).toBe('yogurt');
+  });
+});
+
+// =============================================================================
+// Barcode query helpers
+// =============================================================================
+
+describe('barcode query helpers', () => {
+  it('normalizes barcode queries by stripping non-digits', () => {
+    expect(normalizeBarcodeQuery('  50 12345-67890 ')).toBe('501234567890');
+  });
+
+  it('identifies plausible barcode strings', () => {
+    expect(looksLikeBarcodeQuery('501234567890')).toBe(true);
+    expect(looksLikeBarcodeQuery('5012 3456 7890')).toBe(true);
+  });
+
+  it('rejects short non-barcode strings', () => {
+    expect(looksLikeBarcodeQuery('chicken')).toBe(false);
+    expect(looksLikeBarcodeQuery('12345')).toBe(false);
+  });
+});
+
+// =============================================================================
+// Trust assessment
+// =============================================================================
+
+describe('assessSearchResultTrust', () => {
+  it('marks exact barcode matches as high confidence', () => {
+    const trust = assessSearchResultTrust({
+      barcode: '501234567890',
+      name: 'FuelIQ Protein Bar',
+      brand: 'FuelIQ',
+      image: 'https://example.com/bar.png',
+      calories: 210,
+      protein: 20,
+      carbs: 18,
+      fat: 7,
+      serving: '1 bar',
+      servingSize: 1,
+      servingUnit: 'serving',
+      trustScore: 84,
+      qualityTag: 'verified',
+    } as any, '5012 3456 7890');
+
+    expect(trust.confidenceLevel).toBe('high');
+    expect(trust.confidenceReason).toBe('Exact barcode match');
+    expect(trust.exactBarcodeMatch).toBe(true);
+  });
+
+  it('flags suspicious nutrition data for review', () => {
+    const trust = assessSearchResultTrust({
+      barcode: 'test-1',
+      name: 'Scanned Item',
+      brand: null,
+      image: null,
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      serving: '',
+      servingSize: 0,
+      servingUnit: '',
+      trustScore: 56,
+      qualityTag: 'community',
+    } as any, 'protein bar');
+
+    expect(trust.confidenceLevel).toBe('review');
+    expect(trust.qualityIssues).toContain('Calories missing or zero');
+    expect(trust.qualityIssues).toContain('Serving data looks weak');
   });
 });
 
@@ -460,6 +538,159 @@ describe('merging from multiple sources', () => {
     );
     expect(chickenProducts).toHaveLength(1);
   });
+
+  it('prefers a direct barcode match when the query is barcode-like', async () => {
+    mockFetchProductByBarcode.mockResolvedValue({
+      barcode: '501234567890',
+      name: 'Exact Match Protein Bar',
+      brand: 'FuelIQ',
+      calories: 210,
+      protein: 20,
+      carbs: 18,
+      fat: 7,
+      serving: '1 bar',
+      servingSize: 1,
+      servingUnit: 'serving',
+      image: null,
+    });
+    mockSearchProductsGlobal.mockResolvedValue({
+      products: [{ name: 'Similar Protein Bar', calories: 205, protein: 18, carbs: 20, fat: 7 }],
+      count: 1,
+    });
+
+    const result = await searchAllSources('5012 3456 7890');
+
+    expect(mockFetchProductByBarcode).toHaveBeenCalledWith('501234567890');
+    expect(result.products[0].name).toBe('Exact Match Protein Bar');
+  });
+
+  it('prefers exact brand and name matches over fuzzy community matches', async () => {
+    mockSearchUSDA.mockResolvedValue({
+      products: [
+        {
+          barcode: 'usda-1',
+          name: 'Chicken Breast',
+          brand: 'FuelIQ',
+          image: null,
+          calories: 165,
+          protein: 31,
+          carbs: 0,
+          fat: 4,
+          serving: '100g',
+          servingSize: 100,
+          servingUnit: 'g',
+        },
+      ],
+      count: 1,
+    });
+    mockSearchProductsGlobal.mockResolvedValue({
+      products: [
+        {
+          barcode: 'off-1',
+          name: 'Chicken Brest Special',
+          brand: null,
+          image: null,
+          calories: 160,
+          protein: 20,
+          carbs: 12,
+          fat: 5,
+          serving: '1 serving',
+          servingSize: 1,
+          servingUnit: 'serving',
+        },
+      ],
+      count: 1,
+    });
+
+    const result = await searchAllSources('FuelIQ chicken breast');
+
+    expect(result.products[0].name).toBe('Chicken Breast');
+    expect(result.products[0].qualityLabel).toBe('Verified');
+    expect(result.products[0].confidenceReason).toBe('Exact brand and name match');
+  });
+
+  it('boosts curated staple-food aliases so protein yogurt resolves to greek yogurt', async () => {
+    const localResults = [
+      {
+        barcode: 'local-greek-yogurt',
+        name: 'Greek Yogurt',
+        brand: null,
+        image: null,
+        calories: 130,
+        protein: 18,
+        carbs: 6,
+        fat: 0,
+        serving: '1 pot',
+        servingSize: 1,
+        servingUnit: 'serving',
+        source: 'local',
+      },
+    ];
+
+    mockSearchUSDA.mockResolvedValue({
+      products: [
+        {
+          barcode: 'usda-vanilla-yogurt',
+          name: 'Vanilla Yogurt',
+          brand: null,
+          image: null,
+          calories: 190,
+          protein: 6,
+          carbs: 28,
+          fat: 5,
+          serving: '1 cup',
+          servingSize: 1,
+          servingUnit: 'cup',
+        },
+        {
+          barcode: 'usda-greek-yogurt',
+          name: 'Greek Yogurt, Plain',
+          brand: null,
+          image: null,
+          calories: 120,
+          protein: 17,
+          carbs: 7,
+          fat: 0,
+          serving: '170g',
+          servingSize: 170,
+          servingUnit: 'g',
+        },
+      ],
+      count: 2,
+    });
+
+    const result = await searchAllSources('protein yogurt', localResults);
+
+    expect(result.products[0].name).toContain('Greek Yogurt');
+    expect(result.products[0].confidenceLevel).not.toBe('review');
+  });
+
+  it('downgrades weak community matches with review guidance', async () => {
+    mockSearchProductsGlobal.mockResolvedValue({
+      products: [
+        {
+          barcode: 'off-weak',
+          name: 'Scanned Item',
+          brand: null,
+          image: null,
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fat: 0,
+          serving: '',
+          servingSize: 0,
+          servingUnit: '',
+        },
+      ],
+      count: 1,
+    });
+
+    const result = await searchAllSources('protein bar');
+
+    expect(result.products[0].qualityLabel).toBe('Community');
+    expect(result.products[0].confidenceLevel).toBe('review');
+    expect(result.products[0].qualityIssues).toContain('Calories missing or zero');
+  });
 });
 
 // =============================================================================
@@ -576,6 +807,51 @@ describe('query sanitization', () => {
     await searchAllSources('chkn brst');
     // The expanded query 'chicken breast' should be sent to APIs
     expect(mockSearchUSDA).toHaveBeenCalledWith('chicken breast', expect.any(Number), expect.any(Number));
+  });
+
+  it('rewrites common user slang before searching', async () => {
+    await searchAllSources('maccies');
+
+    expect(mockSearchUSDA).toHaveBeenCalledWith('mcdonalds', expect.any(Number), expect.any(Number));
+    expect(mockSearchRestaurantFoods).toHaveBeenCalledWith('mcdonalds');
+  });
+});
+
+// =============================================================================
+// Search quality curation
+// =============================================================================
+
+describe('search quality curation', () => {
+  it('boosts curated protein bar brands for common intent queries', async () => {
+    const localResults = [
+      {
+        name: 'Protein Bar Chocolate',
+        brand: 'Generic',
+        calories: 200,
+        protein: 20,
+        carbs: 18,
+        fat: 6,
+        serving: '1 bar',
+        servingSize: 1,
+        servingUnit: 'serving',
+      },
+      {
+        name: 'Protein Bar Caramel',
+        brand: 'Barebells',
+        calories: 200,
+        protein: 20,
+        carbs: 18,
+        fat: 6,
+        serving: '1 bar',
+        servingSize: 1,
+        servingUnit: 'serving',
+      },
+    ];
+
+    const result = await searchAllSources('protein bar', localResults);
+
+    expect(result.products[0].brand).toBe('Barebells');
+    expect(result.products[0].source).toBe('local');
   });
 });
 

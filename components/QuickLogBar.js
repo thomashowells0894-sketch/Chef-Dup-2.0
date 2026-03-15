@@ -19,8 +19,8 @@ import {
 } from 'lucide-react-native';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
-import { hapticLight, hapticSuccess } from '../lib/haptics';
-import useFrequentFoods from '../hooks/useFrequentFoods';
+import { hapticLight } from '../lib/haptics';
+import { useFrequentFoods } from '../hooks/useFrequentFoods';
 
 // Individual food chip in the horizontal scroll
 const FoodChip = memo(function FoodChip({ food, onPress, onLongPress, index }) {
@@ -111,6 +111,7 @@ function ChipContextMenu({ visible, food, onClose, onTogglePin, onRemove }) {
               onTogglePin(food.name);
               onClose();
             }}
+            hitSlop={{ top: 4, bottom: 4 }}
           >
             {food.pinned ? (
               <>
@@ -131,6 +132,7 @@ function ChipContextMenu({ visible, food, onClose, onTogglePin, onRemove }) {
               onRemove(food.name);
               onClose();
             }}
+            hitSlop={{ top: 4, bottom: 4 }}
           >
             <Trash2 size={18} color={Colors.error} />
             <Text style={[styles.contextActionText, { color: Colors.error }]}>

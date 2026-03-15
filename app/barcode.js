@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Zap, ZapOff, ScanBarcode, Search, Users, Flame, Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Gradients } from '../constants/theme';
@@ -24,6 +24,11 @@ import { useFood } from '../context/FoodContext';
 import { hapticSuccess, hapticWarning, hapticLight } from '../lib/haptics';
 import { lookupBarcode, submitBarcodeData } from '../services/barcodeService';
 import { setCachedBarcode } from '../lib/barcodeCache';
+import {
+  recordBarcodeFound,
+  recordBarcodeNotFound,
+  recordBarcodeStarted,
+} from '../lib/activationTracker';
 import { Sentry } from '../lib/sentry';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -32,7 +37,9 @@ const SCAN_RECT_H = SCAN_RECT_W * 0.45;
 
 export default function BarcodeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { addFood, getDefaultMealType } = useFood();
+  const selectedMeal = Array.isArray(params.meal) ? params.meal[0] : params.meal || getDefaultMealType();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
@@ -76,6 +83,10 @@ export default function BarcodeScreen() {
     ).start();
   }, [scanLineAnim]);
 
+  useEffect(() => {
+    recordBarcodeStarted({ meal: selectedMeal }).catch(() => {});
+  }, [selectedMeal]);
+
   // Animate bottom sheet
   useEffect(() => {
     Animated.timing(sheetAnim, {
@@ -94,6 +105,7 @@ export default function BarcodeScreen() {
       lastScannedRef.current = data;
       setIsLoading(true);
       setScannedBarcode(data);
+      const lookupStartedAt = Date.now();
 
       await hapticSuccess();
 
@@ -103,6 +115,11 @@ export default function BarcodeScreen() {
         setShowResult(true);
 
         if (!response.found) {
+          recordBarcodeNotFound({
+            meal: selectedMeal,
+            barcode: data,
+            latencyMs: Date.now() - lookupStartedAt,
+          });
           await hapticWarning();
           // Pre-fill the quick-entry form
           setEntryName('Scanned Item');
@@ -113,11 +130,23 @@ export default function BarcodeScreen() {
           setEntryServing('1 serving');
           // Auto-focus calories input after animation
           setTimeout(() => calorieInputRef.current?.focus(), 400);
+        } else {
+          recordBarcodeFound({
+            meal: selectedMeal,
+            barcode: data,
+            source: response.food?.sourceLabel || response.food?.source || 'barcode',
+            latencyMs: Date.now() - lookupStartedAt,
+          }).catch(() => {});
         }
       } catch (e) {
         Sentry.captureException(e);
         setResult({ found: false });
         setShowResult(true);
+        recordBarcodeNotFound({
+          meal: selectedMeal,
+          barcode: data,
+          latencyMs: Date.now() - lookupStartedAt,
+        });
         await hapticWarning();
         // Pre-fill the quick-entry form
         setEntryName('Scanned Item');
@@ -140,7 +169,6 @@ export default function BarcodeScreen() {
 
   const handleAddToDiary = useCallback(() => {
     if (!result?.food) return;
-    const mealType = getDefaultMealType();
     const foodEntry = {
       id: Crypto.randomUUID(),
       name: result.food.name,
@@ -159,10 +187,10 @@ export default function BarcodeScreen() {
       barcode: result.food.barcode || '',
     };
 
-    addFood(foodEntry, mealType);
+    addFood(foodEntry, selectedMeal);
     hapticSuccess();
     router.back();
-  }, [result, addFood, getDefaultMealType, router]);
+  }, [result, addFood, selectedMeal, router]);
 
   const handleScanAnother = useCallback(() => {
     setShowResult(false);
@@ -208,7 +236,6 @@ export default function BarcodeScreen() {
     }
 
     // Add to diary
-    const mealType = getDefaultMealType();
     const foodEntry = {
       id: Crypto.randomUUID(),
       name: foodData.name,
@@ -222,20 +249,26 @@ export default function BarcodeScreen() {
       barcode: scannedBarcode,
     };
 
-    addFood(foodEntry, mealType);
+    addFood(foodEntry, selectedMeal);
     await hapticSuccess();
     setIsSaving(false);
     router.back();
-  }, [entryName, entryCalories, entryProtein, entryCarbs, entryFat, entryServing, scannedBarcode, addFood, getDefaultMealType, router]);
+  }, [entryName, entryCalories, entryProtein, entryCarbs, entryFat, entryServing, scannedBarcode, addFood, selectedMeal, router]);
 
   // Search Instead: navigate to add screen with barcode digits as query
   const handleSearchInstead = useCallback(() => {
     hapticLight();
+    const preferredQuery = entryName.trim();
+    const fallbackQuery =
+      preferredQuery &&
+      preferredQuery.toLowerCase() !== 'scanned item'
+        ? preferredQuery
+        : scannedBarcode;
     router.replace({
       pathname: '/(tabs)/add',
-      params: { query: scannedBarcode },
+      params: { query: fallbackQuery, meal: selectedMeal, barcode: scannedBarcode },
     });
-  }, [router, scannedBarcode]);
+  }, [entryName, router, scannedBarcode, selectedMeal]);
 
   // Submit to Community: navigate to submit-food screen
   const handleSubmitToCommunity = useCallback(() => {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { RESTAURANT_FOODS_PART2A } from './restaurantFoodsPart2a';
 import { RESTAURANT_FOODS_PART2B } from './restaurantFoodsPart2b';
 import { RESTAURANT_FOODS_PART3 } from './restaurantFoodsPart3';

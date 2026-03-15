@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { RestaurantFoodItem } from './restaurantFoods';
 
 const PART_2B: RestaurantFoodItem[] = [

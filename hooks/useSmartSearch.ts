@@ -23,10 +23,10 @@ import {
   type RecentSearch,
   type TrendingTerm,
 } from '../services/foodSearch';
-import { foodDatabase } from '../data/foods';
 import type { ProductResult } from '../services/openFoodFacts';
 import { Sentry } from '../lib/sentry';
 import { useIsPremium } from '../context/SubscriptionContext';
+import { searchLocalFoodDatabase } from '../lib/localFoodSearch';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,7 +77,14 @@ export interface SmartSearchState {
   /** Results organized by section */
   sections: SearchSections;
   /** Source counts from last search */
-  sources: { local: number; openFoodFacts: number; usda: number; fatSecret: number; nutritionix: number };
+  sources: {
+    local: number;
+    restaurant: number;
+    openFoodFacts: number;
+    usda: number;
+    fatSecret: number;
+    nutritionix: number;
+  };
   /** Recent search queries */
   recentSearches: RecentSearch[];
   /** Trending search terms */
@@ -127,53 +134,6 @@ async function savePrefs(prefs: Partial<SearchPrefs>): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Food Index (bigram-based for local database)
-// ---------------------------------------------------------------------------
-
-const FOOD_SEARCH_INDEX = (() => {
-  const index = new Map<string, number[]>();
-  foodDatabase.forEach((food, i) => {
-    const name = food.name.toLowerCase();
-    for (let j = 0; j <= name.length - 2; j++) {
-      const bigram = name.substring(j, j + 2);
-      if (!index.has(bigram)) index.set(bigram, []);
-      index.get(bigram)!.push(i);
-    }
-  });
-  return index;
-})();
-
-function searchLocalFoods(query: string, limit: number = 10): ProductResult[] {
-  const q = query.toLowerCase();
-  if (q.length < 2) return [];
-  const bigram = q.substring(0, 2);
-  const candidates = FOOD_SEARCH_INDEX.get(bigram);
-  if (!candidates) return [];
-
-  const results: ProductResult[] = [];
-  for (const idx of candidates) {
-    const food = foodDatabase[idx];
-    if (food.name.toLowerCase().includes(q)) {
-      results.push({
-        barcode: `local-${food.id}`,
-        name: food.name,
-        brand: null,
-        image: null,
-        calories: food.calories,
-        protein: food.protein,
-        carbs: food.carbs,
-        fat: food.fat,
-        serving: food.serving,
-        servingSize: 1,
-        servingUnit: 'serving',
-      });
-      if (results.length >= limit) break;
-    }
-  }
-  return results;
-}
-
-// ---------------------------------------------------------------------------
 // Quick Filters
 // ---------------------------------------------------------------------------
 
@@ -213,12 +173,19 @@ export function useSmartSearch(): SmartSearchState {
   const [multiSelectMode, setMultiSelectModeState] = useState(false);
   const [selectedItems, setSelectedItems] = useState<ProductResult[]>([]);
   const [rawResults, setRawResults] = useState<ProductResult[]>([]);
-  const [sources, setSources] = useState({ local: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
+  const [sources, setSources] = useState({
+    local: 0,
+    restaurant: 0,
+    openFoodFacts: 0,
+    usda: 0,
+    fatSecret: 0,
+    nutritionix: 0,
+  });
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [trendingTerms, setTrendingTerms] = useState<TrendingTerm[]>([]);
 
   const debouncedQuery = useDebounce(query, 300);
-  const { getTopFoods, getRecentFoods: getRecentFrequent } = useFrequentFoods();
+  const { getTopFoods } = useFrequentFoods();
   const { favorites } = useFavoriteFoods();
   const cancelRef = useRef(false);
 
@@ -288,7 +255,7 @@ export function useSmartSearch(): SmartSearchState {
       setError(null);
 
       // Phase 1: Show local results instantly
-      const localMatches = searchLocalFoods(debouncedQuery, 10);
+      const localMatches = searchLocalFoodDatabase(debouncedQuery, 10);
       if (localMatches.length > 0) {
         setRawResults(localMatches);
       }
@@ -323,7 +290,7 @@ export function useSmartSearch(): SmartSearchState {
     return () => {
       cancelRef.current = true;
     };
-  }, [debouncedQuery, loadSearchMetadata]);
+  }, [debouncedQuery, isPremium, loadSearchMetadata]);
 
   // Apply filter to results
   const filteredResults = useMemo(() => {
@@ -348,9 +315,9 @@ export function useSmartSearch(): SmartSearchState {
     // Frequent foods matching query
     const topFrequent = getTopFoods(20);
     const frequentMatches: ProductResult[] = topFrequent
-      .filter((f: { name: string }) => f.name.toLowerCase().includes(queryLower))
+      .filter((f) => f.name.toLowerCase().includes(queryLower))
       .slice(0, 5)
-      .map((f: { id?: string; name: string; calories: number; protein: number; carbs: number; fat: number; serving?: string }) => ({
+      .map((f) => ({
         barcode: `freq-${f.id || f.name}`,
         name: f.name,
         brand: null,
@@ -411,7 +378,7 @@ export function useSmartSearch(): SmartSearchState {
     setQuery('');
     setRawResults([]);
     setError(null);
-    setSources({ local: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
+    setSources({ local: 0, restaurant: 0, openFoodFacts: 0, usda: 0, fatSecret: 0, nutritionix: 0 });
     setSelectedItems([]);
   }, []);
 

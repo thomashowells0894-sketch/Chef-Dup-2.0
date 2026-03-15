@@ -18,6 +18,10 @@ import { useAuth } from './AuthContext';
 import { useOffline } from './OfflineContext';
 import { supabase } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
+import { recordFoodLogged } from '../lib/activationTracker';
+import { mergeFrequentFoods, recordFrequentFood } from '../lib/frequentFoodsStore';
+import { replaceRecentMealSnapshot, syncRecentMealsForDate } from '../lib/recentMeals';
+import type { ImportedFoodDiaryEntry } from '../services/importMyFitnessPal';
 import type {
   MealAction,
   MealState,
@@ -33,13 +37,17 @@ import type {
   ExerciseLog,
   DayData,
   DateDirection,
-  MicronutrientSet,
 } from '../types';
 
 interface OfflineToast {
   message: string;
   timestamp: number;
 }
+
+type CopyMealSeedItem = Pick<
+  FoodItem,
+  'name' | 'emoji' | 'calories' | 'protein' | 'carbs' | 'fat' | 'serving' | 'servingSize' | 'servingUnit'
+>;
 
 interface MealContextValue {
   goals: MacroSet;
@@ -80,8 +88,19 @@ interface MealContextValue {
   addExercise: (exercise: FoodItem, duration: number, caloriesBurned: number) => Promise<void>;
   removeExercise: (logId: string | number) => Promise<void>;
   copyMealFromYesterday: (mealType: MealType) => Promise<number>;
-  copyMeal: (sourceDateKey: DateKey, sourceMealType: MealType, targetDateKey: DateKey, targetMealType?: MealType) => Promise<number>;
+  copyMeal: (
+    sourceDateKey: DateKey,
+    sourceMealType: MealType,
+    targetDateKey: DateKey,
+    targetMealType?: MealType,
+    fallbackItems?: CopyMealSeedItem[]
+  ) => Promise<number>;
   copyDay: (sourceDateKey: DateKey, targetDateKey: DateKey) => Promise<number>;
+  importFoodDiary: (entries: ImportedFoodDiaryEntry[]) => Promise<{
+    importedCount: number;
+    skippedCount: number;
+    dateCount: number;
+  }>;
   getDefaultMealType: () => MealType;
   refreshDate: (dateKey?: DateKey) => Promise<void>;
   /** Non-null when a food log was saved offline (for subtle toast display) */
@@ -119,6 +138,8 @@ const EMPTY_DAY: DayData = {
   exerciseMinutes: 0,
 };
 
+const ALL_MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
+
 const initialState: MealState = {
   goals: DEFAULT_GOALS,
   waterGoal: 2500,
@@ -138,6 +159,133 @@ function getTodayString(): DateKey {
 
 function getDayData(state: MealState, dateKey: DateKey): DayData {
   return state.dayData[dateKey] || { ...EMPTY_DAY, meals: { ...EMPTY_DAY.meals } };
+}
+
+function createClientRequestId(): string {
+  return `food-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function matchesFoodLog(log: FoodLogEntry | undefined, logId: string | number): boolean {
+  if (!log) return false;
+  return log.id === logId || log.clientRequestId === logId;
+}
+
+function buildFoodLogEntry(food: FoodItem, mealType: MealType, dateKey: DateKey): FoodLogEntry {
+  return {
+    ...food,
+    id: food.id || `food-${Date.now()}`,
+    clientRequestId: food.clientRequestId,
+    loggedAt: new Date().toISOString(),
+    mealType,
+    dateKey,
+  };
+}
+
+interface RemoteFoodLogRow {
+  id: string | number;
+  date: DateKey;
+  name: string;
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+  meal_type?: string | null;
+  serving?: string | null;
+  serving_size?: number | null;
+  serving_unit?: string | null;
+  water_amount?: number | null;
+  created_at?: string | null;
+}
+
+const IMPORT_BATCH_SIZE = 200;
+const IMPORT_HYDRATED_DATE_LIMIT = 14;
+const IMPORT_RECENT_SNAPSHOT_LIMIT = 7;
+
+function normalizeMealTypeValue(mealType?: string | null): MealType {
+  const normalized = (mealType || '').toLowerCase();
+  if (normalized === 'breakfast' || normalized === 'lunch' || normalized === 'dinner' || normalized === 'snacks') {
+    return normalized;
+  }
+  return 'snacks';
+}
+
+function normalizeFoodSignatureValue(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function buildImportSignature(input: {
+  dateKey: DateKey;
+  mealType: MealType;
+  name: string;
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+}): string {
+  return [
+    input.dateKey,
+    input.mealType,
+    normalizeFoodSignatureValue(input.name),
+    Number(input.calories) || 0,
+    Number(input.protein) || 0,
+    Number(input.carbs) || 0,
+    Number(input.fat) || 0,
+  ].join('|');
+}
+
+function buildDayDataFromRemoteRows(rows: RemoteFoodLogRow[]): Record<DateKey, DayData> {
+  const nextDayData: Record<DateKey, DayData> = {};
+
+  rows.forEach((row, index) => {
+    const dateKey = row.date;
+    if (!dateKey) {
+      return;
+    }
+
+    const mealType = normalizeMealTypeValue(row.meal_type);
+    const existingDay = nextDayData[dateKey] || {
+      meals: { breakfast: [], lunch: [], dinner: [], snacks: [] },
+      totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      waterIntake: 0,
+      exercises: [],
+      caloriesBurned: 0,
+      exerciseMinutes: 0,
+    };
+
+    if (normalizeFoodSignatureValue(row.name) === 'water' && (Number(row.calories) || 0) === 0) {
+      existingDay.waterIntake += Number(row.water_amount) || 250;
+      nextDayData[dateKey] = existingDay;
+      return;
+    }
+
+    const foodItem: FoodLogEntry = {
+      id: row.id || `imported-${dateKey}-${mealType}-${index}`,
+      name: row.name || 'Food',
+      emoji: '🍽️',
+      calories: Number(row.calories) || 0,
+      protein: Number(row.protein) || 0,
+      carbs: Number(row.carbs) || 0,
+      fat: Number(row.fat) || 0,
+      serving: row.serving || '1 serving',
+      servingSize: row.serving_size || undefined,
+      servingUnit: row.serving_unit || undefined,
+      loggedAt: row.created_at || `${dateKey}T12:00:00.000Z`,
+      mealType,
+      dateKey,
+    };
+
+    existingDay.meals[mealType] = [...existingDay.meals[mealType], foodItem];
+    existingDay.totals = {
+      calories: existingDay.totals.calories + foodItem.calories,
+      protein: existingDay.totals.protein + foodItem.protein,
+      carbs: existingDay.totals.carbs + foodItem.carbs,
+      fat: existingDay.totals.fat + foodItem.fat,
+    };
+
+    nextDayData[dateKey] = existingDay;
+  });
+
+  return nextDayData;
 }
 
 function getDefaultMealType(): MealType {
@@ -227,7 +375,7 @@ export function mealReducer(state: MealState, action: MealAction): MealState {
 
     case 'ADD_FOOD': {
       const { food, mealType = 'snacks', dateKey } = action.payload;
-      const logEntry: FoodLogEntry = { ...food, id: food.id || Date.now(), loggedAt: new Date().toISOString(), mealType, dateKey };
+      const logEntry = buildFoodLogEntry(food, mealType, dateKey);
       const day = getDayData(state, dateKey);
       return {
         ...state,
@@ -251,8 +399,9 @@ export function mealReducer(state: MealState, action: MealAction): MealState {
     case 'REMOVE_FOOD': {
       const { logId, mealType, dateKey } = action.payload;
       const day = getDayData(state, dateKey);
-      const item = day.meals[mealType]?.find((f) => f.id === logId);
+      const item = day.meals[mealType]?.find((food) => matchesFoodLog(food, logId));
       if (!item) return state;
+      const nextMealItems = day.meals[mealType].filter((food) => !matchesFoodLog(food, logId));
       return {
         ...state,
         dayData: {
@@ -265,10 +414,10 @@ export function mealReducer(state: MealState, action: MealAction): MealState {
               carbs: day.totals.carbs - item.carbs,
               fat: day.totals.fat - item.fat,
             },
-            meals: { ...day.meals, [mealType]: day.meals[mealType].filter((f) => f.id !== logId) },
+            meals: { ...day.meals, [mealType]: nextMealItems },
           },
         },
-        recentLogs: state.recentLogs.filter((f) => f.id !== logId),
+        recentLogs: state.recentLogs.filter((food) => !matchesFoodLog(food, logId)),
       };
     }
 
@@ -351,7 +500,13 @@ export function mealReducer(state: MealState, action: MealAction): MealState {
 
 // --- Provider ---
 
-export function MealProvider({ children }: { children: React.ReactNode }) {
+export function MealProvider({
+  children,
+  disableInitialFetch = false,
+}: {
+  children: React.ReactNode;
+  disableInitialFetch?: boolean;
+}) {
   const { user } = useAuth();
   const [state, dispatch] = useReducer(mealReducer, initialState);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -367,7 +522,7 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
 
   const { calculatedGoals, isProfileComplete, isLoading: profileLoading, calculatedWaterGoal } = useProfile();
   const { awardXP } = useGamification();
-  const { isOnline: networkOnline, queueOperation, checkOnline, showOfflineAlert } = useOffline();
+  const { queueOperation, checkOnline, showOfflineAlert } = useOffline();
 
   const selectedDateKey = useMemo<DateKey>(() => formatDateKey(selectedDate), [selectedDate]);
   const isPlanningMode = useMemo<boolean>(() => isFuture(selectedDate) && !isToday(selectedDate), [selectedDate]);
@@ -447,6 +602,10 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
+      syncRecentMealsForDate(dateKey, meals).catch((error) => {
+        if (__DEV__) console.warn('[Meal] Failed to sync recent meal snapshots:', error);
+      });
+
       fetchedDatesRef.current.add(dateKey);
     } catch (error: any) {
       if (__DEV__) console.error('[Meal] Fetch failed:', error.message);
@@ -457,6 +616,12 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
 
   // Initial load
   useEffect(() => {
+    if (disableInitialFetch) {
+      setIsLoading(false);
+      setIsHydrated(true);
+      return;
+    }
+
     if (!user) {
       dispatch({ type: 'HYDRATE', payload: initialState });
       setIsLoading(false);
@@ -475,10 +640,11 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
         setIsHydrated(true);
       }
     })();
-  }, [user]);
+  }, [user, disableInitialFetch, fetchDayData]);
 
   // Fetch when selected date changes + prefetch adjacent days
   useEffect(() => {
+    if (disableInitialFetch) return;
     if (!user || !isHydrated) return;
     if (!fetchedDatesRef.current.has(selectedDateKey)) {
       fetchDayData(selectedDateKey);
@@ -493,7 +659,7 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
     if (!fetchedDatesRef.current.has(tomorrow)) {
       setTimeout(() => fetchDayData(tomorrow), 400);
     }
-  }, [user, isHydrated, selectedDateKey, selectedDate, fetchDayData]);
+  }, [user, isHydrated, selectedDateKey, selectedDate, fetchDayData, disableInitialFetch]);
 
   // --- Haptics ---
   const triggerHaptic = useCallback(async (type: string = 'success') => {
@@ -556,7 +722,7 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
       const dateKey = formatDateKey(futureDate);
       const dayData = stateRef.current.dayData[dateKey];
       if (!dayData || !dayData.meals) continue;
-      for (const mealType of ['breakfast', 'lunch', 'dinner', 'snacks'] as MealType[]) {
+      for (const mealType of ALL_MEAL_TYPES) {
         for (const item of dayData.meals[mealType] || []) {
           const key = item.name.toLowerCase().trim();
           if (!aggregatedItems[key]) {
@@ -579,8 +745,13 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
       addFood: async (food: FoodItem, mealType?: MealType) => {
         if (!user) return;
         const effectiveMealType = mealType || getDefaultMealType();
-        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const optimisticFood = { ...food, id: tempId };
+        const clientRequestId = food.clientRequestId || createClientRequestId();
+        const tempId = String(food.id || `temp-${clientRequestId}`);
+        const optimisticFood = { ...food, id: tempId, clientRequestId };
+        const currentDay = getDayData(stateRef.current, selectedDateKey);
+        const previousMealItems = [...(currentDay.meals[effectiveMealType] || [])];
+        const optimisticEntry = buildFoodLogEntry(optimisticFood, effectiveMealType, selectedDateKey);
+        const nextMealItems = [...previousMealItems, optimisticEntry];
 
         // Validate food input
         const foodName = (food.name || '').trim();
@@ -599,8 +770,24 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
 
         // Optimistic update -- food appears instantly in UI regardless of network
         dispatch({ type: 'ADD_FOOD', payload: { food: optimisticFood, mealType: effectiveMealType, dateKey: selectedDateKey } });
+        replaceRecentMealSnapshot({
+          dateKey: selectedDateKey,
+          mealType: effectiveMealType,
+          items: nextMealItems,
+        }).catch((error) => {
+          if (__DEV__) console.warn('[Meal] Failed to update recent meal snapshot after add:', error);
+        });
         if (!isPlanningMode) awardXP('LOG_FOOD');
-        await triggerHaptic('success');
+        if (!food.skipHaptic) {
+          await triggerHaptic('success');
+        }
+        recordFoodLogged({
+          mealType: effectiveMealType,
+          calories: food.calories || 0,
+          source: food.sourceLabel || food.source || 'manual',
+        }).catch((error) => {
+          if (__DEV__) console.warn('[Meal] Failed to record activation funnel food log:', error);
+        });
 
         const online = await checkOnline();
         if (!online) {
@@ -616,6 +803,7 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
             },
             tempId,
           });
+          await recordFrequentFood(optimisticFood);
           // Subtle non-blocking indicator instead of Alert dialog
           showSubtleOfflineToast('Food log');
           return;
@@ -634,25 +822,59 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
 
           if (error) {
             dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: effectiveMealType, dateKey: selectedDateKey } });
+            replaceRecentMealSnapshot({
+              dateKey: selectedDateKey,
+              mealType: effectiveMealType,
+              items: previousMealItems,
+            }).catch((snapshotError) => {
+              if (__DEV__) console.warn('[Meal] Failed to roll back recent meal snapshot:', snapshotError);
+            });
             Alert.alert('Error', 'Failed to save food. Please try again.');
             return;
           }
 
           // Replace temp ID with server ID
           dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: effectiveMealType, dateKey: selectedDateKey } });
-          dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: data.id }, mealType: effectiveMealType, dateKey: selectedDateKey } });
+          dispatch({
+            type: 'ADD_FOOD',
+            payload: {
+              food: { ...food, id: data.id, clientRequestId },
+              mealType: effectiveMealType,
+              dateKey: selectedDateKey,
+            },
+          });
+          await recordFrequentFood({ ...food, id: String(data.id), clientRequestId });
         } catch (e) {
           Sentry.captureException(e);
           dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: effectiveMealType, dateKey: selectedDateKey } });
+          replaceRecentMealSnapshot({
+            dateKey: selectedDateKey,
+            mealType: effectiveMealType,
+            items: previousMealItems,
+          }).catch((snapshotError) => {
+            if (__DEV__) console.warn('[Meal] Failed to roll back recent meal snapshot:', snapshotError);
+          });
           Alert.alert('Error', 'Failed to save food. Please try again.');
         }
       },
 
       removeFood: async (logId: string | number, mealType: MealType) => {
         if (!user) return;
+        const currentDay = getDayData(stateRef.current, selectedDateKey);
+        const mealItems = currentDay.meals[mealType] || [];
+        const itemToRemove = mealItems.find((food) => matchesFoodLog(food, logId));
+        if (!itemToRemove) return;
+        const nextMealItems = mealItems.filter((food) => !matchesFoodLog(food, logId));
 
         // Optimistic removal — food disappears instantly regardless of network
         dispatch({ type: 'REMOVE_FOOD', payload: { logId, mealType, dateKey: selectedDateKey } });
+        replaceRecentMealSnapshot({
+          dateKey: selectedDateKey,
+          mealType,
+          items: nextMealItems,
+        }).catch((error) => {
+          if (__DEV__) console.warn('[Meal] Failed to update recent meal snapshot after remove:', error);
+        });
         await triggerHaptic('light');
 
         const online = await checkOnline();
@@ -660,14 +882,14 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
           await queueOperation({
             table: 'food_logs',
             type: 'DELETE',
-            payload: { id: logId, user_id: user.id },
+            payload: { id: itemToRemove.id, user_id: user.id },
           });
           showSubtleOfflineToast('Food removal');
           return;
         }
 
         try {
-          const { error } = await supabase.from('food_logs').delete().eq('id', logId).eq('user_id', user.id);
+          const { error } = await supabase.from('food_logs').delete().eq('id', itemToRemove.id).eq('user_id', user.id);
           if (error) {
             if (__DEV__) console.error('[Meal] Remove error:', error.code);
           }
@@ -685,6 +907,9 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
             supabase.from('workouts').delete().eq('user_id', user.id).eq('date', selectedDateKey),
           ]);
           dispatch({ type: 'RESET_DAY', payload: { dateKey: selectedDateKey } });
+          syncRecentMealsForDate(selectedDateKey, EMPTY_DAY.meals).catch((error) => {
+            if (__DEV__) console.warn('[Meal] Failed to clear recent meal snapshots for day reset:', error);
+          });
           fetchedDatesRef.current.delete(selectedDateKey);
           await triggerHaptic('medium');
         } catch (error: any) {
@@ -811,22 +1036,45 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
           return 0;
         }
 
+        const targetDay = getDayData(stateRef.current, selectedDateKey);
+        const existingMealItems = [...(targetDay.meals[mealType] || [])];
+
         // Build all foods + optimistic entries at once
         const entries = items.map(item => {
+          const clientRequestId = createClientRequestId();
           const food: FoodItem = {
             name: item.name, emoji: item.emoji,
             calories: item.calories, protein: item.protein,
             carbs: item.carbs, fat: item.fat,
             serving: item.serving, servingSize: item.servingSize, servingUnit: item.servingUnit,
+            clientRequestId,
           } as FoodItem;
-          const tempId = `temp-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          return { food, tempId };
+          const tempId = `temp-copy-${clientRequestId}`;
+          return { food, tempId, clientRequestId };
         });
+        const optimisticEntries = entries.map(({ food, tempId, clientRequestId }) =>
+          buildFoodLogEntry({ ...food, id: tempId, clientRequestId }, mealType, selectedDateKey)
+        );
 
         // Optimistic: add all items to UI immediately
-        for (const { food, tempId } of entries) {
-          dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: tempId }, mealType, dateKey: selectedDateKey } });
+        for (const { food, tempId, clientRequestId } of entries) {
+          dispatch({
+            type: 'ADD_FOOD',
+            payload: {
+              food: { ...food, id: tempId, clientRequestId },
+              mealType,
+              dateKey: selectedDateKey,
+            },
+          });
         }
+        replaceRecentMealSnapshot({
+          dateKey: selectedDateKey,
+          mealType,
+          items: [...existingMealItems, ...optimisticEntries],
+        }).catch((error) => {
+          if (__DEV__) console.warn('[Meal] Failed to update recent meal snapshot after meal copy:', error);
+        });
+        await Promise.all(entries.map(({ food }) => recordFrequentFood(food)));
 
         const online = await checkOnline();
         if (!online) {
@@ -854,10 +1102,17 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
             const { data, error } = await supabase.from('food_logs').insert(rows).select();
             if (!error && data) {
               // Replace temp IDs with server IDs
-              entries.forEach(({ food, tempId }, i) => {
+              entries.forEach(({ food, tempId, clientRequestId }, i) => {
                 if (data[i]) {
                   dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType, dateKey: selectedDateKey } });
-                  dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: data[i].id }, mealType, dateKey: selectedDateKey } });
+                  dispatch({
+                    type: 'ADD_FOOD',
+                    payload: {
+                      food: { ...food, id: data[i].id, clientRequestId },
+                      mealType,
+                      dateKey: selectedDateKey,
+                    },
+                  });
                 }
               });
             }
@@ -880,36 +1135,66 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
        * @param tgtMealType - target meal type (defaults to same as source)
        * @returns count of items copied
        */
-      copyMeal: async (srcDateKey: DateKey, srcMealType: MealType, tgtDateKey: DateKey, tgtMealType?: MealType): Promise<number> => {
+      copyMeal: async (
+        srcDateKey: DateKey,
+        srcMealType: MealType,
+        tgtDateKey: DateKey,
+        tgtMealType?: MealType,
+        fallbackItems?: CopyMealSeedItem[]
+      ): Promise<number> => {
         if (!user) return 0;
         const effectiveTargetMeal = tgtMealType || srcMealType;
-
-        if (!fetchedDatesRef.current.has(srcDateKey)) {
-          await fetchDayData(srcDateKey);
-        }
-
         const srcDay = getDayData(stateRef.current, srcDateKey);
-        const items = srcDay.meals[srcMealType] || [];
+        let items: (FoodLogEntry | CopyMealSeedItem)[] = srcDay.meals[srcMealType] || [];
+
+        if (items.length === 0 && Array.isArray(fallbackItems) && fallbackItems.length > 0) {
+          items = fallbackItems;
+        } else if (items.length === 0 && !fetchedDatesRef.current.has(srcDateKey)) {
+          await fetchDayData(srcDateKey);
+          items = getDayData(stateRef.current, srcDateKey).meals[srcMealType] || [];
+        }
 
         if (items.length === 0) {
           Alert.alert('Nothing to Copy', `No ${srcMealType} items found on that day.`);
           return 0;
         }
 
+        const targetDay = getDayData(stateRef.current, tgtDateKey);
+        const existingMealItems = [...(targetDay.meals[effectiveTargetMeal] || [])];
         const entries = items.map(item => {
+          const clientRequestId = createClientRequestId();
           const food: FoodItem = {
             name: item.name, emoji: item.emoji,
             calories: item.calories, protein: item.protein,
             carbs: item.carbs, fat: item.fat,
             serving: item.serving, servingSize: item.servingSize, servingUnit: item.servingUnit,
+            clientRequestId,
           } as FoodItem;
-          const tempId = `temp-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          return { food, tempId };
+          const tempId = `temp-copy-${clientRequestId}`;
+          return { food, tempId, clientRequestId };
         });
+        const optimisticEntries = entries.map(({ food, tempId, clientRequestId }) =>
+          buildFoodLogEntry({ ...food, id: tempId, clientRequestId }, effectiveTargetMeal, tgtDateKey)
+        );
 
-        for (const { food, tempId } of entries) {
-          dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: tempId }, mealType: effectiveTargetMeal, dateKey: tgtDateKey } });
+        for (const { food, tempId, clientRequestId } of entries) {
+          dispatch({
+            type: 'ADD_FOOD',
+            payload: {
+              food: { ...food, id: tempId, clientRequestId },
+              mealType: effectiveTargetMeal,
+              dateKey: tgtDateKey,
+            },
+          });
         }
+        replaceRecentMealSnapshot({
+          dateKey: tgtDateKey,
+          mealType: effectiveTargetMeal,
+          items: [...existingMealItems, ...optimisticEntries],
+        }).catch((error) => {
+          if (__DEV__) console.warn('[Meal] Failed to update recent meal snapshot after copy:', error);
+        });
+        await Promise.all(entries.map(({ food }) => recordFrequentFood(food)));
 
         const online = await checkOnline();
         if (!online) {
@@ -935,10 +1220,17 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
           try {
             const { data, error } = await supabase.from('food_logs').insert(rows).select();
             if (!error && data) {
-              entries.forEach(({ food, tempId }, i) => {
+              entries.forEach(({ food, tempId, clientRequestId }, i) => {
                 if (data[i]) {
                   dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: effectiveTargetMeal, dateKey: tgtDateKey } });
-                  dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: data[i].id }, mealType: effectiveTargetMeal, dateKey: tgtDateKey } });
+                  dispatch({
+                    type: 'ADD_FOOD',
+                    payload: {
+                      food: { ...food, id: data[i].id, clientRequestId },
+                      mealType: effectiveTargetMeal,
+                      dateKey: tgtDateKey,
+                    },
+                  });
                 }
               });
             }
@@ -966,20 +1258,30 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
         }
 
         const srcDay = getDayData(stateRef.current, srcDateKey);
-        const allMealTypes: MealType[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
+        const targetDay = getDayData(stateRef.current, tgtDateKey);
+        const nextMeals: Record<MealType, FoodLogEntry[]> = {
+          breakfast: [...(targetDay.meals.breakfast || [])],
+          lunch: [...(targetDay.meals.lunch || [])],
+          dinner: [...(targetDay.meals.dinner || [])],
+          snacks: [...(targetDay.meals.snacks || [])],
+        };
 
         // Collect all entries across all meal types
-        const entries: { food: FoodItem; tempId: string; mt: MealType }[] = [];
-        for (const mt of allMealTypes) {
+        const entries: { food: FoodItem; tempId: string; mt: MealType; clientRequestId: string }[] = [];
+        for (const mt of ALL_MEAL_TYPES) {
           for (const item of srcDay.meals[mt] || []) {
+            const clientRequestId = createClientRequestId();
             const food: FoodItem = {
               name: item.name, emoji: item.emoji,
               calories: item.calories, protein: item.protein,
               carbs: item.carbs, fat: item.fat,
               serving: item.serving, servingSize: item.servingSize, servingUnit: item.servingUnit,
+              clientRequestId,
             } as FoodItem;
-            const tempId = `temp-copyday-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            entries.push({ food, tempId, mt });
+            const tempId = `temp-copyday-${clientRequestId}`;
+            const optimisticEntry = buildFoodLogEntry({ ...food, id: tempId, clientRequestId }, mt, tgtDateKey);
+            nextMeals[mt].push(optimisticEntry);
+            entries.push({ food, tempId, mt, clientRequestId });
           }
         }
 
@@ -989,9 +1291,20 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Optimistic: add all items to UI immediately
-        for (const { food, tempId, mt } of entries) {
-          dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: tempId }, mealType: mt, dateKey: tgtDateKey } });
+        for (const { food, tempId, mt, clientRequestId } of entries) {
+          dispatch({
+            type: 'ADD_FOOD',
+            payload: {
+              food: { ...food, id: tempId, clientRequestId },
+              mealType: mt,
+              dateKey: tgtDateKey,
+            },
+          });
         }
+        syncRecentMealsForDate(tgtDateKey, nextMeals).catch((error) => {
+          if (__DEV__) console.warn('[Meal] Failed to update recent meal snapshots after day copy:', error);
+        });
+        await Promise.all(entries.map(({ food }) => recordFrequentFood(food)));
 
         const online = await checkOnline();
         if (!online) {
@@ -1018,10 +1331,17 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
           try {
             const { data, error } = await supabase.from('food_logs').insert(rows).select();
             if (!error && data) {
-              entries.forEach(({ food, tempId, mt }, i) => {
+              entries.forEach(({ food, tempId, mt, clientRequestId }, i) => {
                 if (data[i]) {
                   dispatch({ type: 'REMOVE_FOOD', payload: { logId: tempId, mealType: mt, dateKey: tgtDateKey } });
-                  dispatch({ type: 'ADD_FOOD', payload: { food: { ...food, id: data[i].id }, mealType: mt, dateKey: tgtDateKey } });
+                  dispatch({
+                    type: 'ADD_FOOD',
+                    payload: {
+                      food: { ...food, id: data[i].id, clientRequestId },
+                      mealType: mt,
+                      dateKey: tgtDateKey,
+                    },
+                  });
                 }
               });
             }
@@ -1033,6 +1353,195 @@ export function MealProvider({ children }: { children: React.ReactNode }) {
 
         await triggerHaptic('success');
         return entries.length;
+      },
+
+      importFoodDiary: async (entries: ImportedFoodDiaryEntry[]) => {
+        if (!user) {
+          throw new Error('Sign in before importing data.');
+        }
+
+        if (!Array.isArray(entries) || entries.length === 0) {
+          return { importedCount: 0, skippedCount: 0, dateCount: 0 };
+        }
+
+        const uniqueDateKeys = [...new Set(entries.map((entry) => entry.dateKey))].sort();
+        if (!(await checkOnline())) {
+          showOfflineAlert('import food diary');
+          throw new Error('An internet connection is required to import and save your diary.');
+        }
+
+        const startDateKey = uniqueDateKeys[0];
+        const endDateKey = uniqueDateKeys[uniqueDateKeys.length - 1];
+        let existingRows: RemoteFoodLogRow[] = [];
+
+        try {
+          const { data, error } = await supabase
+            .from('food_logs')
+            .select('id,date,name,calories,protein,carbs,fat,meal_type,serving,serving_size,serving_unit,water_amount,created_at')
+            .eq('user_id', user.id)
+            .gte('date', startDateKey)
+            .lte('date', endDateKey);
+
+          if (error) {
+            throw error;
+          }
+
+          existingRows = Array.isArray(data) ? data : [];
+        } catch (error) {
+          Sentry.captureException(error);
+          throw new Error('Failed to check your existing diary before import.');
+        }
+
+        const existingSignatureCounts = new Map<string, number>();
+        existingRows.forEach((row) => {
+          const signature = buildImportSignature({
+            dateKey: row.date,
+            mealType: normalizeMealTypeValue(row.meal_type),
+            name: row.name,
+            calories: row.calories,
+            protein: row.protein,
+            carbs: row.carbs,
+            fat: row.fat,
+          });
+          existingSignatureCounts.set(signature, (existingSignatureCounts.get(signature) || 0) + 1);
+        });
+
+        const rowsToInsert = entries.reduce<Record<string, unknown>[]>((accumulator, entry) => {
+          const signature = buildImportSignature(entry);
+          const remainingExistingCount = existingSignatureCounts.get(signature) || 0;
+
+          if (remainingExistingCount > 0) {
+            existingSignatureCounts.set(signature, remainingExistingCount - 1);
+            return accumulator;
+          }
+
+          accumulator.push({
+            user_id: user.id,
+            date: entry.dateKey,
+            meal_type: entry.mealType,
+            name: entry.name.trim(),
+            calories: entry.calories || 0,
+            protein: entry.protein || 0,
+            carbs: entry.carbs || 0,
+            fat: entry.fat || 0,
+            serving: entry.serving || null,
+          });
+          return accumulator;
+        }, []);
+
+        const insertedRows: RemoteFoodLogRow[] = [];
+        try {
+          for (let index = 0; index < rowsToInsert.length; index += IMPORT_BATCH_SIZE) {
+            const chunk = rowsToInsert.slice(index, index + IMPORT_BATCH_SIZE);
+            const { data, error } = await supabase
+              .from('food_logs')
+              .insert(chunk)
+              .select('id,date,name,calories,protein,carbs,fat,meal_type,serving,serving_size,serving_unit,water_amount,created_at');
+
+            if (error) {
+              throw error;
+            }
+
+            insertedRows.push(...((data as RemoteFoodLogRow[] | null) || []));
+          }
+        } catch (error) {
+          Sentry.captureException(error);
+          throw new Error('Failed to save the imported meals. Please try again.');
+        }
+
+        const combinedRows = [...existingRows, ...insertedRows];
+        const hydratedDateKeys = uniqueDateKeys.slice(-IMPORT_HYDRATED_DATE_LIMIT);
+        const importedHydratedDayData = buildDayDataFromRemoteRows(
+          combinedRows.filter((row) => hydratedDateKeys.includes(row.date))
+        );
+        const hydratedDayData = Object.fromEntries(
+          Object.entries(importedHydratedDayData).map(([dateKey, importedDay]) => {
+            const existingCachedDay = stateRef.current.dayData[dateKey];
+            if (!existingCachedDay) {
+              return [dateKey, importedDay];
+            }
+
+            return [dateKey, {
+              ...importedDay,
+              waterIntake: importedDay.waterIntake || existingCachedDay.waterIntake || 0,
+              exercises: existingCachedDay.exercises || [],
+              caloriesBurned: existingCachedDay.caloriesBurned || 0,
+              exerciseMinutes: existingCachedDay.exerciseMinutes || 0,
+            }];
+          })
+        ) as Record<DateKey, DayData>;
+
+        if (Object.keys(hydratedDayData).length > 0) {
+          dispatch({
+            type: 'HYDRATE',
+            payload: {
+              dayData: {
+                ...stateRef.current.dayData,
+                ...hydratedDayData,
+              },
+            },
+          });
+        }
+
+        const recentSnapshotDateKeys = uniqueDateKeys.slice(-IMPORT_RECENT_SNAPSHOT_LIMIT);
+        const recentSnapshotData = buildDayDataFromRemoteRows(
+          combinedRows.filter((row) => recentSnapshotDateKeys.includes(row.date))
+        );
+
+        for (const dateKey of recentSnapshotDateKeys) {
+          const dayData = recentSnapshotData[dateKey];
+          if (!dayData) {
+            continue;
+          }
+
+          await syncRecentMealsForDate(dateKey, dayData.meals);
+        }
+
+        const frequentFoodSeeds = new Map<string, {
+          name: string;
+          calories: number;
+          protein: number;
+          carbs: number;
+          fat: number;
+          serving: string;
+          count: number;
+          lastUsed: string;
+        }>();
+
+        entries.forEach((entry) => {
+          const normalizedName = normalizeFoodSignatureValue(entry.name);
+          const existing = frequentFoodSeeds.get(normalizedName);
+          const lastUsed = `${entry.dateKey}T12:00:00.000Z`;
+
+          if (existing) {
+            frequentFoodSeeds.set(normalizedName, {
+              ...existing,
+              count: existing.count + 1,
+              lastUsed: lastUsed > existing.lastUsed ? lastUsed : existing.lastUsed,
+            });
+            return;
+          }
+
+          frequentFoodSeeds.set(normalizedName, {
+            name: entry.name,
+            calories: entry.calories || 0,
+            protein: entry.protein || 0,
+            carbs: entry.carbs || 0,
+            fat: entry.fat || 0,
+            serving: entry.serving || '1 serving',
+            count: 1,
+            lastUsed,
+          });
+        });
+
+        await mergeFrequentFoods([...frequentFoodSeeds.values()]);
+        await triggerHaptic(rowsToInsert.length > 0 ? 'success' : 'light');
+
+        return {
+          importedCount: rowsToInsert.length,
+          skippedCount: entries.length - rowsToInsert.length,
+          dateCount: uniqueDateKeys.length,
+        };
       },
     }),
     [user, selectedDateKey, selectedDate, isPlanningMode, triggerHaptic, awardXP, checkOnline, queueOperation, showOfflineAlert, showSubtleOfflineToast, fetchDayData]

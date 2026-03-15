@@ -10,6 +10,21 @@ export interface FoodItem extends MacroSet {
   servingSize?: number;
   servingUnit?: string;
   micronutrients?: MicronutrientSet;
+  clientRequestId?: string;
+  brand?: string;
+  barcode?: string;
+  image?: string | null;
+  skipHaptic?: boolean;
+  source?: string;
+  sourceLabel?: string;
+  qualityTag?: 'verified' | 'curated' | 'restaurant' | 'community' | 'partner';
+  qualityLabel?: string;
+  trustScore?: number;
+  confidenceScore?: number;
+  confidenceLevel?: 'high' | 'medium' | 'review';
+  confidenceReason?: string;
+  qualityIssues?: string[];
+  reportable?: boolean;
 }
 
 /** Food item as logged in a meal */
