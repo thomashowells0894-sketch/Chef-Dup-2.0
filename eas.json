@@ -11,6 +11,7 @@
         "simulator": true
       },
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "development",
         "SENTRY_ORG": "fueliq",
         "SENTRY_PROJECT": "fueliq-mobile"
       }
@@ -18,6 +19,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging",
         "SENTRY_ORG": "fueliq",
         "SENTRY_PROJECT": "fueliq-mobile"
       }
@@ -25,6 +27,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
         "SENTRY_ORG": "fueliq",
         "SENTRY_PROJECT": "fueliq-mobile",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"

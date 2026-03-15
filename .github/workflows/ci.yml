@@ -40,7 +40,7 @@ jobs:
         run: npm ci
 
       - name: Run ESLint
-        run: npx eslint . --ext .js,.jsx,.ts,.tsx --max-warnings 0
+        run: npm run lint
 
   typecheck:
     name: TypeScript Check
@@ -66,7 +66,7 @@ jobs:
         run: npm ci
 
       - name: Run TypeScript compiler
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
   test:
     name: Unit Tests
@@ -92,7 +92,7 @@ jobs:
         run: npm ci
 
       - name: Run Jest tests with coverage
-        run: npx jest --coverage --ci --maxWorkers=2
+        run: npm run test:ci
 
       - name: Upload coverage report
         if: always()
@@ -126,7 +126,7 @@ jobs:
         run: npm ci
 
       - name: Verify Expo web export compiles
-        run: npx expo export --platform web
+        run: npm run build:web
 
   security:
     name: Security Audit

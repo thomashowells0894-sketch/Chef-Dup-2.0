@@ -4,20 +4,30 @@
     "strict": true,
     "noUncheckedIndexedAccess": false,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
       "@/types": ["./types/index"]
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.js",
-    "**/*.jsx",
-    "types/**/*.ts"
+    "app/**/*",
+    "components/**/*",
+    "constants/**/*",
+    "context/**/*",
+    "data/**/*",
+    "hooks/**/*",
+    "lib/**/*",
+    "services/**/*",
+    "types/**/*"
   ],
   "exclude": [
+    ".expo",
+    ".eslintcache-shards",
+    "android",
+    "coverage",
+    "dist",
+    "docs",
+    "ios",
     "node_modules",
     "supabase/functions",
     "__tests__",

@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "constants/**/*.ts",
+    "constants/**/*.tsx",
+    "context/**/*.ts",
+    "context/**/*.tsx",
+    "data/exercises.ts",
+    "data/leaderboardData.ts",
+    "data/mealDatabase.ts",
+    "data/micronutrients.ts",
+    "data/tourSteps.ts",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "services/**/*.ts",
+    "services/**/*.tsx",
+    "types/**/*.ts",
+    "types/**/*.tsx"
+  ]
+}
