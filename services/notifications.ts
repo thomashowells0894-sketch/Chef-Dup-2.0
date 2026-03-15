@@ -2,11 +2,16 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Sentry } from '../lib/sentry';
+import { formatLocalDateKey } from '../lib/date';
+import type { ActivationStage } from '../lib/activationTracker';
 
 const SETTINGS_KEY: string = '@fueliq_notification_settings';
 
 // ============================================================================
 // Frequency Capping (#14)
+// Applies only to notifications that fire immediately. Recurring or
+// future-dated reminders are intentionally excluded so setup work does not
+// consume the user's daily quota before anything is delivered.
 // ============================================================================
 
 const FREQUENCY_CAP_KEY = '@fueliq_notification_frequency';
@@ -15,7 +20,7 @@ const MAX_NOTIFICATIONS_PER_DAY = 8;
 async function checkFrequencyCap(): Promise<boolean> {
   try {
     const raw = await AsyncStorage.getItem(FREQUENCY_CAP_KEY);
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDateKey(new Date());
 
     if (raw) {
       const data = JSON.parse(raw);
@@ -32,7 +37,7 @@ async function checkFrequencyCap(): Promise<boolean> {
 
 async function incrementFrequencyCount(): Promise<void> {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDateKey(new Date());
     const raw = await AsyncStorage.getItem(FREQUENCY_CAP_KEY);
     let data = { date: today, count: 0 };
 
@@ -112,6 +117,8 @@ export interface NotificationSettings {
   waterInterval: number;
 }
 
+type ActivationReminderStage = Exclude<ActivationStage, 'complete'>;
+
 // Default notification settings
 const DEFAULT_SETTINGS: NotificationSettings = {
   mealReminders: true,
@@ -166,6 +173,53 @@ function randomMessage(messages: string[]): string {
   return messages[Math.floor(Math.random() * messages.length)];
 }
 
+function getActivationReminderPlan(stage: ActivationReminderStage, userName?: string): {
+  title: string;
+  body: string;
+  triggerDate: Date;
+} {
+  const now = new Date();
+  const triggerDate = new Date(now);
+  const name = userName || 'there';
+
+  if (stage === 'first_meal') {
+    triggerDate.setHours(now.getHours() + 2, 0, 0, 0);
+    if (triggerDate.getHours() >= 21) {
+      triggerDate.setDate(triggerDate.getDate() + 1);
+      triggerDate.setHours(8, 30, 0, 0);
+    }
+
+    return {
+      title: 'Log your first meal',
+      body: `${name}, one quick meal log unlocks your targets for today.`,
+      triggerDate,
+    };
+  }
+
+  if (stage === 'first_barcode') {
+    triggerDate.setHours(now.getHours() + 3, 15, 0, 0);
+    if (triggerDate.getHours() >= 21) {
+      triggerDate.setDate(triggerDate.getDate() + 1);
+      triggerDate.setHours(11, 0, 0, 0);
+    }
+
+    return {
+      title: 'Try one barcode scan',
+      body: `${name}, scan one packaged food so tomorrow's logging gets faster.`,
+      triggerDate,
+    };
+  }
+
+  triggerDate.setDate(triggerDate.getDate() + 1);
+  triggerDate.setHours(8, 0, 0, 0);
+
+  return {
+    title: 'Repeat yesterday in one tap',
+    body: `${name}, keep the habit cheap tomorrow. Reuse a meal instead of starting from scratch.`,
+    triggerDate,
+  };
+}
+
 /**
  * Configure the default notification handler and categories.
  * Call this once at app startup (e.g. in _layout).
@@ -213,6 +267,14 @@ export function configureNotifications(): void {
       {
         identifier: 'LOG_FOOD',
         buttonTitle: 'Log Now',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+
+    Notifications.setNotificationCategoryAsync('activation-reminder', [
+      {
+        identifier: 'OPEN_LOG',
+        buttonTitle: 'Open Log',
         options: { opensAppToForeground: true },
       },
     ]);
@@ -317,9 +379,6 @@ interface MealReminderConfig {
 export async function scheduleMealReminders(settings: NotificationSettings): Promise<void> {
   if (!settings.mealReminders) return;
 
-  const canSend = await checkFrequencyCap();
-  if (!canSend) return;
-
   // Cancel existing meal reminders first
   await cancelByIdentifier('meal-breakfast');
   await cancelByIdentifier('meal-lunch');
@@ -362,7 +421,6 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
           minute: meal.time.minute,
         } as any,
       });
-      await incrementFrequencyCount();
     } catch (error: unknown) {
       if (__DEV__) console.error(`Failed to schedule ${meal.identifier}:`, error);
     }
@@ -374,9 +432,6 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
  */
 export async function scheduleWaterReminders(settings: NotificationSettings): Promise<void> {
   if (!settings.waterReminders) return;
-
-  const canSend = await checkFrequencyCap();
-  if (!canSend) return;
 
   // Cancel existing water reminders first
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -410,7 +465,6 @@ export async function scheduleWaterReminders(settings: NotificationSettings): Pr
           minute,
         } as any,
       });
-      await incrementFrequencyCount();
       index++;
     } catch (error: unknown) {
       if (__DEV__) console.error(`Failed to schedule water-${index}:`, error);
@@ -424,9 +478,6 @@ export async function scheduleWaterReminders(settings: NotificationSettings): Pr
  */
 export async function scheduleFastingAlert(endTime: Date | number): Promise<void> {
   try {
-    const canSend = await checkFrequencyCap();
-    if (!canSend) return;
-
     // Cancel any existing fasting alert
     await cancelByIdentifier('fasting-complete');
 
@@ -450,7 +501,6 @@ export async function scheduleFastingAlert(endTime: Date | number): Promise<void
         date: triggerDate,
       } as any,
     });
-    await incrementFrequencyCount();
   } catch (error: unknown) {
     if (__DEV__) console.error('Failed to schedule fasting alert:', error);
   }
@@ -463,9 +513,6 @@ export async function scheduleFastingAlert(endTime: Date | number): Promise<void
  */
 export async function scheduleStreakWarning(streakDays?: number, userName?: string): Promise<void> {
   try {
-    const canSend = await checkFrequencyCap();
-    if (!canSend) return;
-
     // Cancel any existing streak warning
     await cancelByIdentifier('streak-warning');
 
@@ -524,9 +571,46 @@ export async function scheduleStreakWarning(streakDays?: number, userName?: stri
         date: triggerDate,
       } as any,
     });
-    await incrementFrequencyCount();
   } catch (error: unknown) {
     if (__DEV__) console.error('Failed to schedule streak warning:', error);
+  }
+}
+
+export async function scheduleActivationReminder(
+  stage: ActivationReminderStage,
+  userName?: string
+): Promise<void> {
+  try {
+    await cancelByIdentifier('activation-reminder');
+
+    const plan = getActivationReminderPlan(stage, userName);
+    if (plan.triggerDate.getTime() <= Date.now()) {
+      return;
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      identifier: 'activation-reminder',
+      content: {
+        title: plan.title,
+        body: plan.body,
+        categoryIdentifier: 'activation-reminder',
+        data: { type: 'activation-reminder', stage },
+      },
+      trigger: {
+        type: 'date',
+        date: plan.triggerDate,
+      } as any,
+    });
+  } catch (error: unknown) {
+    if (__DEV__) console.error('Failed to schedule activation reminder:', error);
+  }
+}
+
+export async function cancelActivationReminder(): Promise<void> {
+  try {
+    await cancelByIdentifier('activation-reminder');
+  } catch (error: unknown) {
+    if (__DEV__) console.error('Failed to cancel activation reminder:', error);
   }
 }
 
@@ -570,9 +654,6 @@ const STREAK_MORNING_MESSAGES: Record<string, string[]> = {
  */
 export async function scheduleMorningBriefing(streakDays?: number, userName?: string): Promise<void> {
   try {
-    const canSend = await checkFrequencyCap();
-    if (!canSend) return;
-
     await cancelByIdentifier('morning-briefing');
 
     let body = randomMessage(MORNING_BRIEFING_MESSAGES);
@@ -611,7 +692,6 @@ export async function scheduleMorningBriefing(streakDays?: number, userName?: st
         minute: 30,
       } as any,
     });
-    await incrementFrequencyCount();
   } catch (error: unknown) {
     if (__DEV__) console.error('Failed to schedule morning briefing:', error);
   }
@@ -739,9 +819,6 @@ export async function scheduleSocialNotification(
   data: SocialNotificationData
 ): Promise<void> {
   try {
-    const canSend = await checkFrequencyCap();
-    if (!canSend) return;
-
     const messageBuilder = SOCIAL_MESSAGES[type];
     if (!messageBuilder) {
       if (__DEV__) console.warn(`[Notifications] Unknown social type: ${type}`);
@@ -756,10 +833,16 @@ export async function scheduleSocialNotification(
     const triggerDate = hasEventDate
       ? (data.eventDate instanceof Date ? data.eventDate : new Date(data.eventDate as number))
       : null;
+    const isImmediate = triggerDate === null;
 
     // Don't schedule if the event date is in the past
     if (triggerDate && triggerDate.getTime() <= Date.now()) {
       return;
+    }
+
+    if (isImmediate) {
+      const canSend = await checkFrequencyCap();
+      if (!canSend) return;
     }
 
     await Notifications.scheduleNotificationAsync({
@@ -778,7 +861,9 @@ export async function scheduleSocialNotification(
         ? { type: 'date', date: triggerDate } as any
         : null,
     });
-    await incrementFrequencyCount();
+    if (isImmediate) {
+      await incrementFrequencyCount();
+    }
   } catch (error: unknown) {
     if (__DEV__) console.error(`[Notifications] Failed to schedule social notification (${type}):`, error);
   }

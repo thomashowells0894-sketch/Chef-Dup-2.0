@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Clock, Crown } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import { useSubscription } from '../context/SubscriptionContext';
 import { useRouter } from 'expo-router';
@@ -10,6 +11,7 @@ import { hapticLight } from '../lib/haptics';
 export default function TrialExpirationBanner() {
   const { isTrialing, trialEndDate, isPremium } = useSubscription();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const daysRemaining = useMemo(() => {
     if (!isTrialing || !trialEndDate) return null;
@@ -32,7 +34,11 @@ export default function TrialExpirationBanner() {
     : `${daysRemaining} days left in your trial`;
 
   return (
-    <Animated.View entering={FadeInDown.duration(300)}>
+    <Animated.View
+      entering={FadeInDown.duration(300)}
+      style={[styles.wrapper, { top: insets.top + 56 }]}
+      pointerEvents="box-none"
+    >
       <Pressable
         style={[styles.container, { backgroundColor: bgColor }]}
         onPress={() => { hapticLight(); router.push('/settings'); }}
@@ -51,6 +57,12 @@ export default function TrialExpirationBanner() {
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    position: 'absolute',
+    left: Spacing.md,
+    right: Spacing.md,
+    zIndex: 9998,
+  },
   container: {
     flexDirection: 'row',
     alignItems: 'center',

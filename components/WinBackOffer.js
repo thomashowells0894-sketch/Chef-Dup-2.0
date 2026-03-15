@@ -162,7 +162,7 @@ export default function WinBackOffer({ offer, onAccept, onDismiss }) {
   const { Icon, gradient, accentColor, glowColor } = getOfferVisuals(offer.type);
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent>
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={handleDismiss}>
       <Animated.View entering={FadeIn.duration(250)} style={styles.backdrop}>
         <Animated.View entering={FadeInUp.delay(100).duration(500).springify()} style={styles.cardWrapper}>
           {/* Ambient glow behind card */}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSubscription } from '../context/SubscriptionContext';
+import { useAuth } from '../context/AuthContext';
 import { Sentry } from '../lib/sentry';
 
 const WINBACK_KEY = '@fueliq_winback';
@@ -37,12 +38,16 @@ const OFFERS: WinBackOffer[] = [
 ];
 
 export function useWinBack() {
+  const { user } = useAuth();
   const { isPremium, isTrialing, hasExpiredTrial } = useSubscription();
   const [offer, setOffer] = useState<WinBackOffer | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (isPremium || isTrialing || dismissed) return;
+    if (!user || isPremium || isTrialing || dismissed) {
+      setOffer(null);
+      return;
+    }
 
     (async () => {
       try {
@@ -63,7 +68,7 @@ export function useWinBack() {
         }
       } catch (e) { Sentry.captureException(e); }
     })();
-  }, [isPremium, isTrialing, hasExpiredTrial, dismissed]);
+  }, [user, isPremium, isTrialing, hasExpiredTrial, dismissed]);
 
   const dismissOffer = useCallback(async () => {
     setDismissed(true);

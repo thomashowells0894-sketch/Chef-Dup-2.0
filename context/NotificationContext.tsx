@@ -5,27 +5,24 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
-  useRef,
 } from 'react';
 import {
+  cancelActivationReminder as cancelActivationReminderService,
   configureNotifications,
   requestPermissions,
   getNotificationSettings,
   saveNotificationSettings,
   rescheduleAll,
+  scheduleActivationReminder as scheduleActivationReminderService,
   scheduleStreakWarning as scheduleStreakWarningService,
   scheduleFastingAlert as scheduleFastingAlertService,
+  cancelAllScheduled,
   cancelByIdentifier,
   DEFAULT_SETTINGS,
+  type NotificationSettings,
 } from '../services/notifications';
-
-interface NotificationSettings {
-  mealReminders: boolean;
-  fastingAlerts: boolean;
-  streakWarnings: boolean;
-  dailyDigest: boolean;
-  [key: string]: boolean;
-}
+import { useAuth } from './AuthContext';
+import type { ActivationStage } from '../lib/activationTracker';
 
 interface NotificationContextValue {
   settings: NotificationSettings;
@@ -34,60 +31,109 @@ interface NotificationContextValue {
   updateSettings: (newSettings: Partial<NotificationSettings>) => void;
   scheduleFastingAlert: (endTime: Date) => Promise<void>;
   scheduleStreakWarning: (streakDays?: number, userName?: string) => Promise<void>;
+  syncActivationReminder: (stage: ActivationStage, userName?: string) => Promise<void>;
   cancelNotification: (identifier: string) => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS as unknown as NotificationSettings);
+  const { user } = useAuth();
+  const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const isHydrated = useRef<boolean>(false);
+  const [settingsLoaded, setSettingsLoaded] = useState<boolean>(false);
 
   // Configure notification handler once on mount
   useEffect(() => {
     configureNotifications();
   }, []);
 
-  // Request permissions and load settings on mount
+  // Load saved settings once on mount. Permission prompts are user-gated.
   useEffect(() => {
+    let cancelled = false;
+
     async function initialize() {
       try {
-        const granted = await requestPermissions();
-        setHasPermission(granted);
-
         const saved = await getNotificationSettings();
-        setSettings(saved as unknown as NotificationSettings);
-
-        // Schedule notifications if we have permission
-        if (granted) {
-          await rescheduleAll(saved);
+        if (!cancelled) {
+          setSettings(saved);
         }
       } catch (error) {
         if (__DEV__) console.error('Failed to initialize notifications:', error);
       } finally {
-        isHydrated.current = true;
-        setIsLoading(false);
+        if (!cancelled) {
+          setSettingsLoaded(true);
+          setIsLoading(false);
+        }
       }
     }
+
     initialize();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // Only authenticated users should be prompted and have active reminders.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    let cancelled = false;
+
+    async function syncNotificationAccess() {
+      if (!user) {
+        setHasPermission(false);
+        setIsLoading(false);
+        await cancelAllScheduled();
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const granted = await requestPermissions();
+        if (cancelled) return;
+
+        setHasPermission(granted);
+
+        if (!granted) {
+          await cancelAllScheduled();
+        }
+      } catch (error) {
+        if (__DEV__) console.error('Failed to sync notification access:', error);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    syncNotificationAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsLoaded, user]);
 
   // Reschedule all notifications whenever settings change (after initial hydration)
   useEffect(() => {
-    if (!isHydrated.current || !hasPermission) return;
+    if (!settingsLoaded) return;
 
     async function applySettings() {
       try {
-        await saveNotificationSettings(settings as any);
-        await rescheduleAll(settings as any);
+        await saveNotificationSettings(settings);
+
+        if (user && hasPermission) {
+          await rescheduleAll(settings);
+        }
       } catch (error) {
         if (__DEV__) console.error('Failed to apply notification settings:', error);
       }
     }
     applySettings();
-  }, [settings, hasPermission]);
+  }, [settings, hasPermission, settingsLoaded, user]);
 
   // Update one or more settings fields
   const updateSettings = useCallback((newSettings: Partial<NotificationSettings>) => {
@@ -117,6 +163,21 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, [hasPermission, settings.streakWarnings]);
 
+  const syncActivationReminder = useCallback(async (stage: ActivationStage, userName?: string) => {
+    if (!hasPermission || !settings.streakWarnings) return;
+
+    try {
+      if (stage === 'complete') {
+        await cancelActivationReminderService();
+        return;
+      }
+
+      await scheduleActivationReminderService(stage, userName);
+    } catch (error) {
+      if (__DEV__) console.error('Failed to sync activation reminder:', error);
+    }
+  }, [hasPermission, settings.streakWarnings]);
+
   // Cancel a specific notification by identifier
   const cancelNotification = useCallback(async (identifier: string) => {
     try {
@@ -136,6 +197,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       updateSettings,
       scheduleFastingAlert,
       scheduleStreakWarning,
+      syncActivationReminder,
       cancelNotification,
     }),
     [
@@ -145,6 +207,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       updateSettings,
       scheduleFastingAlert,
       scheduleStreakWarning,
+      syncActivationReminder,
       cancelNotification,
     ]
   );

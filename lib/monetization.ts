@@ -252,6 +252,8 @@ const AB_TEST_KEY: string = '@fueliq_ab_tests';
 const ACTIVE_TESTS: Record<string, ABTest> = {
   onboarding_flow: { variants: ['classic', 'ai_genesis', 'guided_wizard'], weights: [0.33, 0.34, 0.33] },
   paywall_design: { variants: ['minimal', 'feature_rich', 'social_proof'], weights: [0.33, 0.34, 0.33] },
+  paywall_message: { variants: ['speed', 'clarity', 'coach'], weights: [0.4, 0.35, 0.25] },
+  paywall_default_plan: { variants: ['yearly', 'monthly'], weights: [0.65, 0.35] },
   dashboard_layout: { variants: ['cards', 'bento', 'timeline'], weights: [0.33, 0.34, 0.33] },
   cta_text: { variants: ['Start Free Trial', 'Unlock Your Potential', 'Join 100K+ Users'], weights: [0.33, 0.34, 0.33] },
 };

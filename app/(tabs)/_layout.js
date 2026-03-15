@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { View, StyleSheet, Pressable, Animated, Platform, Dimensions } from 'react-native';
 import { useEffect, useRef } from 'react';
-import { Home, BookOpen, Plus, BarChart3, User } from 'lucide-react-native';
+import { Home, Plus, BarChart3, User } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { hapticImpact, hapticLight } from '../../lib/haptics';
@@ -10,6 +10,7 @@ import { Colors, Spacing, BorderRadius, Gradients, Glass } from '../../constants
 import { trackEvent } from '../../lib/analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const VISIBLE_ROUTE_ORDER = ['index', 'add', 'stats', 'profile'];
 
 // Kinetic FAB - The centerpiece button with living animations
 function KineticFAB({ onPress }) {
@@ -187,22 +188,26 @@ function TabBarIcon({ icon: Icon, focused }) {
 
 const TAB_ICONS = {
   index: Home,
-  diary: BookOpen,
   add: Plus,
   stats: BarChart3,
   profile: User,
 };
 
 const TAB_LABELS = {
-  index: 'Dashboard',
-  diary: 'Diary',
-  add: '',
-  stats: 'Stats',
+  index: 'Today',
+  add: 'Log',
+  stats: 'Progress',
   profile: 'Profile',
 };
 
 // Floating Glass Dock with frosted blur effect
-function FloatingDock({ state, descriptors, navigation }) {
+function FloatingDock({ state, navigation }) {
+  const visibleRoutes = state.routes
+    .filter((route) => VISIBLE_ROUTE_ORDER.includes(route.name))
+    .sort(
+      (a, b) => VISIBLE_ROUTE_ORDER.indexOf(a.name) - VISIBLE_ROUTE_ORDER.indexOf(b.name)
+    );
+
   return (
     <ReAnimated.View
       entering={FadeInUp.delay(200).springify().mass(0.5).damping(10)}
@@ -223,9 +228,8 @@ function FloatingDock({ state, descriptors, navigation }) {
 
       {/* Tab items */}
       <View style={styles.dockRow}>
-        {state.routes.map((route, index) => {
-          const { options } = descriptors[route.key];
-          const focused = state.index === index;
+        {visibleRoutes.map((route) => {
+          const focused = state.routes[state.index]?.key === route.key;
           const isFab = route.name === 'add';
 
           const onPress = () => {
@@ -257,7 +261,6 @@ function FloatingDock({ state, descriptors, navigation }) {
 
           const tabTestIds = {
             index: 'home-tab',
-            diary: 'diary-tab',
             stats: 'stats-tab',
             profile: 'profile-tab',
           };
@@ -294,10 +297,10 @@ export default function TabLayout() {
         freezeOnBlur: true,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Dashboard', lazy: false }} />
-      <Tabs.Screen name="diary" options={{ title: 'Diary' }} />
-      <Tabs.Screen name="add" options={{ title: '' }} />
-      <Tabs.Screen name="stats" options={{ title: 'Stats' }} />
+      <Tabs.Screen name="index" options={{ title: 'Today', lazy: false }} />
+      <Tabs.Screen name="diary" options={{ title: 'Diary', href: null }} />
+      <Tabs.Screen name="add" options={{ title: 'Log' }} />
+      <Tabs.Screen name="stats" options={{ title: 'Progress' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="progress" options={{ href: null }} />
     </Tabs>

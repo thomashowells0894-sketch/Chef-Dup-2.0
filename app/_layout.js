@@ -3,7 +3,8 @@ import { useEffect, useCallback, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, ActivityIndicator, AppState } from 'react-native';
+import { View, AppState } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as QuickActions from 'expo-quick-actions';
 import { useQuickActionCallback } from 'expo-quick-actions/hooks';
@@ -26,6 +27,7 @@ import {
   cleanupAnalytics,
 } from '../lib/analytics';
 import { recordSessionStart, recordSessionEnd } from '../lib/crashFreeRate';
+import { getRouteForNotificationData } from '../lib/notificationRoutes';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider } from '../context/ThemeContext';
 import { ProfileProvider, useProfile } from '../context/ProfileContext';
@@ -41,9 +43,9 @@ import XPToast from '../components/XPToast';
 import FastingPromptModal from '../components/FastingPromptModal';
 import CelebrationOverlay from '../components/CelebrationOverlay';
 import ErrorBoundary from '../components/ErrorBoundary';
+import TrialExpirationBanner from '../components/TrialExpirationBanner';
 import WinBackOffer from '../components/WinBackOffer';
 import { useWinBack } from '../hooks/useWinBack';
-import { configureNotifications, requestPermissions, scheduleMealReminders, scheduleStreakWarning, scheduleMorningBriefing } from '../services/notifications';
 
 /**
  * Utility to compose multiple context providers without deep nesting.
@@ -63,6 +65,7 @@ SplashScreen.preventAutoHideAsync();
 
 // Inner navigation component that handles profile-based routing
 function ProfileAwareNav() {
+  const { user } = useAuth();
   const { isProfileComplete, isHydrated, isLoading } = useProfile();
   const segments = useSegments();
   const router = useRouter();
@@ -83,7 +86,7 @@ function ProfileAwareNav() {
     else if (isProfileComplete && inOnboarding) {
       router.replace('/(tabs)');
     }
-  }, [isProfileComplete, isHydrated, isLoading, segments]);
+  }, [isProfileComplete, isHydrated, isLoading, router, segments]);
 
   const handleWinBackAccept = useCallback(() => {
     dismissWinBack();
@@ -102,14 +105,17 @@ function ProfileAwareNav() {
             animationDuration: 150,
           }}
         />
+        {user ? <TrialExpirationBanner /> : null}
         <XPToast />
         <FastingPromptModal />
         <CelebrationOverlay />
-        <WinBackOffer
-          offer={winBackOffer}
-          onAccept={handleWinBackAccept}
-          onDismiss={dismissWinBack}
-        />
+        {user ? (
+          <WinBackOffer
+            offer={winBackOffer}
+            onAccept={handleWinBackAccept}
+            onDismiss={dismissWinBack}
+          />
+        ) : null}
       </View>
     </GestureHandlerRootView>
   );
@@ -120,6 +126,7 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
   const appState = useRef(AppState.currentState);
+  const lastHandledNotificationId = useRef(null);
 
   // Session timeout enforcement — check on foreground resume
   useEffect(() => {
@@ -148,35 +155,18 @@ function RootLayoutNav() {
 
     SplashScreen.hideAsync();
 
+    const publicRoutes = new Set(['auth', 'forgot-password', 'update-password']);
+    const inPublicRoute = publicRoutes.has(segments[0]);
     const inAuthGroup = segments[0] === 'auth';
-    const inOnboarding = segments[0] === 'onboarding';
 
-    if (!user && !inAuthGroup) {
+    if (!user && !inPublicRoute) {
       // Redirect to auth if not signed in
       router.replace('/auth');
     } else if (user && inAuthGroup) {
       // Redirect to tabs (ProfileAwareNav will handle onboarding redirect if needed)
       router.replace('/(tabs)');
     }
-  }, [user, loading, segments]);
-
-  // Initialize push notifications when user is authenticated
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        await configureNotifications();
-        const granted = await requestPermissions();
-        if (granted) {
-          await scheduleMealReminders({});
-          await scheduleStreakWarning();
-          await scheduleMorningBriefing();
-        }
-      } catch (e) {
-        if (__DEV__) console.warn('Notification init failed:', e);
-      }
-    })();
-  }, [user]);
+  }, [loading, router, segments, user]);
 
   // --- Analytics session lifecycle ---
   useEffect(() => {
@@ -236,6 +226,42 @@ function RootLayoutNav() {
         break;
     }
   });
+
+  useEffect(() => {
+    if (!user) return;
+
+    const handleNotificationResponse = (response) => {
+      const identifier = response?.notification?.request?.identifier || null;
+      if (identifier && lastHandledNotificationId.current === identifier) {
+        return;
+      }
+
+      const data = response?.notification?.request?.content?.data;
+      const route = getRouteForNotificationData(
+        data && typeof data === 'object' ? data : null
+      );
+      if (!route) {
+        return;
+      }
+
+      lastHandledNotificationId.current = identifier;
+      router.push(route);
+    };
+
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          handleNotificationResponse(response);
+        }
+      })
+      .catch(() => {});
+
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      handleNotificationResponse
+    );
+
+    return () => subscription.remove();
+  }, [router, user]);
 
   if (loading) {
     return null;

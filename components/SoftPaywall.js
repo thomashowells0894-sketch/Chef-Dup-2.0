@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,9 +7,8 @@ import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constant
 import { useSubscription } from '../context/SubscriptionContext';
 import { useRouter } from 'expo-router';
 import { hapticLight, hapticMedium } from '../lib/haptics';
-import { getABTestVariant } from '../lib/monetization';
+import { getABTestVariant, SUBSCRIPTION_TIERS } from '../lib/monetization';
 import { trackConversion } from '../lib/conversionTracking';
-import { SUBSCRIPTION_TIERS } from '../lib/monetization';
 import TrialCountdown from './TrialCountdown';
 
 const PRO_FEATURES = [
@@ -29,9 +28,9 @@ export default function SoftPaywall({ feature, previewContent, children }) {
   // ----- A/B test variant (assigned once, memoised) -----
   const [paywallVariant, setPaywallVariant] = useState('feature_rich');
 
-  useMemo(() => {
+  useEffect(() => {
     // Fire off the async lookup; the result is cached in AsyncStorage so
-    // subsequent calls are fast.  We use useMemo so it only runs once per mount.
+    // subsequent calls are fast.
     let cancelled = false;
     getABTestVariant('paywall_design').then((variant) => {
       if (!cancelled && variant) setPaywallVariant(variant);
@@ -77,7 +76,13 @@ export default function SoftPaywall({ feature, previewContent, children }) {
     });
     hapticMedium?.() || hapticLight();
     setShowPreview(false);
-    router.push('/settings');
+    router.push({
+      pathname: '/paywall',
+      params: {
+        source: feature || 'soft_paywall',
+        trigger: 'preview',
+      },
+    });
   };
 
   // ----- Variant-specific modal body -----
@@ -144,7 +149,7 @@ export default function SoftPaywall({ feature, previewContent, children }) {
         </View>
       </Pressable>
 
-      <Modal visible={showPreview} transparent animationType="fade">
+      <Modal visible={showPreview} transparent animationType="fade" onRequestClose={handleDismiss}>
         <Animated.View entering={FadeIn.duration(200)} style={styles.modal}>
           <Animated.View entering={FadeInDown.duration(400)} style={styles.modalContent}>
             <LinearGradient

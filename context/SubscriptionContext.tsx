@@ -25,7 +25,7 @@ try {
   const PurchasesModule = require('react-native-purchases');
   Purchases = PurchasesModule.default;
   LOG_LEVEL = PurchasesModule.LOG_LEVEL;
-} catch (e) {
+} catch {
   if (__DEV__) console.warn('[Subscriptions] RevenueCat SDK not available');
 }
 
@@ -38,6 +38,7 @@ interface CustomerInfo {
       periodType: string;
     }>;
   };
+  allPurchasedProductIdentifiers?: string[];
 }
 
 interface Package {
@@ -96,7 +97,7 @@ interface SubscriptionContextValue {
   subscriptionType: 'monthly' | 'annual' | 'none';
   purchaseDate: string | null;
   checkFeature: (feature: string) => boolean;
-  purchasePackage: (packageToPurchase: Package) => Promise<PurchaseResult>;
+  purchasePackage: (packageToPurchase?: Package | null) => Promise<PurchaseResult>;
   restorePurchases: () => Promise<RestoreResult>;
 }
 
@@ -127,17 +128,66 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [trialEndDate, setTrialEndDate] = useState<string | null>(null);
   const [hasExpiredTrial, setHasExpiredTrial] = useState<boolean>(false);
 
+  const resetSubscriptionState = useCallback(() => {
+    setCustomerInfo(null);
+    setIsPremium(false);
+    setIsTrialing(false);
+    setTrialEndDate(null);
+    setHasExpiredTrial(false);
+  }, []);
+
+  // Check if user has premium entitlement - crash-proof
+  // Also extracts trial status for TrialExpirationBanner and win-back campaigns
+  const checkPremiumStatus = useCallback((info: CustomerInfo | null) => {
+    try {
+      if (!info) {
+        resetSubscriptionState();
+        return;
+      }
+
+      const entitlements = info.entitlements?.active || {};
+      const premiumEntitlement = entitlements[PREMIUM_ENTITLEMENT];
+      const hasPremium = premiumEntitlement !== undefined;
+      const hasPurchaseHistory = Array.isArray(info.allPurchasedProductIdentifiers)
+        && info.allPurchasedProductIdentifiers.length > 0;
+
+      setIsPremium(hasPremium);
+
+      // Detect trial period
+      if (hasPremium && premiumEntitlement) {
+        const isTrial = premiumEntitlement.periodType === 'TRIAL' || premiumEntitlement.periodType === 'trial';
+        setIsTrialing(isTrial);
+        setTrialEndDate(premiumEntitlement.expirationDate || null);
+        setHasExpiredTrial(false);
+      } else {
+        setIsTrialing(false);
+        setTrialEndDate(null);
+        setHasExpiredTrial(hasPurchaseHistory);
+      }
+
+      if (__DEV__) {
+        console.log('[Subscriptions] Premium status:', hasPremium);
+      }
+    } catch {
+      resetSubscriptionState();
+    }
+  }, [resetSubscriptionState]);
+
   // Initialize RevenueCat - crash-proof
   useEffect(() => {
+    let cancelled = false;
+    let customerInfoListener: ((info: CustomerInfo) => void) | null = null;
+
     async function initRevenueCat() {
       try {
         // If SDK not available, skip initialization
         if (!Purchases) {
+          if (cancelled) return;
           if (__DEV__) {
             console.log('[Subscriptions] RevenueCat SDK not available - Free plan mode');
           }
           setIsInitialized(true);
-          setIsPremium(false);
+          resetSubscriptionState();
           setIsLoading(false);
           return;
         }
@@ -146,7 +196,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         if (__DEV__ && LOG_LEVEL) {
           try {
             Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-          } catch (e) {
+          } catch {
             // Ignore log level errors
           }
         }
@@ -158,25 +208,29 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         });
 
         if (!apiKey) {
+          if (cancelled) return;
           if (__DEV__) {
             console.log('[Subscriptions] No API key - Free plan mode');
           }
           setIsInitialized(true);
-          setIsPremium(false);
+          resetSubscriptionState();
           setIsLoading(false);
           return;
         }
 
         await Purchases.configure({ apiKey });
+        if (cancelled) return;
 
         setIsInitialized(true);
 
         // Listen for customer info updates (wrapped in try-catch)
         try {
-          Purchases.addCustomerInfoUpdateListener((info: CustomerInfo) => {
+          customerInfoListener = (info: CustomerInfo) => {
+            if (cancelled) return;
             setCustomerInfo(info);
             checkPremiumStatus(info);
-          });
+          };
+          Purchases.addCustomerInfoUpdateListener(customerInfoListener);
         } catch (listenerError: any) {
           if (__DEV__) {
             console.warn('[Subscriptions] Listener error:', listenerError.message);
@@ -186,19 +240,21 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         // Fetch initial customer info (wrapped in try-catch)
         try {
           const info: CustomerInfo = await Purchases.getCustomerInfo();
+          if (cancelled) return;
           setCustomerInfo(info);
           checkPremiumStatus(info);
         } catch (infoError: any) {
+          if (cancelled) return;
           if (__DEV__) {
             console.warn('[Subscriptions] Customer info error:', infoError.message);
           }
-          // Default to not premium on error
-          setIsPremium(false);
+          resetSubscriptionState();
         }
 
         // Fetch offerings (wrapped in try-catch)
         try {
           const offers: Offerings = await Purchases.getOfferings();
+          if (cancelled) return;
           setOfferings(offers);
         } catch (offerError: any) {
           if (__DEV__) {
@@ -211,29 +267,71 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           console.log('[Subscriptions] RevenueCat initialized');
         }
       } catch (error: any) {
+        if (cancelled) return;
         // Complete failure - default to Free plan
         if (__DEV__) {
           console.error('[Subscriptions] Init error:', error.message);
         }
         setIsInitialized(true);
-        setIsPremium(false);
+        resetSubscriptionState();
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
 
     initRevenueCat();
-  }, []);
+
+    return () => {
+      cancelled = true;
+
+      if (Purchases && customerInfoListener && typeof Purchases.removeCustomerInfoUpdateListener === 'function') {
+        try {
+          Purchases.removeCustomerInfoUpdateListener(customerInfoListener);
+        } catch (error: any) {
+          if (__DEV__) {
+            console.warn('[Subscriptions] Listener cleanup error:', error.message);
+          }
+        }
+      }
+    };
+  }, [checkPremiumStatus, resetSubscriptionState]);
 
   // Identify user with RevenueCat when auth changes
   useEffect(() => {
-    async function identifyUser() {
-      // Skip if not ready or no user or SDK not available
-      if (!isInitialized || !user || !Purchases) return;
+    let cancelled = false;
+
+    async function syncRevenueCatUser() {
+      if (!isInitialized) return;
+
+      if (!Purchases) {
+        if (!user && !cancelled) {
+          resetSubscriptionState();
+        }
+        return;
+      }
+
+      if (!user) {
+        try {
+          await Purchases.logOut();
+        } catch (error: any) {
+          if (__DEV__) {
+            console.warn('[Subscriptions] Logout error:', error.message);
+          }
+        }
+
+        if (!cancelled) {
+          resetSubscriptionState();
+        }
+        return;
+      }
 
       try {
         // Log in user to RevenueCat
         const { customerInfo }: { customerInfo: CustomerInfo } = await Purchases.logIn(user.id);
+        if (cancelled) return;
+
         setCustomerInfo(customerInfo);
         checkPremiumStatus(customerInfo);
 
@@ -244,66 +342,33 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         if (__DEV__) {
           console.warn('[Subscriptions] Identify error:', error.message);
         }
-        // On error, assume not premium
-        setIsPremium(false);
+
+        if (!cancelled) {
+          resetSubscriptionState();
+        }
       }
     }
 
-    identifyUser();
-  }, [isInitialized, user]);
+    syncRevenueCatUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkPremiumStatus, isInitialized, resetSubscriptionState, user]);
 
   // Sync premium status to the AI service module whenever it changes
   useEffect(() => {
     setAIPremiumStatus(isPremium);
   }, [isPremium]);
 
-  // Check if user has premium entitlement - crash-proof
-  // Also extracts trial status for TrialExpirationBanner and win-back campaigns
-  const checkPremiumStatus = useCallback((info: CustomerInfo | null) => {
-    try {
-      if (!info || !info.entitlements || !info.entitlements.active) {
-        setIsPremium(false);
-        // Check if there was a previously active entitlement that expired (win-back target)
-        // If entitlements exist but none are active, user had a trial/sub that expired
-        if (info?.entitlements && Object.keys(info.entitlements.active || {}).length === 0) {
-          setHasExpiredTrial(true);
-        }
-        setIsTrialing(false);
-        setTrialEndDate(null);
-        return;
-      }
-
-      const entitlements = info.entitlements.active;
-      const premiumEntitlement = entitlements[PREMIUM_ENTITLEMENT];
-      const hasPremium = premiumEntitlement !== undefined;
-      setIsPremium(hasPremium);
-
-      // Detect trial period
-      if (hasPremium && premiumEntitlement) {
-        const isTrial = premiumEntitlement.periodType === 'TRIAL' || premiumEntitlement.periodType === 'trial';
-        setIsTrialing(isTrial);
-        setTrialEndDate(premiumEntitlement.expirationDate || null);
-        setHasExpiredTrial(false);
-      } else {
-        setIsTrialing(false);
-        setTrialEndDate(null);
-      }
-
-      if (__DEV__) {
-        console.log('[Subscriptions] Premium status:', hasPremium);
-      }
-    } catch (e) {
-      // Any error = not premium
-      setIsPremium(false);
-      setIsTrialing(false);
-      setTrialEndDate(null);
-    }
-  }, []);
-
   // Purchase a package - crash-proof
-  const purchasePackage = useCallback(async (packageToPurchase: Package): Promise<PurchaseResult> => {
+  const purchasePackage = useCallback(async (packageToPurchase?: Package | null): Promise<PurchaseResult> => {
     if (purchaseInProgress) return { success: false, error: 'Purchase already in progress' };
+    if (!isInitialized) return { success: false, error: 'Purchases are still loading. Please try again in a moment.' };
     if (!Purchases) return { success: false, error: 'Purchases not available' };
+    if (!packageToPurchase) {
+      return { success: false, error: 'The selected subscription plan is currently unavailable.' };
+    }
 
     setPurchaseInProgress(true);
 
@@ -327,11 +392,15 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     } finally {
       setPurchaseInProgress(false);
     }
-  }, [purchaseInProgress, checkPremiumStatus]);
+  }, [purchaseInProgress, isInitialized, checkPremiumStatus]);
 
   // Restore purchases - crash-proof
   const restorePurchases = useCallback(async (): Promise<RestoreResult> => {
     if (purchaseInProgress) return { success: false, error: 'Operation in progress' };
+    if (!isInitialized) {
+      Alert.alert('Please Wait', 'The store is still loading. Please try again in a moment.');
+      return { success: false, error: 'Purchases are still loading' };
+    }
     if (!Purchases) {
       Alert.alert('Not Available', 'Purchase restoration is not available at this time.');
       return { success: false, error: 'Purchases not available' };
@@ -363,7 +432,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     } finally {
       setPurchaseInProgress(false);
     }
-  }, [purchaseInProgress, checkPremiumStatus]);
+  }, [purchaseInProgress, isInitialized, checkPremiumStatus]);
 
   // Get current offering packages
   const packages = useMemo<Package[]>(() => {

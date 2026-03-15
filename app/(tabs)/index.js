@@ -14,13 +14,11 @@ import ScreenErrorBoundary from '../../components/ScreenErrorBoundary';
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
   ActivityIndicator,
   Pressable,
   Platform,
   Alert,
-  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -30,7 +28,6 @@ import ReAnimated, {
   useSharedValue,
   useAnimatedScrollHandler,
   useAnimatedStyle,
-  useAnimatedRef,
   interpolate,
   Extrapolation,
   withRepeat,
@@ -41,19 +38,17 @@ import ReAnimated, {
 import ScreenWrapper from '../../components/ScreenWrapper';
 import {
   Flame,
-  Sparkles,
-  ShoppingCart,
-  Share2,
   Zap,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
+  RotateCcw,
   ChefHat,
   Dumbbell,
   Target,
-  TrendingUp,
-  Scale,
   Pill,
   Award,
-  Trophy,
+  ScanBarcode,
 } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { hapticImpact, hapticLight, hapticSuccess, hapticWarning } from '../../lib/haptics';
@@ -62,14 +57,12 @@ import DaySummary from '../../components/DaySummary';
 import MealSection from '../../components/MealSection';
 import QuickLog from '../../components/QuickLog';
 import WaterCard from '../../components/WaterCard';
-import FastingCard from '../../components/FastingCard';
 import BioFeedbackCard from '../../components/BioFeedbackCard';
 import MacrosModal from '../../components/MacrosModal';
 import CaloriesModal from '../../components/CaloriesModal';
 import ExerciseModal from '../../components/ExerciseModal';
 import SmartCoachModal from '../../components/SmartCoachModal';
 import FoodDetailModal from '../../components/FoodDetailModal';
-import MorningBriefing from '../../components/MorningBriefing';
 import ContextualCards from '../../components/ContextualCards';
 import StreakRepairCard from '../../components/StreakRepairCard';
 import SmartNudge from '../../components/SmartNudge';
@@ -86,12 +79,10 @@ import GlassCard from '../../components/ui/GlassCard';
 import ShareCardModal from '../../components/ShareCardModal';
 import {
   Colors,
-  Gradients,
   Spacing,
   FontSize,
   FontWeight,
   BorderRadius,
-  Glass,
 } from '../../constants/theme';
 import { useMeals } from '../../context/MealContext';
 import { useProfile } from '../../context/ProfileContext';
@@ -99,7 +90,6 @@ import { useGamification } from '../../context/GamificationContext';
 import { useFasting } from '../../context/FastingContext';
 import useSupplements from '../../hooks/useSupplements';
 import useNutritionScore from '../../hooks/useNutritionScore';
-import { SIMULATED_USERS } from '../../data/leaderboardData';
 import { DashboardSkeleton } from '../../components/SkeletonLoader';
 import FeatureTour from '../../components/FeatureTour';
 import { DASHBOARD_TOUR } from '../../data/tourSteps';
@@ -108,21 +98,34 @@ import usePredictiveAnalytics from '../../hooks/usePredictiveAnalytics';
 import AnimatedProgressRing from '../../components/AnimatedProgressRing';
 import ActionCard from '../../components/ActionCard';
 import AIFab from '../../components/AIFab';
+import ActivationCard from '../../components/ActivationCard';
+import TodayFocusCard from '../../components/TodayFocusCard';
+import UpgradeMomentumCard from '../../components/UpgradeMomentumCard';
+import MyFitnessPalImportCard from '../../components/MyFitnessPalImportCard';
 import { calculateWellnessScore } from '../../lib/wellnessEngine';
 import { useMood } from '../../context/MoodContext';
 import { usePreload } from '../../hooks/usePreload';
 import { useIsPremium } from '../../context/SubscriptionContext';
 import { useNotifications } from '../../context/NotificationContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  recordQuickAddUsed,
+  recordRepeatLogUsed,
+  recordTodayOpened,
+} from '../../lib/activationTracker';
 import { useFriends } from '../../hooks/useFriends';
+import useActivationTracker from '../../hooks/useActivationTracker';
 import { useProactiveCoach } from '../../hooks/useProactiveCoach';
 import { useHealthSync } from '../../hooks/useHealthSync';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import {
+  buildRepeatMealSuggestions,
+  useRecentMealSnapshots,
+} from '../../lib/recentMeals';
+import { trackEvent } from '../../lib/analytics';
 
 // Premium accent colors
 const ACCENT = Colors.primary; // Electric Blue
-const ACCENT_GLOW = Colors.primaryGlow;
 const ACCENT_DIM = Colors.primaryDim;
 
 // Streak milestones that trigger shareable screenshot cards
@@ -184,6 +187,96 @@ function getFormattedDate(date) {
   return format(date, 'EEEE, MMM d');
 }
 
+const MEAL_LABELS = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+  snacks: 'Snack',
+};
+
+function formatRepeatSourceLabel(daysSinceSource, dateKey) {
+  if (daysSinceSource === 1) {
+    return 'Yesterday';
+  }
+
+  if (daysSinceSource > 1 && daysSinceSource < 7) {
+    return `${daysSinceSource}d ago`;
+  }
+
+  const parsed = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return dateKey;
+  }
+
+  return format(parsed, 'MMM d');
+}
+
+function getRepeatMealPreview(snapshot) {
+  const preview = snapshot.items
+    .slice(0, 2)
+    .map((item) => item.name)
+    .join(' + ');
+  const remainingCount = Math.max(snapshot.itemCount - 2, 0);
+
+  if (remainingCount > 0) {
+    return `${preview} +${remainingCount} more`;
+  }
+
+  return preview;
+}
+
+const RepeatMealCard = memo(function RepeatMealCard({
+  suggestion,
+  isLoading,
+  onPress,
+}) {
+  const mealLabel = MEAL_LABELS[suggestion.targetMealType] || suggestion.targetMealType;
+  const sourceLabel = formatRepeatSourceLabel(
+    suggestion.daysSinceSource,
+    suggestion.snapshot.dateKey
+  );
+  const preview = getRepeatMealPreview(suggestion.snapshot);
+  const actionLabel = suggestion.alreadyLoggedToday ? `Add to ${mealLabel}` : `Log ${mealLabel}`;
+
+  return (
+    <GlassCard
+      onPress={() => onPress(suggestion)}
+      style={styles.repeatMealCard}
+      glow={!suggestion.alreadyLoggedToday}
+    >
+      <View style={styles.repeatMealCardTop}>
+        <View style={styles.repeatMealBadge}>
+          <Text style={styles.repeatMealBadgeText}>{mealLabel}</Text>
+        </View>
+        <Text style={styles.repeatMealSource}>From {sourceLabel}</Text>
+      </View>
+
+      <Text style={styles.repeatMealTitle}>
+        {suggestion.alreadyLoggedToday ? `Add ${mealLabel} again` : `Log ${mealLabel} again`}
+      </Text>
+      <Text style={styles.repeatMealPreview} numberOfLines={2}>
+        {preview}
+      </Text>
+
+      <View style={styles.repeatMealFooter}>
+        <Text style={styles.repeatMealMeta}>
+          {suggestion.snapshot.itemCount} items · {Math.round(suggestion.snapshot.totals.protein || 0)}g protein
+        </Text>
+        <View style={styles.repeatMealAction}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <>
+              <Text style={styles.repeatMealActionText}>{actionLabel}</Text>
+              <ChevronRight size={16} color={Colors.primary} strokeWidth={2.4} />
+            </>
+          )}
+        </View>
+      </View>
+    </GlassCard>
+  );
+});
+
 // Premium Stat Card — GlassCard with blur + border
 const StatCard = memo(function StatCard({ icon: Icon, value, label, color, onPress }) {
   return (
@@ -201,6 +294,64 @@ const StatCard = memo(function StatCard({ icon: Icon, value, label, color, onPre
         </View>
         <Text style={styles.statValue}>{value}</Text>
         <Text style={styles.statLabel}>{label}</Text>
+      </View>
+    </GlassCard>
+  );
+});
+
+const ACTIVITY_STEP_GOAL = 10000;
+
+const MovementSnapshotCard = memo(function MovementSnapshotCard({
+  isConnected,
+  steps,
+  activeCalories,
+  onPress,
+}) {
+  const progress = Math.min(steps / ACTIVITY_STEP_GOAL, 1);
+  const platformName = Platform.OS === 'ios' ? 'Apple Health' : 'Google Fit';
+
+  return (
+    <GlassCard onPress={onPress} style={styles.movementCard} glow={isConnected}>
+      <View style={styles.movementHeader}>
+        <View style={styles.movementHeaderLeft}>
+          <View style={styles.movementIconWrap}>
+            <Dumbbell size={18} color={Colors.success} strokeWidth={2.4} />
+          </View>
+          <View style={styles.movementCopy}>
+            <Text style={styles.movementTitle}>Activity</Text>
+            <Text style={styles.movementSubtitle}>
+              {isConnected
+                ? `${Math.round(activeCalories || 0).toLocaleString()} active cal`
+                : `Sync ${platformName} for movement`}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.movementValue}>
+          {isConnected ? steps.toLocaleString() : 'Connect'}
+        </Text>
+      </View>
+
+      <View style={styles.movementProgressTrack}>
+        <LinearGradient
+          colors={isConnected ? ['#22C55E', '#16A34A'] : ['rgba(255,255,255,0.12)', 'rgba(255,255,255,0.06)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[
+            styles.movementProgressFill,
+            {
+              width: isConnected
+                ? `${Math.max(progress * 100, steps > 0 ? 10 : 0)}%`
+                : '36%',
+            },
+          ]}
+        />
+      </View>
+
+      <View style={styles.movementFooter}>
+        <Text style={styles.movementGoalText}>
+          {isConnected ? `${Math.round(progress * 100)}% of 10k goal` : 'Connect to keep today accurate'}
+        </Text>
+        <ChevronRight size={16} color={Colors.textTertiary} />
       </View>
     </GlassCard>
   );
@@ -232,6 +383,7 @@ const IconButton = memo(function IconButton({ icon: Icon, color, onPress, size =
       onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
+      hitSlop={10}
     >
       <ReAnimated.View
         style={[
@@ -326,7 +478,7 @@ const NutritionScoreBadge = memo(function NutritionScoreBadge({ score, grade, gr
   if (score <= 0) return null;
 
   return (
-    <Pressable onPress={onPress} style={styles.nutritionBadgePressable}>
+    <Pressable onPress={onPress} style={styles.nutritionBadgePressable} hitSlop={8}>
       <LinearGradient
         colors={[gradeColor + '20', gradeColor + '08']}
         start={{ x: 0, y: 0 }}
@@ -414,6 +566,14 @@ function DashboardScreenInner() {
   usePreload('index');
   const { isPremium } = useIsPremium();
   const router = useRouter();
+  const reduceMotion = useReducedMotion();
+  const {
+    state: activationState,
+    stage: activationStage,
+    progress: activationProgress,
+    isLoading: activationLoading,
+    showValuePaywall,
+  } = useActivationTracker();
   const { hasSeen, markSeen, isLoading: tourLoading } = useTour();
   const {
     totals,
@@ -431,9 +591,11 @@ function DashboardScreenInner() {
     getDateLabel,
     waterProgress,
     addWater,
+    copyMeal,
+    getDefaultMealType,
   } = useMeals();
   const { profile } = useProfile();
-  const { currentStreak, totalXP, streakTier } = useGamification();
+  const { currentStreak, streakTier } = useGamification();
   const { recordMealLogged, isFasting } = useFasting();
   const {
     isConnected: healthConnected,
@@ -454,10 +616,14 @@ function DashboardScreenInner() {
     gradeColor: nutritionGradeColor,
   } = useNutritionScore();
 
-  const { fitnessScore, todayNutritionScore } = usePredictiveAnalytics();
+  const { fitnessScore } = usePredictiveAnalytics();
 
   const { todaysAverage: moodAverage } = useMood();
-  const { scheduleStreakWarning } = useNotifications();
+  const { scheduleStreakWarning, syncActivationReminder } = useNotifications();
+
+  useEffect(() => {
+    recordTodayOpened();
+  }, []);
 
   // Health sync — feeds Apple Health / Google Fit data into the proactive coach
   const {
@@ -474,7 +640,7 @@ function DashboardScreenInner() {
   );
 
   // Proactive coaching — surfaces health-aware and social nudges via the AI FAB
-  const { message: proactiveMessage, dismiss: dismissProactive } = useProactiveCoach({
+  const { message: proactiveMessage } = useProactiveCoach({
     friendStreakLoss,
     healthData: healthSnapshot ? {
       steps: healthSnapshot.steps ?? 0,
@@ -491,6 +657,29 @@ function DashboardScreenInner() {
       scheduleStreakWarning(currentStreak, profile?.name);
     }
   }, [currentStreak, profile?.name, scheduleStreakWarning]);
+
+  useEffect(() => {
+    if (activationLoading) return;
+
+    const hasStartedActivation =
+      activationState.onboardingCompletedAt ||
+      activationState.firstFoodLoggedAt ||
+      activationState.firstBarcodeFoundAt;
+
+    if (!hasStartedActivation) {
+      return;
+    }
+
+    syncActivationReminder(activationStage, profile?.name);
+  }, [
+    activationLoading,
+    activationStage,
+    activationState.firstBarcodeFoundAt,
+    activationState.firstFoodLoggedAt,
+    activationState.onboardingCompletedAt,
+    profile?.name,
+    syncActivationReminder,
+  ]);
 
   // Auto-show share card at streak milestones (7, 30, 100, 365 days)
   useEffect(() => {
@@ -547,6 +736,7 @@ function DashboardScreenInner() {
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [shareModalType, setShareModalType] = useState('daily-summary');
   const [shareModalData, setShareModalData] = useState(null);
+  const [showAdvancedInsights, setShowAdvancedInsights] = useState(false);
 
   // Scroll-driven animation
   const scrollY = useSharedValue(0);
@@ -576,6 +766,31 @@ function DashboardScreenInner() {
   }, [totals.calories]);
 
   const isNavigatingRef = useRef(false);
+  const repeatShelfSeenRef = useRef('');
+  const [activeRepeatSuggestionId, setActiveRepeatSuggestionId] = useState(null);
+
+  useEffect(() => {
+    if (repeatSuggestions.length === 0) {
+      return;
+    }
+
+    const signature = `${selectedDateKey}:${repeatSuggestions
+      .map((suggestion) => `${suggestion.snapshot.id}:${suggestion.alreadyLoggedToday ? 1 : 0}`)
+      .join('|')}`;
+
+    if (repeatShelfSeenRef.current === signature) {
+      return;
+    }
+
+    repeatShelfSeenRef.current = signature;
+    trackEvent('engagement', 'repeat_shelf_seen', {
+      value: repeatSuggestions.length,
+      metadata: {
+        dateKey: selectedDateKey,
+        mealTypes: repeatSuggestions.map((suggestion) => suggestion.targetMealType),
+      },
+    });
+  }, [repeatSuggestions, selectedDateKey]);
 
   const handleAddFood = useCallback(async (mealType) => {
     if (isNavigatingRef.current) return;
@@ -611,13 +826,6 @@ function DashboardScreenInner() {
     setSmartCoachVisible(true);
   }, []);
 
-  const handleSharePress = useCallback(async () => {
-    await hapticLight();
-    setShareModalType('daily-summary');
-    setShareModalData(null);
-    setShareModalVisible(true);
-  }, []);
-
   const handleTrainerPress = useCallback(() => {
     router.push('/generate-workout');
   }, [router]);
@@ -628,10 +836,6 @@ function DashboardScreenInner() {
 
   const handleMealPlanPress = useCallback(() => {
     router.push('/meal-plan');
-  }, [router]);
-
-  const handleWeightLogPress = useCallback(() => {
-    router.push('/weight-log');
   }, [router]);
 
   const handleSupplementsPress = useCallback(() => {
@@ -649,10 +853,124 @@ function DashboardScreenInner() {
     router.push('/water-tracker');
   }, [router]);
 
+  const handleScannerPress = useCallback(async () => {
+    await hapticLight();
+    router.push('/barcode');
+  }, [router]);
+
+  const handleActivationPress = useCallback(() => {
+    if (activationStage === 'first_barcode') {
+      handleScannerPress();
+      return;
+    }
+
+    router.push('/(tabs)/add');
+  }, [activationStage, handleScannerPress, router]);
+
+  const handleValuePaywallPress = useCallback(() => {
+    router.push({
+      pathname: '/paywall',
+      params: {
+        source: 'after_value',
+        trigger: 'after_value',
+      },
+    });
+  }, [router]);
+
+  const handleMovementPress = useCallback(async () => {
+    await hapticLight();
+
+    if (!healthConnected) {
+      healthConnect?.();
+      return;
+    }
+
+    router.push('/wearable-connections');
+  }, [healthConnected, healthConnect, router]);
+
+  const handleQuickWaterLog = useCallback(async () => {
+    await hapticLight();
+    await addWater(250);
+  }, [addWater]);
+
   const handleAIChatPress = useCallback(async () => {
     await hapticImpact();
     router.push('/chat');
   }, [router]);
+
+  const handleToggleAdvancedInsights = useCallback(async () => {
+    await hapticLight();
+    setShowAdvancedInsights((current) => !current);
+  }, []);
+
+  const handleOpenImportSwitcher = useCallback(async () => {
+    await hapticLight();
+    router.push({
+      pathname: '/import-myfitnesspal',
+      params: {
+        source: 'dashboard_empty_state',
+      },
+    });
+  }, [router]);
+
+  const handleLogAgainSuggestion = useCallback(async (suggestion) => {
+    const actionId = `${suggestion.snapshot.id}:${suggestion.targetMealType}`;
+    if (activeRepeatSuggestionId) {
+      return;
+    }
+
+    setActiveRepeatSuggestionId(actionId);
+    trackEvent('engagement', 'repeat_shelf_tapped', {
+      metadata: {
+        dateKey: selectedDateKey,
+        sourceDateKey: suggestion.snapshot.dateKey,
+        sourceMealType: suggestion.snapshot.mealType,
+        targetMealType: suggestion.targetMealType,
+        daysSinceSource: suggestion.daysSinceSource,
+      },
+    });
+
+    try {
+      const copiedCount = await copyMeal(
+        suggestion.snapshot.dateKey,
+        suggestion.snapshot.mealType,
+        selectedDateKey,
+        suggestion.targetMealType,
+        suggestion.snapshot.items
+      );
+
+      if (copiedCount > 0) {
+        recordQuickAddUsed({
+          source: 'repeat_shelf',
+          mealType: suggestion.targetMealType,
+          itemCount: copiedCount,
+        });
+        await recordRepeatLogUsed({
+          source: 'repeat_shelf',
+          mealType: suggestion.targetMealType,
+          itemCount: copiedCount,
+        });
+        if (!isPlanningMode) {
+          recordMealLogged(suggestion.targetMealType);
+        }
+        trackEvent('engagement', 'repeat_shelf_logged', {
+          value: copiedCount,
+          metadata: {
+            dateKey: selectedDateKey,
+            sourceDateKey: suggestion.snapshot.dateKey,
+            sourceMealType: suggestion.snapshot.mealType,
+            targetMealType: suggestion.targetMealType,
+            daysSinceSource: suggestion.daysSinceSource,
+          },
+        });
+      }
+    } catch (error) {
+      Sentry.captureException(error);
+      Alert.alert('Could Not Log Meal', 'Please try again.');
+    } finally {
+      setActiveRepeatSuggestionId(null);
+    }
+  }, [activeRepeatSuggestionId, copyMeal, isPlanningMode, recordMealLogged, selectedDateKey]);
 
   // Share card data for the ShareCardModal
   const shareCardData = useMemo(() => ({
@@ -707,8 +1025,14 @@ function DashboardScreenInner() {
   const caloriesGoal = calorieBalance?.effectiveGoal || goals.calories;
   const caloriesRemaining = Math.max(0, caloriesGoal - caloriesConsumed);
   const formattedDate = useMemo(() => getFormattedDate(selectedDate), [selectedDate]);
+  const hasLoggedMealsToday = useMemo(
+    () => Object.values(meals || {}).some((mealItems) => Array.isArray(mealItems) && mealItems.length > 0),
+    [meals]
+  );
+  const showImportSwitcherCard = !activationLoading && activationStage === 'first_meal' && !hasLoggedMealsToday;
 
   const { digest: weeklyDigest } = useWeeklyDigest();
+  const { recentMeals: recentMealSnapshots } = useRecentMealSnapshots(20);
   const { recommendation: macroRec, applyRecommendation, dismissRecommendation } = useAdaptiveMacros();
   const {
     challenges: dailyChallenges,
@@ -729,40 +1053,113 @@ function DashboardScreenInner() {
     currentStreak: currentStreak || 0,
     waterPercentage: waterProgress?.percentage || 0,
   }), [totals, goals, isFasting, currentStreak, waterProgress]);
+  const selectedDateKey = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);
+  const isSelectedDateToday = useMemo(
+    () => selectedDateKey === format(new Date(), 'yyyy-MM-dd'),
+    [selectedDateKey]
+  );
+  const repeatSuggestions = useMemo(
+    () => buildRepeatMealSuggestions({
+      snapshots: recentMealSnapshots,
+      selectedDateKey,
+      currentMeals: meals,
+      preferredMealType: getDefaultMealType(),
+      limit: 3,
+    }),
+    [getDefaultMealType, meals, recentMealSnapshots, selectedDateKey]
+  );
 
-  // Build virtualized section data — only includes visible sections
-  const dashboardSections = useMemo(() => {
+  const primarySections = useMemo(() => {
+    const sections = [
+      { key: 'header' },
+      { key: 'focus' },
+    ];
+
+    if (!activationLoading && activationStage !== 'complete') {
+      sections.push({ key: 'activation' });
+    }
+
+    if (showImportSwitcherCard) {
+      sections.push({ key: 'importSwitcher' });
+    }
+
+    if (repeatSuggestions.length > 0) {
+      sections.push({ key: 'logAgain' });
+    }
+
+    sections.push(
+      { key: 'stats' },
+      { key: 'meals' },
+      { key: 'activity' },
+    );
+
+    if (showValuePaywall && !isPremium) {
+      sections.push({ key: 'valuePaywall' });
+    }
+
+    sections.push({ key: 'insightsToggle' });
+    return sections;
+  }, [
+    activationLoading,
+    activationStage,
+    isPremium,
+    repeatSuggestions.length,
+    showImportSwitcherCard,
+    showValuePaywall,
+  ]);
+
+  const advancedSections = useMemo(() => {
+    if (!showAdvancedInsights) {
+      return [];
+    }
+
     const sections = [];
-    sections.push({ key: 'header' });
-    sections.push({ key: 'wellnessScore' });
     if (smartNudge) sections.push({ key: 'nudge' });
+    sections.push(
+      { key: 'daySummary' },
+      { key: 'macros' },
+      { key: 'quickLog' },
+      { key: 'wellnessScore' },
+    );
     if (weeklyDigest) sections.push({ key: 'digest' });
     if (macroRec && macroRec.shouldAdjust) sections.push({ key: 'macroAdapt' });
     sections.push({ key: 'challenges' });
-    sections.push({ key: 'stats' });
     if (nutritionScore > 0) sections.push({ key: 'nutritionScore' });
-    if (!supplementsLoading && userSupplements.length > 0 && untakenSupplementCount > 0) sections.push({ key: 'supplements' });
-    sections.push({ key: 'actionCards' });
-    sections.push({ key: 'quickLog' });
-    sections.push({ key: 'streakRepair' });
-    sections.push({ key: 'contextual' });
-    sections.push({ key: 'daySummary' });
-    sections.push({ key: 'macros' });
-    sections.push({ key: 'meals' });
-    sections.push({ key: 'activity' });
-    sections.push({ key: 'health' });
+    if (!supplementsLoading && userSupplements.length > 0 && untakenSupplementCount > 0) {
+      sections.push({ key: 'supplements' });
+    }
+    sections.push(
+      { key: 'actionCards' },
+      { key: 'streakRepair' },
+      { key: 'contextual' },
+      { key: 'health' },
+    );
     if (fitnessScore && fitnessScore.score > 0) sections.push({ key: 'fitnessScore' });
     sections.push({ key: 'bioFeedback' });
-    sections.push({ key: 'spacer' });
     return sections;
-  }, [smartNudge, weeklyDigest, macroRec, nutritionScore, supplementsLoading, userSupplements.length, untakenSupplementCount, fitnessScore, wellnessResult]);
+  }, [
+    showAdvancedInsights,
+    smartNudge,
+    weeklyDigest,
+    macroRec,
+    nutritionScore,
+    supplementsLoading,
+    userSupplements.length,
+    untakenSupplementCount,
+    fitnessScore,
+  ]);
+
+  // Build virtualized section data — prioritize the core logging flow before deeper insights
+  const dashboardSections = useMemo(() => {
+    return [...primarySections, ...advancedSections, { key: 'spacer' }];
+  }, [primarySections, advancedSections]);
 
   const sectionKeyExtractor = useCallback((item) => item.key, []);
 
   const renderDashboardSection = useCallback(({ item, index }) => {
     // Stagger entering animation: first 6 items get incremental delay, rest animate on mount
     const delay = index < 6 ? index * 60 : 0;
-    const entering = FadeInDown.delay(delay).springify().damping(12);
+    const entering = reduceMotion ? undefined : FadeInDown.delay(delay).springify().damping(12);
 
     switch (item.key) {
       case 'header': {
@@ -779,9 +1176,7 @@ function DashboardScreenInner() {
               </View>
               <View style={styles.headerRight}>
                 <View style={styles.headerActions}>
-                  <IconButton icon={Scale} color={Colors.success} onPress={handleWeightLogPress} size={36} />
-                  <IconButton icon={Sparkles} color={ACCENT} onPress={handleSmartCoachPress} />
-                  <IconButton icon={Share2} color={Colors.accentPurple} onPress={handleSharePress} />
+                  <IconButton icon={ScanBarcode} color={ACCENT} onPress={handleScannerPress} />
                 </View>
                 <StreakBadge streak={currentStreak} tier={streakTier} />
               </View>
@@ -806,6 +1201,77 @@ function DashboardScreenInner() {
           </ReAnimated.View>
         );
       }
+      case 'focus':
+        return (
+          <ReAnimated.View entering={entering}>
+            <TodayFocusCard
+              meals={meals}
+              goals={goals}
+              totals={totals}
+              waterProgress={waterProgress}
+              selectedDate={selectedDate}
+              onLogMeal={handleAddFood}
+              onOpenScanner={handleScannerPress}
+              onLogWater={handleQuickWaterLog}
+              onOpenCoach={handleSmartCoachPress}
+            />
+          </ReAnimated.View>
+        );
+      case 'activation':
+        return (
+          <ReAnimated.View entering={entering}>
+            <ActivationCard
+              stage={activationStage}
+              progress={activationProgress}
+              onPrimaryPress={handleActivationPress}
+            />
+          </ReAnimated.View>
+        );
+      case 'importSwitcher':
+        return (
+          <ReAnimated.View entering={entering}>
+            <MyFitnessPalImportCard
+              eyebrow="Switch Faster"
+              title="Already logging in MyFitnessPal?"
+              body="Import your diary before you build today from scratch."
+              buttonLabel="Import MyFitnessPal diary"
+              onPress={handleOpenImportSwitcher}
+              style={styles.importSwitcherCard}
+            />
+          </ReAnimated.View>
+        );
+      case 'logAgain':
+        return (
+          <ReAnimated.View entering={entering}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.repeatShelfHeaderRow}>
+                <View style={styles.repeatShelfIconWrap}>
+                  <RotateCcw size={16} color={Colors.primary} strokeWidth={2.5} />
+                </View>
+                <Text style={styles.sectionTitle}>
+                  {isSelectedDateToday ? 'Log Again Today' : 'Log Again'}
+                </Text>
+              </View>
+              <Text style={styles.repeatShelfSubtitle}>
+                Reuse the meals you actually eat most, without searching again.
+              </Text>
+            </View>
+
+            <View style={styles.repeatShelfList}>
+              {repeatSuggestions.map((suggestion) => {
+                const actionId = `${suggestion.snapshot.id}:${suggestion.targetMealType}`;
+                return (
+                  <RepeatMealCard
+                    key={actionId}
+                    suggestion={suggestion}
+                    isLoading={activeRepeatSuggestionId === actionId}
+                    onPress={handleLogAgainSuggestion}
+                  />
+                );
+              })}
+            </View>
+          </ReAnimated.View>
+        );
       case 'wellnessScore': {
         const wsColor = wellnessResult.score >= 70 ? Colors.success : wellnessResult.score >= 40 ? Colors.warning : Colors.error;
         return (
@@ -867,8 +1333,7 @@ function DashboardScreenInner() {
         return (
           <ReAnimated.View entering={entering} style={[styles.statsRow, statCardsParallaxStyle]}>
             <StatCard icon={Flame} value={caloriesConsumed.toLocaleString()} label="Calories" color="#FF6B35" onPress={handleOpenCaloriesModal} />
-            <StatCard icon={Target} value={`${Math.round((totals.protein / goals.protein) * 100)}%`} label="Protein" color={Colors.protein} onPress={handleOpenMacrosModal} />
-            <StatCard icon={TrendingUp} value={caloriesRemaining.toLocaleString()} label="Remaining" color={ACCENT} onPress={handleOpenCaloriesModal} />
+            <StatCard icon={Target} value={`${Math.round(totals.protein || 0)}g`} label="Protein" color={Colors.protein} onPress={handleOpenMacrosModal} />
           </ReAnimated.View>
         );
       case 'nutritionScore':
@@ -932,18 +1397,52 @@ function DashboardScreenInner() {
         return (
           <ReAnimated.View entering={entering}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Activity</Text>
+              <Text style={styles.sectionTitle}>Hydration & Movement</Text>
             </View>
             <View style={styles.activityGrid}>
               <Pressable onPress={handleWaterCardPress} accessibilityLabel="Open water tracker">
                 <WaterCard />
-                <View style={styles.waterSeeMore}>
-                  <Text style={styles.waterSeeMoreText}>See More</Text>
-                  <ChevronRight size={14} color={Colors.primary} />
-                </View>
               </Pressable>
-              <FastingCard />
+              <MovementSnapshotCard
+                isConnected={healthConnected}
+                steps={healthSteps}
+                activeCalories={healthActiveCalories}
+                onPress={handleMovementPress}
+              />
             </View>
+          </ReAnimated.View>
+        );
+      case 'valuePaywall':
+        return (
+          <ReAnimated.View entering={entering}>
+            <UpgradeMomentumCard onPress={handleValuePaywallPress} />
+          </ReAnimated.View>
+        );
+      case 'insightsToggle':
+        return (
+          <ReAnimated.View entering={entering}>
+            <GlassCard onPress={handleToggleAdvancedInsights} style={styles.insightsToggleCard}>
+              <View style={styles.insightsToggleRow}>
+                <View style={styles.insightsToggleCopy}>
+                  <Text style={styles.insightsToggleEyebrow}>More Depth</Text>
+                  <Text style={styles.insightsToggleTitle}>
+                    {showAdvancedInsights ? 'Hide advanced insights' : 'Open coaching, trends and recovery'}
+                  </Text>
+                  <Text style={styles.insightsToggleBody}>
+                    {showAdvancedInsights
+                      ? 'Collapse the secondary stack and keep Today focused on logging and progress.'
+                      : 'Everything beyond the core daily loop lives here once you want more depth.'}
+                  </Text>
+                </View>
+                <View style={styles.insightsToggleIcon}>
+                  {showAdvancedInsights ? (
+                    <ChevronUp size={20} color={Colors.textSecondary} strokeWidth={2.5} />
+                  ) : (
+                    <ChevronDown size={20} color={Colors.textSecondary} strokeWidth={2.5} />
+                  )}
+                </View>
+              </View>
+            </GlassCard>
           </ReAnimated.View>
         );
       case 'health':
@@ -986,7 +1485,7 @@ function DashboardScreenInner() {
         return null;
     }
   }, [
-    headerAnimatedStyle, statCardsParallaxStyle, formattedDate, currentStreak, wellnessResult, smartNudge, weeklyDigest,
+    reduceMotion, headerAnimatedStyle, statCardsParallaxStyle, formattedDate, currentStreak, wellnessResult, smartNudge, weeklyDigest,
     macroRec, applyRecommendation, dismissRecommendation, dailyChallenges,
     challengesLoading, challengesCompletedCount, challengesTotalCount,
     allChallengesComplete, checkChallengeProgress, completeDailyChallenge,
@@ -995,11 +1494,13 @@ function DashboardScreenInner() {
     mealCalories, remaining, calorieBalance, selectedDate, getDateLabel,
     fitnessScore, healthConnected, healthSteps, healthActiveCalories,
     healthWeeklySteps, healthConnect, router, addWater,
-    handleWeightLogPress, handleSmartCoachPress, handleSharePress,
     handleOpenCaloriesModal, handleOpenMacrosModal, handleNutritionInsightsPress,
     handleSupplementsPress, handleTrainerPress, handleChefPress, handleMealPlanPress,
-    handleAddFood, handleRemoveFood, handleWaterCardPress,
-    handleSelectRecommendedMeal,
+    handleAddFood, handleRemoveFood, handleWaterCardPress, handleScannerPress,
+    handleQuickWaterLog, handleSmartCoachPress, handleToggleAdvancedInsights, showAdvancedInsights, handleMovementPress,
+    activationStage, activationProgress, handleActivationPress, handleOpenImportSwitcher, handleValuePaywallPress,
+    handleLogAgainSuggestion, activeRepeatSuggestionId,
+    isSelectedDateToday, repeatSuggestions, waterProgress,
   ]);
 
   if (isLoading) {
@@ -1013,7 +1514,7 @@ function DashboardScreenInner() {
   return (
     <ScreenWrapper style={styles.safeArea} testID="dashboard-screen">
         {/* Ambient living background */}
-        <AmbientOrbs />
+        {!reduceMotion && <AmbientOrbs />}
 
         {/* Date Navigator */}
         <DateNavigator />
@@ -1034,8 +1535,8 @@ function DashboardScreenInner() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          initialNumToRender={7}
+          scrollEventThrottle={reduceMotion ? 32 : 16}
+          initialNumToRender={6}
           maxToRenderPerBatch={3}
           windowSize={5}
           removeClippedSubviews={Platform.OS === 'android'}
@@ -1075,12 +1576,9 @@ function DashboardScreenInner() {
         data={shareModalData || shareCardData}
       />
 
-      {/* Morning Briefing AI Coach */}
-      <MorningBriefing />
-
       {/* Floating AI Chat Button with breathing glow (premium only) */}
-      {isPremium && (
-        <ReAnimated.View entering={FadeInUp.delay(800).springify().damping(12)} style={styles.fabContainer}>
+      {isPremium && showAdvancedInsights && (
+        <ReAnimated.View entering={reduceMotion ? undefined : FadeInUp.delay(800).springify().damping(12)} style={styles.fabContainer}>
           <AIFab
             onPress={handleAIChatPress}
             hasProactiveMessage={!!proactiveMessage}
@@ -1427,29 +1925,215 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     marginBottom: Spacing.md,
   },
+  repeatShelfHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  repeatShelfIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '16',
+    borderWidth: 1,
+    borderColor: Colors.primary + '28',
+  },
+  repeatShelfSubtitle: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  repeatShelfList: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  repeatMealCard: {
+    paddingVertical: Spacing.md,
+  },
+  repeatMealCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+  },
+  repeatMealBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.surfaceGlass,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+  },
+  repeatMealBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  repeatMealSource: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+  },
+  repeatMealTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    marginTop: Spacing.sm,
+  },
+  repeatMealPreview: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  repeatMealFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  repeatMealMeta: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+  },
+  repeatMealAction: {
+    minWidth: 110,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  repeatMealActionText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
+  importSwitcherCard: {
+    marginBottom: Spacing.lg,
+  },
   sectionTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
     color: Colors.text,
     letterSpacing: -0.3,
   },
+  insightsToggleCard: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  insightsToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  insightsToggleCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  insightsToggleEyebrow: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  insightsToggleTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  insightsToggleBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  insightsToggleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
 
   // Activity Grid
   activityGrid: {
     gap: Spacing.md,
   },
-  waterSeeMore: {
+  movementCard: {
+    marginBottom: Spacing.xs,
+  },
+  movementHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: Spacing.sm,
-    marginTop: -Spacing.xs,
+    justifyContent: 'space-between',
+    gap: Spacing.md,
   },
-  waterSeeMoreText: {
+  movementHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flex: 1,
+  },
+  movementIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+  },
+  movementCopy: {
+    flex: 1,
+  },
+  movementTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  movementSubtitle: {
     fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    color: Colors.primary,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  movementValue: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.black,
+    color: Colors.text,
+    letterSpacing: -0.4,
+  },
+  movementProgressTrack: {
+    height: 8,
+    borderRadius: BorderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    marginTop: Spacing.md,
+  },
+  movementProgressFill: {
+    height: '100%',
+    borderRadius: BorderRadius.full,
+  },
+  movementFooter: {
+    marginTop: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  movementGoalText: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
   },
 
   // Health Card

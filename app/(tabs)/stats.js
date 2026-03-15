@@ -50,6 +50,7 @@ import usePredictiveAnalytics from '../../hooks/usePredictiveAnalytics';
 import InsightCard from '../../components/InsightCard';
 import AnimatedProgressRing from '../../components/AnimatedProgressRing';
 import HabitHeatmap from '../../components/HabitHeatmap';
+import CoreLoopMetricsCard from '../../components/CoreLoopMetricsCard';
 import {
   calculateEWMA,
   calculateAdherenceScore,
@@ -59,12 +60,10 @@ import {
   calculateProgressRate,
 } from '../../lib/analyticsEngine';
 import { generateInsights } from '../../lib/insightGenerator';
-
-// Safe hook imports - wrapped in try/catch for optional dependencies
-let useWorkoutHistory = null;
-try { useWorkoutHistory = require('../../hooks/useWorkoutHistory').default; } catch {}
-let useWeightHistoryHook = null;
-try { useWeightHistoryHook = require('../../hooks/useWeightHistory').useWeightHistory; } catch {}
+import useWorkoutHistory from '../../hooks/useWorkoutHistory';
+import { useWeightHistory as useWeightHistoryHook } from '../../hooks/useWeightHistory';
+import useActivationTracker from '../../hooks/useActivationTracker';
+import { getCoreLoopMetrics } from '../../lib/activationTracker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH = SCREEN_WIDTH - Spacing.md * 4;
@@ -362,6 +361,7 @@ const QuickNavGrid = memo(function QuickNavGrid({ router }) {
     { emoji: '\uD83E\uDD57', title: 'Nutrition Score', route: '/nutrition-insights' },
     { emoji: '\uD83D\uDCC5', title: 'Activity Calendar', route: '/activity-calendar' },
     { emoji: '\uD83D\uDE34', title: 'Mood Insights', route: '/mood-insights' },
+    { emoji: '\uD83E\uDDED', title: 'Growth Ops', route: '/growth-ops' },
   ];
 
   return (
@@ -424,6 +424,12 @@ function StatsScreenInner() {
   const { weeklyWeightData, profile } = useProfile();
   const { currentStreak, stats: gamificationStats } = useGamification();
   const { weightTrend, plateauStatus, todayNutritionScore, fitnessScore, weeklyInsights } = usePredictiveAnalytics();
+  const {
+    state: activationState,
+    stage: activationStage,
+    progress: activationProgress,
+    showValuePaywall,
+  } = useActivationTracker();
 
   const [selectedRange, setSelectedRange] = useState(7);
   const [isExporting, setIsExporting] = useState(false);
@@ -499,6 +505,28 @@ function StatsScreenInner() {
       daysTracked: daysWithData.length,
     };
   }, [rangeData]);
+
+  const coreLoopMetrics = useMemo(
+    () => getCoreLoopMetrics(activationState),
+    [activationState]
+  );
+
+  const handleCoreLoopPress = useCallback(() => {
+    if (activationStage === 'first_barcode') {
+      router.push('/barcode');
+      return;
+    }
+
+    if (showValuePaywall && activationStage === 'complete') {
+      router.push({
+        pathname: '/paywall',
+        params: { source: 'stats_core_loop', trigger: 'after_value' },
+      });
+      return;
+    }
+
+    router.push('/(tabs)/add');
+  }, [activationStage, router, showValuePaywall]);
 
   // Calculate weight chart data
   const weightChartData = useMemo(() => {
@@ -628,10 +656,10 @@ function StatsScreenInner() {
   const barSpacing = selectedRange <= 7 ? CHART_WIDTH / 10 : selectedRange <= 30 ? 4 : 2;
 
   // ─── Load optional hook data ───
-  const workoutHookResult = useWorkoutHistory ? useWorkoutHistory() : null;
+  const workoutHookResult = useWorkoutHistory();
   const workoutData = workoutHookResult || { workouts: [], isLoading: false };
 
-  const weightHistoryResult = useWeightHistoryHook ? useWeightHistoryHook() : null;
+  const weightHistoryResult = useWeightHistoryHook();
 
   // ─── Weekly Report Card (adherence scoring) ───
   const adherenceData = useMemo(() => {
@@ -929,6 +957,16 @@ function StatsScreenInner() {
         {/* Range Selector */}
         <ReAnimated.View entering={FadeInDown.delay(80).springify().mass(0.5).damping(10)}>
           <RangeSelector selectedRange={selectedRange} onSelect={setSelectedRange} />
+        </ReAnimated.View>
+
+        <ReAnimated.View entering={FadeInDown.delay(110).springify().mass(0.5).damping(10)}>
+          <CoreLoopMetricsCard
+            activationStage={activationStage}
+            metrics={coreLoopMetrics}
+            progress={activationProgress}
+            showValuePaywall={showValuePaywall}
+            onPrimaryAction={handleCoreLoopPress}
+          />
         </ReAnimated.View>
 
         {/* Empty State - shown when fewer than 3 days tracked */}

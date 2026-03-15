@@ -260,6 +260,7 @@ export default function FeatureTour({ steps = [], onComplete, visible }) {
 
               {/* Colored glow accent behind card */}
               <View
+                pointerEvents="none"
                 style={[
                   styles.cardGlow,
                   { backgroundColor: (step?.color || Colors.primary) + '10' },

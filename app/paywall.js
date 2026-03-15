@@ -9,7 +9,7 @@
  * - Apple App Store compliant
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,11 +21,12 @@ import {
   Linking,
   Platform,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { hapticLight, hapticImpact, hapticSuccess } from '../lib/haptics';
 import {
   X,
@@ -47,12 +48,23 @@ import {
   Shadows,
 } from '../constants/theme';
 import { useSubscription } from '../context/SubscriptionContext';
+import {
+  recordPaywallConverted,
+  recordPaywallDismissed,
+  recordPaywallViewed,
+} from '../lib/activationTracker';
+import { trackConversion } from '../lib/conversionTracking';
+import { getABTestVariant } from '../lib/monetization';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Legal URLs
-const TERMS_URL = 'https://thomashowells0894-sketch.github.io/Chef-Dup-2.0/terms.html';
-const PRIVACY_URL = 'https://thomashowells0894-sketch.github.io/Chef-Dup-2.0/privacy-policy.html';
+const LEGAL_DOCS_BASE_URL = (
+  process.env.EXPO_PUBLIC_LEGAL_DOCS_BASE_URL
+  || 'https://thomashowells0894.github.io/fitness-app'
+).replace(/\/$/, '');
+const TERMS_URL = `${LEGAL_DOCS_BASE_URL}/terms.html`;
+const PRIVACY_URL = `${LEGAL_DOCS_BASE_URL}/privacy-policy.html`;
 
 // Premium accent color - Electric Blue
 const ACCENT = Colors.primary;
@@ -102,6 +114,104 @@ function FeatureItem({ icon: Icon, title, delay = 0 }) {
   );
 }
 
+function getPaywallContent(source, trigger, messageVariant = 'speed') {
+  if (trigger === 'after_value') {
+    if (messageVariant === 'clarity') {
+      return {
+        headlineTop: 'Understand Today,',
+        headlineAccent: 'Without Guessing',
+        subheadline: 'You already felt the logging loop. Pro makes the next decision obvious with clearer daily guidance.',
+        features: [
+          'See the single best next nutrition action',
+          'Faster shortcuts for repeat meals',
+          'Coach and deeper daily insight',
+          'Ad-free focus',
+        ],
+      };
+    }
+
+    if (messageVariant === 'coach') {
+      return {
+        headlineTop: 'Keep The Speed,',
+        headlineAccent: 'Add A Coach',
+        subheadline: 'You already have the habit loop. Pro adds smarter feedback and coaching on top of it.',
+        features: [
+          'Coach nudges based on your day',
+          'Premium scan and shortcut workflows',
+          'Voice logging for faster capture',
+          'Ad-free focus',
+        ],
+      };
+    }
+
+    return {
+      headlineTop: 'Keep The Speed,',
+      headlineAccent: 'Add Pro',
+      subheadline: 'You already felt the core loop. Pro adds faster capture and clearer daily guidance.',
+      features: [
+        'Voice logging when your hands are busy',
+        'Premium scan and shortcut workflows',
+        'Coach and deeper progress insight',
+        'Ad-free focus',
+      ],
+    };
+  }
+
+  if (source === 'voice_logging') {
+    return {
+      headlineTop: 'Unlock Hands-Free',
+      headlineAccent: 'Food Logging',
+      subheadline: 'Speak meals out loud, keep momentum, and let Pro handle the capture work.',
+      features: [
+        'Voice logging for fast capture',
+        'Barcode and AI scan workflows',
+        'Smarter shortcuts for repeat meals',
+        'Ad-free focus',
+      ],
+    };
+  }
+
+  if (messageVariant === 'clarity') {
+    return {
+      headlineTop: 'See Today',
+      headlineAccent: 'More Clearly',
+      subheadline: 'Pro removes noise after logging and shows what matters next so users stay on track faster.',
+      features: [
+        'Clearer daily targets and next actions',
+        'Premium scan and faster shortcuts',
+        'Coach and deeper progress insight',
+        'Ad-free focus',
+      ],
+    };
+  }
+
+  if (messageVariant === 'coach') {
+    return {
+      headlineTop: 'Unlock Your',
+      headlineAccent: 'Nutrition Coach',
+      subheadline: 'Pro combines faster capture with coaching that reacts to your actual day, not generic plans.',
+      features: [
+        'Coach nudges based on your day',
+        'Voice logging and AI capture tools',
+        'Premium scan and shortcut workflows',
+        'Ad-free focus',
+      ],
+    };
+  }
+
+  return {
+    headlineTop: 'Log Faster.',
+    headlineAccent: 'See More.',
+    subheadline: 'Pro is built to save time on capture and give you clearer insight once food is logged.',
+    features: [
+      'Voice logging and AI capture tools',
+      'Premium scan and faster shortcuts',
+      'Coach and deeper daily insights',
+      'Ad-free focus',
+    ],
+  };
+}
+
 // Pricing card component
 function PricingCard({
   title,
@@ -112,6 +222,7 @@ function PricingCard({
   isSelected,
   onSelect,
   badge,
+  testID,
 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
@@ -158,7 +269,7 @@ function PricingCard({
 
   return (
     <Animated.View style={[styles.pricingCardWrapper, { transform: [{ scale: scaleAnim }] }]}>
-      <Pressable onPress={handlePress}>
+      <Pressable onPress={handlePress} testID={testID}>
         <Animated.View
           style={[
             styles.pricingCard,
@@ -214,6 +325,7 @@ function PricingCard({
 
 export default function PaywallScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const {
     monthlyPackage,
     annualPackage,
@@ -225,7 +337,43 @@ export default function PaywallScreen() {
   } = useSubscription();
 
   const [selectedPlan, setSelectedPlan] = useState('yearly');
+  const [messageVariant, setMessageVariant] = useState('speed');
+  const [planVariant, setPlanVariant] = useState('yearly');
+  const [experimentsReady, setExperimentsReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const paywallSource = Array.isArray(params.source) ? params.source[0] : params.source || 'direct';
+  const paywallTrigger = Array.isArray(params.trigger) ? params.trigger[0] : params.trigger || 'direct';
+  const paywallContent = useMemo(
+    () => getPaywallContent(paywallSource, paywallTrigger, messageVariant),
+    [messageVariant, paywallSource, paywallTrigger]
+  );
+  const paywallExperimentVariant = `${messageVariant}:${planVariant}`;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
+      getABTestVariant('paywall_message'),
+      getABTestVariant('paywall_default_plan'),
+    ]).then(([nextMessageVariant, nextPlanVariant]) => {
+      if (cancelled) return;
+
+      if (nextMessageVariant) {
+        setMessageVariant(nextMessageVariant);
+      }
+
+      if (nextPlanVariant === 'monthly' || nextPlanVariant === 'yearly') {
+        setPlanVariant(nextPlanVariant);
+        setSelectedPlan(nextPlanVariant);
+      }
+
+      setExperimentsReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Animations
   const headerOpacity = useRef(new Animated.Value(0)).current;
@@ -292,8 +440,50 @@ export default function PaywallScreen() {
     ).start();
   }, []);
 
+  useEffect(() => {
+    if (!experimentsReady) {
+      return;
+    }
+
+    recordPaywallViewed({
+      source: paywallSource,
+      trigger: paywallTrigger,
+    }).catch(() => {});
+    trackConversion({
+      event: 'paywall_shown',
+      source: paywallSource,
+      variant: paywallExperimentVariant,
+      metadata: {
+        trigger: paywallTrigger,
+        messageVariant,
+        defaultPlan: planVariant,
+      },
+    });
+  }, [
+    experimentsReady,
+    messageVariant,
+    paywallExperimentVariant,
+    paywallSource,
+    paywallTrigger,
+    planVariant,
+  ]);
+
   const handleClose = async () => {
     await hapticLight();
+    recordPaywallDismissed({
+      source: paywallSource,
+      trigger: paywallTrigger,
+    });
+    trackConversion({
+      event: 'paywall_dismissed',
+      source: paywallSource,
+      variant: paywallExperimentVariant,
+      metadata: {
+        trigger: paywallTrigger,
+        messageVariant,
+        defaultPlan: planVariant,
+      },
+    });
     router.back();
   };
 
@@ -304,15 +494,33 @@ export default function PaywallScreen() {
 
     try {
       await hapticImpact();
+      trackConversion({
+        event: 'purchase_started',
+        source: paywallSource,
+        variant: paywallExperimentVariant,
+        metadata: {
+          trigger: paywallTrigger,
+          selectedPlan,
+        },
+      });
 
       const packageToPurchase = selectedPlan === 'yearly' ? annualPackage : monthlyPackage;
 
       if (!packageToPurchase) {
-        // Demo mode - no real packages
-        if (__DEV__) {
-          console.log('[Paywall] Demo mode - simulating purchase');
-        }
-        setIsProcessing(false);
+        trackConversion({
+          event: 'purchase_failed',
+          source: paywallSource,
+          variant: paywallExperimentVariant,
+          metadata: {
+            trigger: paywallTrigger,
+            selectedPlan,
+            reason: 'missing_package',
+          },
+        });
+        Alert.alert(
+          'Purchases Unavailable',
+          'Subscription plans could not be loaded. Please try again in a moment.',
+        );
         return;
       }
 
@@ -320,12 +528,55 @@ export default function PaywallScreen() {
 
       if (result.success) {
         await hapticSuccess();
+        recordPaywallConverted({
+          source: paywallSource,
+          trigger: paywallTrigger,
+          plan: selectedPlan,
+        });
+        trackConversion({
+          event: 'purchase_completed',
+          source: paywallSource,
+          variant: paywallExperimentVariant,
+          metadata: {
+            trigger: paywallTrigger,
+            selectedPlan,
+          },
+        });
         router.back();
+      } else if (!result.cancelled) {
+        trackConversion({
+          event: 'purchase_failed',
+          source: paywallSource,
+          variant: paywallExperimentVariant,
+          metadata: {
+            trigger: paywallTrigger,
+            selectedPlan,
+            reason: result.error || 'purchase_failed',
+          },
+        });
+        Alert.alert(
+          'Purchase Failed',
+          result.error || 'Unable to start your subscription. Please try again.',
+        );
       }
     } catch (error) {
       if (__DEV__) {
-        console.error('[Paywall] Purchase error:', error.message);
+        console.error('[Paywall] Purchase error:', error?.message);
       }
+      trackConversion({
+        event: 'purchase_failed',
+        source: paywallSource,
+        variant: paywallExperimentVariant,
+        metadata: {
+          trigger: paywallTrigger,
+          selectedPlan,
+          reason: error?.message || 'unexpected_error',
+        },
+      });
+      Alert.alert(
+        'Purchase Failed',
+        error?.message || 'Unable to start your subscription. Please try again.',
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -362,7 +613,7 @@ export default function PaywallScreen() {
   });
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="paywall-screen">
       {/* Deep gradient background */}
       <LinearGradient
         colors={['#000000', '#050508', '#0A0A10', '#08080C']}
@@ -382,7 +633,11 @@ export default function PaywallScreen() {
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {/* Close Button */}
-        <Pressable style={styles.closeButton} onPress={handleClose}>
+        <Pressable
+          style={styles.closeButton}
+          onPress={handleClose}
+          testID="paywall-close-button"
+        >
           <BlurView intensity={30} tint="dark" style={styles.closeButtonBlur}>
             <X size={20} color={Colors.textSecondary} strokeWidth={2} />
           </BlurView>
@@ -417,12 +672,12 @@ export default function PaywallScreen() {
 
             {/* Headlines */}
             <Text style={styles.headline}>
-              Unlock Your{'\n'}
-              <Text style={styles.headlineAccent}>Biological Edge</Text>
+              {paywallContent.headlineTop}{'\n'}
+              <Text style={styles.headlineAccent}>{paywallContent.headlineAccent}</Text>
             </Text>
 
             <Text style={styles.subheadline}>
-              Get the AI Trainer & Smart Chef
+              {paywallContent.subheadline}
             </Text>
           </Animated.View>
 
@@ -430,22 +685,22 @@ export default function PaywallScreen() {
           <Animated.View style={[styles.featuresContainer, { opacity: contentOpacity }]}>
             <FeatureItem
               icon={Dumbbell}
-              title="Unlimited AI Workouts"
+              title={paywallContent.features[0]}
               delay={400}
             />
             <FeatureItem
               icon={ChefHat}
-              title="Smart Macro Chef"
+              title={paywallContent.features[1]}
               delay={500}
             />
             <FeatureItem
               icon={Zap}
-              title="Real-Time Macro Tracking"
+              title={paywallContent.features[2]}
               delay={600}
             />
             <FeatureItem
               icon={CircleOff}
-              title="Ad-Free Experience"
+              title={paywallContent.features[3]}
               delay={700}
             />
           </Animated.View>
@@ -455,6 +710,7 @@ export default function PaywallScreen() {
             <View style={styles.pricingCardsRow}>
               {/* Monthly */}
               <PricingCard
+                testID="paywall-monthly-plan"
                 title="Monthly"
                 price={monthlyPrice.replace(/[^0-9.]/g, '')}
                 period="month"
@@ -464,6 +720,7 @@ export default function PaywallScreen() {
 
               {/* Yearly - Featured */}
               <PricingCard
+                testID="paywall-yearly-plan"
                 title="Yearly"
                 price={yearlyPrice.replace(/[^0-9.]/g, '')}
                 period="year"
@@ -484,6 +741,7 @@ export default function PaywallScreen() {
             ]}
           >
             <Pressable
+              testID="paywall-subscribe-button"
               style={[styles.ctaButton, isProcessing && styles.ctaButtonDisabled]}
               onPress={handleSubscribe}
               disabled={isProcessing || purchaseInProgress}
@@ -517,7 +775,11 @@ export default function PaywallScreen() {
           {/* Footer Links */}
           <View style={styles.footer}>
             {/* Restore */}
-            <Pressable onPress={handleRestore} style={styles.restoreButton}>
+            <Pressable
+              onPress={handleRestore}
+              style={styles.restoreButton}
+              testID="paywall-restore-button"
+            >
               <Text style={styles.restoreText}>Restore Purchases</Text>
             </Pressable>
 

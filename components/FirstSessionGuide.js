@@ -11,8 +11,6 @@ export default function FirstSessionGuide({ hasLoggedFirstFood, onDismiss }) {
   const router = useRouter();
   const [dismissed, setDismissed] = useState(false);
 
-  if (hasLoggedFirstFood || dismissed) return null;
-
   const handleAction = useCallback((action) => {
     hapticLight();
     switch (action) {
@@ -27,6 +25,8 @@ export default function FirstSessionGuide({ hasLoggedFirstFood, onDismiss }) {
         break;
     }
   }, [router]);
+
+  if (hasLoggedFirstFood || dismissed) return null;
 
   return (
     <Animated.View entering={FadeInDown.duration(500).delay(300)} exiting={FadeOutUp.duration(300)}>

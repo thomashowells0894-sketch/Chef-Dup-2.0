@@ -88,7 +88,12 @@ import { hapticImpact, hapticSuccess, hapticHeavy } from '../../lib/haptics';
 import { useProfile, ACTIVITY_LEVELS } from '../../context/ProfileContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
+import {
+  recordOnboardingCompleted,
+  recordOnboardingStarted,
+} from '../../lib/activationTracker';
 import { Colors, Gradients, Spacing, BorderRadius, FontSize, FontWeight, Shadows } from '../../constants/theme';
+import MyFitnessPalImportCard from '../../components/MyFitnessPalImportCard';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TOTAL_STEPS = 6;
@@ -415,13 +420,13 @@ function Step1Welcome({ data, onChange }) {
           <Text style={styles.welcomeLogo}>FuelIQ</Text>
         </View>
         <Text style={styles.welcomeTagline}>
-          Let's build your personalized fitness plan
+          Log food fast. Know what to do today.
         </Text>
       </ReAnimated.View>
 
       <StepHeader
-        title="What's your primary goal?"
-        subtitle="This helps us personalize your entire experience"
+        title="What do you want to improve first?"
+        subtitle="We'll turn this into clear calorie and protein targets for today"
       />
 
       {GOALS.map((item, index) => (
@@ -465,7 +470,7 @@ function Step2BodyProfile({ data, onChange }) {
 
   return (
     <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Your Body Profile" subtitle="We need these to calculate your targets" />
+      <StepHeader title="Set your daily targets" subtitle="These details make your calorie and protein goals trustworthy" />
 
       {/* Gender */}
       <Text style={styles.fieldLabel}>Gender</Text>
@@ -631,7 +636,7 @@ function Step3Dietary({ data, onChange }) {
 
   return (
     <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Dietary Preferences" subtitle="We'll tailor meal suggestions for you" />
+      <StepHeader title="Food preferences" subtitle="We'll keep search, meals, and suggestions relevant to what you actually eat" />
 
       {/* Diet type */}
       <Text style={styles.fieldLabel}>Diet Type</Text>
@@ -713,7 +718,7 @@ function Step4Fitness({ data, onChange }) {
 
   return (
     <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Fitness Experience" subtitle="Help us build the right workout plan" />
+      <StepHeader title="Movement context" subtitle="This helps with activity guidance, but your daily nutrition targets stay front and center" />
 
       {/* Experience level */}
       <Text style={styles.fieldLabel}>Training Experience</Text>
@@ -800,20 +805,20 @@ function Step4Fitness({ data, onChange }) {
 function Step5SmartFeatures({ data, onChange }) {
   return (
     <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Smart Features" subtitle="Customize your experience" />
+      <StepHeader title="Daily logging setup" subtitle="Choose the few things that make logging easier and more accurate" />
 
       <ToggleRow
         icon={Bell}
-        label="Meal Reminders"
-        description="Get reminded to log breakfast, lunch, dinner"
+        label="Logging Reminders"
+        description="Nudges to capture breakfast, lunch, dinner, and stay consistent"
         value={data.enableMealReminders !== false}
         onChange={(v) => onChange({ enableMealReminders: v })}
       />
 
       <ToggleRow
         icon={Dumbbell}
-        label="Workout Reminders"
-        description="Scheduled notifications for training days"
+        label="Movement Reminders"
+        description="Optional prompts to stay on track with training and daily activity"
         value={data.enableWorkoutReminders !== false}
         onChange={(v) => onChange({ enableWorkoutReminders: v })}
       />
@@ -831,7 +836,7 @@ function Step5SmartFeatures({ data, onChange }) {
       <ToggleRow
         icon={Smartphone}
         label="Connect Health App"
-        description="Sync with Apple Health or Google Fit"
+        description="Sync steps and active calories from Apple Health or Google Fit"
         value={data.connectHealth === true}
         onChange={(v) => onChange({ connectHealth: v })}
       />
@@ -839,7 +844,7 @@ function Step5SmartFeatures({ data, onChange }) {
       <ToggleRow
         icon={Brain}
         label="AI Coaching"
-        description="Personalized tips, meal suggestions, and workout feedback powered by AI"
+        description="Optional coaching after you log food and build a daily pattern"
         value={data.enableAI !== false}
         onChange={(v) => onChange({ enableAI: v })}
       />
@@ -862,8 +867,8 @@ function Step5SmartFeatures({ data, onChange }) {
 
       <ToggleRow
         icon={Timer}
-        label="Enable Fasting Tracker"
-        description="Track intermittent fasting windows"
+        label="Show Fasting Tracker"
+        description="Keep fasting windows available without crowding the main flow"
         value={data.enableFasting === true}
         onChange={(v) => onChange({ enableFasting: v })}
       />
@@ -873,16 +878,16 @@ function Step5SmartFeatures({ data, onChange }) {
   );
 }
 
-function Step6Generation({ data, onComplete }) {
+function Step6Generation({ data, onComplete, onImport }) {
   const [phase, setPhase] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const progressWidth = useSharedValue(0);
 
   const phases = [
-    'Calculating your metabolic rate...',
-    'Building your macro targets...',
-    'Generating your workout plan...',
-    'Personalizing your AI coach...',
+    'Setting your calorie target...',
+    'Setting your protein target...',
+    'Preparing fast logging defaults...',
+    'Getting today ready...',
   ];
 
   // Calculate results
@@ -909,7 +914,7 @@ function Step6Generation({ data, onComplete }) {
     const calories = computeCalorieTarget(tdee, data.goal || 'maintain');
     const macros = computeMacros(calories, data.goal || 'maintain');
 
-    return { bmr, tdee, calories, macros, weightKg, heightCm, age, gender, daysPerWeek: data.daysPerWeek || 4 };
+    return { bmr, tdee, calories, macros, weightKg, heightCm, age, gender };
   }, [data]);
 
   useEffect(() => {
@@ -949,7 +954,7 @@ function Step6Generation({ data, onComplete }) {
           {/* Pulsing icon */}
           <PulsingOrb />
 
-          <Text style={styles.genTitle}>Analyzing Your Goals</Text>
+          <Text style={styles.genTitle}>Preparing Today</Text>
 
           {/* Phase text */}
           <ReAnimated.View key={phase} entering={FadeIn.duration(300)}>
@@ -980,8 +985,8 @@ function Step6Generation({ data, onComplete }) {
         <View style={styles.resultsCheckCircle}>
           <Check size={32} color="#fff" strokeWidth={3} />
         </View>
-        <Text style={styles.resultsTitle}>Your Plan Is Ready!</Text>
-        <Text style={styles.resultsSubtitle}>Here's what we've built for you</Text>
+        <Text style={styles.resultsTitle}>Your Daily Targets Are Ready</Text>
+        <Text style={styles.resultsSubtitle}>Log your first meal and FuelIQ will keep today clear</Text>
       </ReAnimated.View>
 
       {/* Stats cards */}
@@ -1038,8 +1043,8 @@ function Step6Generation({ data, onComplete }) {
 
       {/* Workout frequency */}
       <ReAnimated.View entering={FadeInDown.delay(600).duration(400).springify()} style={styles.resultInfoRow}>
-        <Activity size={20} color={Colors.primary} />
-        <Text style={styles.resultInfoText}>{results.daysPerWeek} workouts per week</Text>
+        <Utensils size={20} color={Colors.primary} />
+        <Text style={styles.resultInfoText}>{data.mealsPerDay || 3} meals per day, ready for fast logging</Text>
       </ReAnimated.View>
 
       {/* CTA */}
@@ -1052,9 +1057,20 @@ function Step6Generation({ data, onComplete }) {
             style={StyleSheet.absoluteFill}
           />
           <Sparkles size={20} color="#fff" />
-          <Text style={styles.ctaText}>Start Your Journey</Text>
+          <Text style={styles.ctaText}>Start Logging</Text>
           <ArrowRight size={20} color="#fff" />
         </Pressable>
+      </ReAnimated.View>
+
+      <ReAnimated.View entering={FadeInUp.delay(780).duration(500).springify()} style={styles.resultsImportCardWrap}>
+        <MyFitnessPalImportCard
+          eyebrow="Coming From MyFitnessPal?"
+          title="Bring your diary over first"
+          body="Finish setup and import your meals before you start searching from scratch."
+          buttonLabel="Finish and import"
+          onPress={onImport}
+          style={styles.resultsImportCard}
+        />
       </ReAnimated.View>
 
       <View style={{ height: 60 }} />
@@ -1111,6 +1127,10 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState('forward');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    recordOnboardingStarted().catch(() => {});
+  }, []);
 
   // All onboarding data in one state
   const [data, setData] = useState({
@@ -1190,7 +1210,7 @@ export default function OnboardingScreen() {
   }, [step]);
 
   // Save everything and navigate to main app
-  const completeOnboarding = useCallback(async () => {
+  const completeOnboarding = useCallback(async (nextDestination) => {
     if (saving) return;
     setSaving(true);
 
@@ -1302,11 +1322,18 @@ export default function OnboardingScreen() {
       // triggering a redirect loop back to onboarding.
 
       hapticHeavy();
+      await recordOnboardingCompleted();
 
       // Small delay to let React commit the profile state update before navigation,
       // ensuring ProfileAwareNav sees isProfileComplete = true when it evaluates.
       setTimeout(() => {
-        router.replace('/(tabs)');
+        router.replace(nextDestination || {
+          pathname: '/(tabs)/add',
+          params: {
+            focus: 'browse',
+            source: 'onboarding_complete',
+          },
+        });
       }, 50);
     } catch (err) {
       if (__DEV__) console.error('Onboarding complete error:', err);
@@ -1314,6 +1341,15 @@ export default function OnboardingScreen() {
       setSaving(false);
     }
   }, [data, user, updateProfile, router, saving]);
+
+  const completeOnboardingAndImport = useCallback(() => {
+    completeOnboarding({
+      pathname: '/import-myfitnesspal',
+      params: {
+        source: 'onboarding_completion',
+      },
+    });
+  }, [completeOnboarding]);
 
   // Choose entering/exiting animations based on direction
   const entering = direction === 'forward'
@@ -1331,7 +1367,7 @@ export default function OnboardingScreen() {
       case 3: return <Step3Dietary data={data} onChange={onChange} />;
       case 4: return <Step4Fitness data={data} onChange={onChange} />;
       case 5: return <Step5SmartFeatures data={data} onChange={onChange} />;
-      case 6: return <Step6Generation data={data} onComplete={completeOnboarding} />;
+      case 6: return <Step6Generation data={data} onComplete={completeOnboarding} onImport={completeOnboardingAndImport} />;
       default: return null;
     }
   };
@@ -1415,7 +1451,7 @@ export default function OnboardingScreen() {
                   style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}
                 />
                 <Text style={styles.nextBtnText}>
-                  {step === 5 ? 'Generate Plan' : 'Continue'}
+                  {step === 5 ? 'Build My Targets' : 'Continue'}
                 </Text>
                 <ArrowRight size={18} color="#fff" strokeWidth={2.5} />
               </Pressable>
@@ -2071,5 +2107,13 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: '#fff',
+  },
+  resultsImportCardWrap: {
+    width: '100%',
+    marginTop: Spacing.md,
+  },
+  resultsImportCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderColor: Colors.warning + '28',
   },
 });

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert, ActivityIndicator, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Save, AlertCircle, Dumbbell, Utensils, Bell, Droplets, Timer, Flame, Download, FileText, Heart, Sun, Moon, Monitor, RotateCcw } from 'lucide-react-native';
+import { ChevronLeft, Save, AlertCircle, Dumbbell, Utensils, Bell, Droplets, Timer, Flame, Download, FileText, Heart, Sun, Moon, Monitor, RotateCcw, Upload } from 'lucide-react-native';
 import { useHealthKit } from '../hooks/useHealthKit';
 import { getHealthPlatformName } from '../services/healthService';
 import { useAuth } from '../context/AuthContext';
@@ -351,13 +351,28 @@ function SettingsScreenInner() {
           </View>
         </View>
 
-        {/* Export Data */}
-        <Text style={[styles.sectionHeader, { marginTop: Spacing.md }]}>Export Data</Text>
+        {/* Import & Export Data */}
+        <Text style={[styles.sectionHeader, { marginTop: Spacing.md }]}>Import & Export Data</Text>
         <Text style={styles.description}>
-          Download your tracking data for personal records or sharing with your coach.
+          Bring over your diary history or download your data for personal records and coaching.
         </Text>
 
         <View style={styles.toggleGroup}>
+          <Pressable
+            style={styles.toggleRow}
+            onPress={() => router.push('/import-myfitnesspal')}
+          >
+            <View style={styles.toggleLeft}>
+              <View style={[styles.toggleIcon, { backgroundColor: Colors.warningSoft }]}>
+                <Upload size={FontSize.md} color={Colors.warning} />
+              </View>
+              <View>
+                <Text style={styles.toggleLabel}>Import MyFitnessPal CSV</Text>
+                <Text style={styles.toggleHint}>Paste a diary export and bring your meals over</Text>
+              </View>
+            </View>
+          </Pressable>
+
           <Pressable
             style={styles.toggleRow}
             onPress={handleExportCSV}
