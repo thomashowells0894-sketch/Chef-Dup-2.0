@@ -20,7 +20,8 @@ import { hapticImpact } from '../lib/haptics';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Colors, Gradients, Spacing, BorderRadius, FontSize, FontWeight, Shadows } from '../constants/theme';
+import { PASSWORD_RESET_REDIRECT_URL } from '../lib/authRedirect';
+import { Colors, Gradients, Spacing, FontSize, FontWeight } from '../constants/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -128,6 +129,7 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isAppleSignInAvailable, setIsAppleSignInAvailable] = useState(Platform.OS === 'ios');
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const { signIn, signUp } = useAuth();
@@ -136,6 +138,33 @@ export default function AuthScreen() {
   const lastAttemptTime = useRef(0);
   const attemptCount = useRef(0);
   const lockoutUntil = useRef(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (Platform.OS !== 'ios') {
+      setIsAppleSignInAvailable(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    AppleAuthentication.isAvailableAsync()
+      .then((available) => {
+        if (isMounted) {
+          setIsAppleSignInAvailable(Boolean(available));
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setIsAppleSignInAvailable(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Check if currently rate limited
   const checkRateLimit = useCallback(() => {
@@ -308,7 +337,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: 'fueliq://auth/reset-password',
+        redirectTo: PASSWORD_RESET_REDIRECT_URL,
       });
 
       if (error) {
@@ -322,7 +351,7 @@ export default function AuthScreen() {
         'Check Your Email',
         'We sent you a password reset link. Please check your inbox.'
       );
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to send reset email. Please try again.');
     } finally {
       setLoading(false);
@@ -392,7 +421,7 @@ export default function AuthScreen() {
           attemptCount.current = 0;
         }
       }
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     }
 
@@ -509,13 +538,15 @@ export default function AuthScreen() {
                 <Text style={styles.oauthButtonTextGoogle}>Continue with Google</Text>
               </Pressable>
 
-              <Pressable
-                style={styles.oauthButtonApple}
-                onPress={performAppleSignIn}
-              >
-                <Text style={{ fontSize: 20, color: Colors.oauthAppleText }}>{'\uF8FF'}</Text>
-                <Text style={styles.oauthButtonTextApple}>Continue with Apple</Text>
-              </Pressable>
+              {isAppleSignInAvailable ? (
+                <Pressable
+                  style={styles.oauthButtonApple}
+                  onPress={performAppleSignIn}
+                >
+                  <Text style={{ fontSize: 20, color: Colors.oauthAppleText }}>{'\uF8FF'}</Text>
+                  <Text style={styles.oauthButtonTextApple}>Continue with Apple</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>

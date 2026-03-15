@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { PASSWORD_RESET_REDIRECT_URL } from '../lib/authRedirect';
 import { ArrowLeft } from 'lucide-react-native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Gradients } from '../constants/theme';
 import { globalRateLimiter } from '../lib/security';
@@ -32,7 +33,7 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: 'fueliq://update-password',
+        redirectTo: PASSWORD_RESET_REDIRECT_URL,
       });
 
       if (error) {
@@ -113,4 +114,3 @@ const styles = StyleSheet.create({
   },
   resetButtonText: { color: Colors.background, fontSize: FontSize.lg, fontWeight: FontWeight.bold },
 });
-

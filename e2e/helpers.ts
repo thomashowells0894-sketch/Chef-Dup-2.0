@@ -32,3 +32,10 @@ export async function dismissAlert() {
     // No alert to dismiss
   }
 }
+
+export async function launchWithUrl(url: string) {
+  await device.launchApp({
+    newInstance: true,
+    url,
+  });
+}

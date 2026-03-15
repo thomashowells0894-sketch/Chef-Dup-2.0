@@ -4,12 +4,17 @@ import { supabase } from '../lib/supabase';
 import { recordActivity, isSessionExpired } from '../lib/security';
 import type { AuthContextValue } from '../types';
 
-const AuthContext = createContext<AuthContextValue>({} as AuthContextValue);
+const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthContextValue['user']>(null);
   const [session, setSession] = useState<unknown>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const clearAuthState = useCallback(() => {
+    setSession(null);
+    setUser(null);
+  }, []);
 
   // Auth Listener
   useEffect(() => {
@@ -44,8 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Check session timeout when returning from background
         if (isSessionExpired()) {
           supabase.auth.signOut().then(() => {
-            setSession(null);
-            setUser(null);
+            clearAuthState();
           });
         } else {
           recordActivity();
@@ -69,13 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const interval = setInterval(() => {
       if (isSessionExpired()) {
         supabase.auth.signOut().then(() => {
-          setSession(null);
-          setUser(null);
+          clearAuthState();
         });
       }
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [clearAuthState, user]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const trimmedEmail = (email || '').trim().toLowerCase();
@@ -98,8 +101,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
+    clearAuthState();
     return { error };
-  }, []);
+  }, [clearAuthState]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
