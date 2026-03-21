@@ -47,8 +47,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { hapticImpact, hapticHeavy } from '../../lib/haptics';
 import { useProfile } from '../../context/ProfileContext';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
 import {
   recordOnboardingCompleted,
   recordOnboardingStarted,
@@ -624,7 +622,6 @@ function Step6Generation({ data, onComplete, onImport, onQuickLog }) {
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { user } = useAuth();
   const { updateProfile } = useProfile();
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState('forward');
@@ -718,30 +715,15 @@ export default function OnboardingScreen() {
 
     try {
       const starterPlan = buildStarterPlan(data);
-
-      // Update ProfileContext state so isProfileComplete becomes true.
-      // This sets local state immediately AND saves core fields to Supabase.
-      await updateProfile(starterPlan.profileUpdates);
-
-      // Save additional onboarding metadata to Supabase (non-blocking best-effort).
-      // These are supplementary fields — the core profile is already saved above.
-      if (user) {
-        supabase
-          .from('profiles')
-          .update({
-            onboarding_completed: true,
-            onboarding_data: starterPlan.onboardingData,
-          })
-          .eq('user_id', user.id)
-          .then(() => {})
-          .catch(() => {});
-      }
+      await updateProfile(starterPlan.profileUpdates, {
+        commitTargets: starterPlan.onboardingData.activeTargets,
+        onboardingCompleted: true,
+        onboardingData: starterPlan.onboardingData,
+      });
 
       hapticHeavy();
       await recordOnboardingCompleted();
 
-      // Small delay to let React commit the profile state update before navigation,
-      // ensuring ProfileAwareNav sees isProfileComplete = true when it evaluates.
       setTimeout(() => {
         router.replace(nextDestination || '/(tabs)');
       }, 50);
@@ -750,7 +732,7 @@ export default function OnboardingScreen() {
       Alert.alert('Error', 'Failed to save your profile. Please try again.');
       setSaving(false);
     }
-  }, [data, user, updateProfile, router, saving]);
+  }, [data, updateProfile, router, saving]);
 
   const completeOnboardingAndImport = useCallback(() => {
     completeOnboarding({

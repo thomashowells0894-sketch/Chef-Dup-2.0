@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
 import { queryCache } from '../lib/cache';
 import { Sentry } from '../lib/sentry';
+import { useAuth } from '../context/AuthContext';
+import { buildMealCacheKey, getLegacyMealCacheKeys } from '../lib/profileState';
 
 /**
  * Predictive pre-loader: fetches data for likely-next screens
@@ -11,6 +13,7 @@ import { Sentry } from '../lib/sentry';
  */
 export function usePreload(currentScreen: string) {
   const hasPrefetched = useRef(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (hasPrefetched.current) return;
@@ -26,7 +29,7 @@ export function usePreload(currentScreen: string) {
           break;
         case 'index':
           // User likely navigates to diary or stats
-          prefetchDiaryData();
+          prefetchDiaryData(user?.id);
           break;
         case 'add':
           // User likely navigates back to diary
@@ -39,7 +42,7 @@ export function usePreload(currentScreen: string) {
     });
 
     return () => task.cancel();
-  }, [currentScreen]);
+  }, [currentScreen, user?.id]);
 }
 
 async function prefetchFoodSearch() {
@@ -53,14 +56,17 @@ async function prefetchFoodSearch() {
   } catch (e) { Sentry.captureException(e); }
 }
 
-async function prefetchDiaryData() {
+async function prefetchDiaryData(userId?: string | null) {
   try {
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    // Pre-warm today's date key
     const today = new Date().toISOString().split('T')[0];
-    const cached = await AsyncStorage.getItem(`@fueliq_meals_${today}`);
-    if (cached) {
-      queryCache.set(`diary_${today}`, JSON.parse(cached));
+
+    for (const key of [buildMealCacheKey(userId, today), ...getLegacyMealCacheKeys(today)]) {
+      const cached = await AsyncStorage.getItem(key);
+      if (cached) {
+        queryCache.set(`diary_${today}`, JSON.parse(cached));
+        break;
+      }
     }
   } catch (e) { Sentry.captureException(e); }
 }

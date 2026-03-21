@@ -85,32 +85,45 @@ function AppBootstrapScreen({ title, subtitle }) {
 // Inner navigation component that handles profile-based routing
 function ProfileAwareNav() {
   const { user } = useAuth();
-  const { isProfileComplete, isHydrated, isLoading } = useProfile();
+  const {
+    hasCompletedOnboarding,
+    profileHydrationState,
+    isHydrated,
+    isLoading,
+  } = useProfile();
   const segments = useSegments();
   const router = useRouter();
   const { offer: winBackOffer, dismissOffer: dismissWinBack } = useWinBack();
 
   useEffect(() => {
-    // Wait for profile to be hydrated (fetched from Supabase)
     if (!isHydrated || isLoading) return;
 
     const inOnboarding = segments[0] === 'onboarding';
     const inTabs = segments[0] === '(tabs)';
+    const shouldRouteToOnboarding =
+      !hasCompletedOnboarding && profileHydrationState !== 'complete';
 
-    // If profile is incomplete and user is trying to access main app, redirect to onboarding
-    if (!isProfileComplete && inTabs) {
+    if (shouldRouteToOnboarding && inTabs) {
       router.replace('/onboarding');
     }
-    // If profile is complete and user is on onboarding, redirect to main app
-    else if (isProfileComplete && inOnboarding) {
+    else if (!shouldRouteToOnboarding && inOnboarding) {
       router.replace('/(tabs)');
     }
-  }, [isProfileComplete, isHydrated, isLoading, router, segments]);
+  }, [hasCompletedOnboarding, isHydrated, isLoading, profileHydrationState, router, segments]);
 
   const handleWinBackAccept = useCallback(() => {
     dismissWinBack();
     router.push('/settings');
   }, [dismissWinBack, router]);
+
+  if (user && (!isHydrated || isLoading)) {
+    return (
+      <AppBootstrapScreen
+        title="Restoring your plan"
+        subtitle="Bringing back your targets and today"
+      />
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

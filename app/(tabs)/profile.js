@@ -637,7 +637,16 @@ const EditLayoutModal = memo(function EditLayoutModal({ visible, onClose }) {
 });
 
 function ProfileScreenInner() {
-  const { profile, isLoading, updateProfile, calculatedGoals, isProfileComplete } = useProfile();
+  const {
+    profile,
+    isLoading,
+    updateProfile,
+    calculatedGoals,
+    isProfileComplete,
+    pendingTargets,
+    applyPendingTargets,
+    discardPendingTargets,
+  } = useProfile();
   const { levelInfo, totalXP, currentStreak } = useGamification();
   const { unlockedCount, totalCount, newUnlocked } = useAchievements();
   const { user, signOut } = useAuth();
@@ -689,7 +698,7 @@ function ProfileScreenInner() {
     await hapticLight();
     setIsSaving(true);
     try {
-      await updateProfile({
+      const result = await updateProfile({
         name: name.trim(),
         weight: parseFloat(weight) || null,
         height: parseFloat(height) || null,
@@ -701,6 +710,12 @@ function ProfileScreenInner() {
       });
       await hapticImpact();
       setHasChanges(false);
+      if (result.targetAction === 'pending') {
+        Alert.alert(
+          'Targets Ready to Review',
+          'Your current daily targets are still live. Review the suggested targets below and apply them only if you want to switch.'
+        );
+      }
     } catch (error) {
       Alert.alert('Save Failed', 'Could not save your profile. Please try again.');
     } finally {
@@ -997,6 +1012,50 @@ function ProfileScreenInner() {
             <MacroSplitSelector value={macroPreset} onChange={setMacroPreset} />
           </View>
           </ReAnimated.View>
+
+          {pendingTargets && (
+            <ReAnimated.View entering={FadeInDown.delay(520).springify().mass(0.5).damping(10)}>
+              <View style={styles.pendingTargetsCard}>
+                <Text style={styles.pendingTargetsEyebrow}>Review Before Applying</Text>
+                <Text style={styles.pendingTargetsTitle}>New targets are ready</Text>
+                <Text style={styles.pendingTargetsBody}>
+                  Profile changes saved. Your live targets stay unchanged until you confirm this update.
+                </Text>
+                <View style={styles.pendingTargetsRow}>
+                  <View style={styles.pendingTargetsMetric}>
+                    <Text style={styles.pendingTargetsMetricValue}>{pendingTargets.calories}</Text>
+                    <Text style={styles.pendingTargetsMetricLabel}>kcal</Text>
+                  </View>
+                  <View style={styles.pendingTargetsMetric}>
+                    <Text style={[styles.pendingTargetsMetricValue, { color: Colors.protein }]}>{pendingTargets.protein}g</Text>
+                    <Text style={styles.pendingTargetsMetricLabel}>Protein</Text>
+                  </View>
+                  <View style={styles.pendingTargetsMetric}>
+                    <Text style={[styles.pendingTargetsMetricValue, { color: Colors.carbs }]}>{pendingTargets.carbs}g</Text>
+                    <Text style={styles.pendingTargetsMetricLabel}>Carbs</Text>
+                  </View>
+                  <View style={styles.pendingTargetsMetric}>
+                    <Text style={[styles.pendingTargetsMetricValue, { color: Colors.fat }]}>{pendingTargets.fat}g</Text>
+                    <Text style={styles.pendingTargetsMetricLabel}>Fat</Text>
+                  </View>
+                </View>
+                <View style={styles.pendingTargetsActions}>
+                  <Pressable
+                    style={[styles.pendingTargetsButton, styles.pendingTargetsButtonSecondary]}
+                    onPress={discardPendingTargets}
+                  >
+                    <Text style={styles.pendingTargetsButtonSecondaryText}>Keep Current</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.pendingTargetsButton, styles.pendingTargetsButtonPrimary]}
+                    onPress={applyPendingTargets}
+                  >
+                    <Text style={styles.pendingTargetsButtonPrimaryText}>Apply Targets</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </ReAnimated.View>
+          )}
 
           {/* Save Button */}
           <Pressable
@@ -1544,6 +1603,88 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+  },
+  pendingTargetsCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary + '35',
+  },
+  pendingTargetsEyebrow: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  pendingTargetsTitle: {
+    marginTop: 6,
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  pendingTargetsBody: {
+    marginTop: Spacing.xs,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  pendingTargetsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  pendingTargetsMetric: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+  },
+  pendingTargetsMetricValue: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  pendingTargetsMetricLabel: {
+    marginTop: 4,
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+  },
+  pendingTargetsActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  pendingTargetsButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  pendingTargetsButtonPrimary: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  pendingTargetsButtonSecondary: {
+    backgroundColor: Colors.surfaceElevated,
+    borderColor: Colors.border,
+  },
+  pendingTargetsButtonPrimaryText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.background,
+  },
+  pendingTargetsButtonSecondaryText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
   },
   saveButton: {
     flexDirection: 'row',

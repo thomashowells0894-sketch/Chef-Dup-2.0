@@ -335,6 +335,16 @@ export async function requestPermissions(): Promise<boolean> {
   }
 }
 
+export async function getPermissionStatus(): Promise<boolean> {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    return status === 'granted';
+  } catch (error: unknown) {
+    if (__DEV__) console.error('Failed to read notification permissions:', error);
+    return false;
+  }
+}
+
 /**
  * Load notification settings from AsyncStorage.
  * Returns DEFAULT_SETTINGS if nothing is saved.

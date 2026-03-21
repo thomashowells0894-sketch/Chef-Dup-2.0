@@ -113,6 +113,12 @@ export default function GrowthOpsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  useEffect(() => {
+    if (!__DEV__) {
+      router.replace('/(tabs)/stats');
+    }
+  }, [router]);
+
   const loadSnapshot = useCallback(async (days, refreshing = false) => {
     if (refreshing) {
       setIsRefreshing(true);
@@ -130,10 +136,16 @@ export default function GrowthOpsScreen() {
   }, []);
 
   useEffect(() => {
+    if (!__DEV__) {
+      return;
+    }
     loadSnapshot(windowDays);
   }, [loadSnapshot, windowDays]);
 
   const actionCopy = useMemo(() => {
+    if (!__DEV__) {
+      return { title: '', detail: '' };
+    }
     if (!snapshot) {
       return { title: 'Loading', detail: '' };
     }
@@ -164,6 +176,10 @@ export default function GrowthOpsScreen() {
       detail: 'The current bottleneck is not obvious. Watch daily drift and keep pressure on trust and repeatability.',
     };
   }, [snapshot]);
+
+  if (!__DEV__) {
+    return null;
+  }
 
   if (isLoading && !snapshot) {
     return (

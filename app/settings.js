@@ -21,7 +21,12 @@ import useTour from '../hooks/useTour';
 function SettingsScreenInner() {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const { settings: notifSettings, updateSettings: updateNotifSettings, hasPermission } = useNotifications();
+  const {
+    settings: notifSettings,
+    updateSettings: updateNotifSettings,
+    hasPermission,
+    requestAccess: requestNotificationAccess,
+  } = useNotifications();
   const { dayData, weeklyData, weeklyStats, goals } = useMeals();
   const { profile } = useProfile();
   const { currentStreak } = useGamification();
@@ -229,6 +234,24 @@ function SettingsScreenInner() {
             ? 'Choose which reminders help you stay on track.'
             : 'Enable notifications in your device settings to get reminders.'}
         </Text>
+
+        {!hasPermission && (
+          <Pressable
+            style={styles.connectButton}
+            onPress={async () => {
+              const granted = await requestNotificationAccess();
+              if (!granted) {
+                Alert.alert(
+                  'Notifications Off',
+                  'Enable notifications in system settings whenever you want reminders.'
+                );
+              }
+            }}
+          >
+            <Bell size={FontSize.md} color={Colors.background} />
+            <Text style={styles.connectButtonText}>Enable Notifications</Text>
+          </Pressable>
+        )}
 
         <View style={styles.toggleGroup}>
           <View style={styles.toggleRow}>
@@ -446,6 +469,8 @@ const styles = StyleSheet.create({
   labelRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm, alignItems: 'center' },
   label: { color: Colors.textSecondary, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
   input: { backgroundColor: Colors.inputBackground, borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text, fontSize: FontSize.md, minHeight: 60, borderWidth: 1, borderColor: Colors.inputBorder },
+  connectButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, backgroundColor: Colors.primary, borderRadius: BorderRadius.sm, paddingVertical: Spacing.md, marginBottom: Spacing.md },
+  connectButtonText: { color: Colors.background, fontSize: FontSize.md, fontWeight: FontWeight.semibold },
   toggleGroup: { gap: Spacing.xs, marginBottom: Spacing.sm },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.inputBackground, borderRadius: BorderRadius.sm, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
   toggleLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm + 4, flex: 1 },

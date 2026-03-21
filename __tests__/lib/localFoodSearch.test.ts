@@ -36,4 +36,19 @@ describe('searchLocalFoodDatabase', () => {
 
     expect(results[0].name).toBe('Chicken Breast');
   });
+
+  it('surfaces steak as a canonical result for common steak queries', () => {
+    const results = searchLocalFoodDatabase('steak', 5);
+
+    expect(results[0].name).toMatch(/Steak/i);
+    expect(results[0].canonicalId).toBeTruthy();
+    expect(results[0].resultKind).toBe('canonical');
+  });
+
+  it('surfaces whole wheat bread for toast queries', () => {
+    const results = searchLocalFoodDatabase('toast', 5);
+
+    expect(results[0].name).toMatch(/Toast|Bread/i);
+    expect(results[0].canonicalId).toBe('toast');
+  });
 });

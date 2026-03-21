@@ -86,6 +86,15 @@ const CURATED_TOP_FOOD_PROFILES: CuratedFoodProfile[] = [
     trustBoost: 8,
   },
   {
+    id: 'steak',
+    aliases: ['steak', 'sirloin steak', 'ribeye steak', 'beef steak', 'steak grilled'],
+    localIds: ['sirloin-steak', 'ribeye-steak'],
+    nameTerms: ['steak'],
+    preferredSources: ['local', 'usda'],
+    rankingBoost: 26,
+    trustBoost: 10,
+  },
+  {
     id: 'eggs',
     aliases: ['egg', 'eggs', 'whole egg', 'whole eggs'],
     localIds: ['eggs'],
@@ -241,6 +250,15 @@ const CURATED_TOP_FOOD_PROFILES: CuratedFoodProfile[] = [
     preferredSources: ['local', 'usda'],
     rankingBoost: 18,
     trustBoost: 6,
+  },
+  {
+    id: 'toast',
+    aliases: ['toast', 'toast with butter', 'buttered toast'],
+    localIds: ['toast-with-butter', 'whole-wheat-bread', 'white-bread', 'sourdough-bread'],
+    nameTerms: ['toast'],
+    preferredSources: ['local', 'usda'],
+    rankingBoost: 22,
+    trustBoost: 7,
   },
   {
     id: 'bagel',

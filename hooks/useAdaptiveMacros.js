@@ -198,14 +198,17 @@ export function useAdaptiveMacros() {
   // Apply the recommendation to the profile
   const applyRecommendation = useCallback(async () => {
     if (!recommendation || !recommendation.shouldAdjust) return;
-    await updateProfile({
-      macroPreset: 'custom',
-      customMacros: {
-        protein: Math.round((recommendation.newProtein * 4 / recommendation.newCalories) * 100),
-        carbs: Math.round((recommendation.newCarbs * 4 / recommendation.newCalories) * 100),
-        fat: Math.round((recommendation.newFat * 9 / recommendation.newCalories) * 100),
+    await updateProfile(
+      {
+        macroPreset: 'custom',
+        customMacros: {
+          protein: Math.round((recommendation.newProtein * 4 / recommendation.newCalories) * 100),
+          carbs: Math.round((recommendation.newCarbs * 4 / recommendation.newCalories) * 100),
+          fat: Math.round((recommendation.newFat * 9 / recommendation.newCalories) * 100),
+        },
       },
-    });
+      { targetBehavior: 'commit_generated' }
+    );
     const dismissed = { ...recommendation, dismissed: true };
     setRecommendation(null);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dismissed));

@@ -338,13 +338,31 @@ function decorateProduct(product: ProductResult, source: FoodSearchSource): Prod
   const metadata = SOURCE_METADATA[source];
   const nutritionCompleteness = nutritionCompletenessScore(product);
   const normalizedServing = normalizeServing(product);
+  const curation = getCuratedSearchAdjustment(product.name, {
+    name: product.name,
+    brand: product.brand,
+    source,
+    barcode: product.barcode,
+    id: product.canonicalId || product.barcode,
+  });
   const trustBonus =
     (product.brand ? 2 : 0) +
     (product.image ? 1 : 0) +
-    (normalizedServing.gramsPerServing !== 100 ? 1 : 0);
+    (normalizedServing.gramsPerServing !== 100 ? 1 : 0) +
+    curation.trustBoost;
+  const canonicalId = product.canonicalId || curation.profileId || null;
+  const resultKind =
+    source === 'local' || source === 'usda'
+      ? 'canonical'
+      : source === 'restaurant'
+        ? 'restaurant'
+        : product.brand
+          ? 'branded'
+          : 'canonical';
 
   return {
     ...product,
+    canonicalId,
     source,
     sourceLabel: metadata.label,
     qualityTag: metadata.qualityTag,
@@ -353,6 +371,7 @@ function decorateProduct(product: ProductResult, source: FoodSearchSource): Prod
     nutritionCompleteness,
     normalizedServing,
     reportable: metadata.reportable,
+    resultKind,
   };
 }
 

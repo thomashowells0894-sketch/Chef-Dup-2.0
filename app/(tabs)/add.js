@@ -163,6 +163,34 @@ function normalizeMealParam(param) {
   return VALID_MEAL_TYPES.has(normalized) ? normalized : null;
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchesSearchText(query, ...values) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) {
+    return false;
+  }
+
+  const tokens = normalizedQuery.split(' ').filter(Boolean);
+  return values.some((value) => {
+    const normalizedValue = normalizeSearchText(value);
+    if (!normalizedValue) {
+      return false;
+    }
+
+    return (
+      normalizedValue.includes(normalizedQuery) ||
+      tokens.every((token) => normalizedValue.includes(token))
+    );
+  });
+}
+
 // API search result cache — avoids repeat network calls for common queries
 const API_SEARCH_CACHE = new Map(); // key: query string, value: { products, sources, timestamp }
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -626,6 +654,15 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
       </View>
     </Pressable>
     </ReAnimated.View>
+  );
+});
+
+const SearchSectionHeader = memo(function SearchSectionHeader({ title, subtitle }) {
+  return (
+    <View style={styles.searchSectionHeader}>
+      <Text style={styles.searchSectionTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.searchSectionSubtitle}>{subtitle}</Text> : null}
+    </View>
   );
 });
 
@@ -1440,6 +1477,41 @@ function AddScreenInner() {
     );
   }, [recipes, searchQuery]);
 
+  const queryMatchedRecentFoods = useMemo(() => {
+    if (searchQuery.trim().length < 2) {
+      return [];
+    }
+
+    const seen = new Set();
+    return [...topFrequentFoods, ...lastTwentyFoods]
+      .filter((food) => matchesSearchText(searchQuery, food.name, food.brand))
+      .filter((food) => {
+        const key = normalizeSearchText(food.canonicalId || food.id || food.name);
+        if (!key || seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 4);
+  }, [lastTwentyFoods, searchQuery, topFrequentFoods]);
+
+  const bestSearchMatches = useMemo(() => searchResults.slice(0, 8), [searchResults]);
+  const additionalSearchMatches = useMemo(() => searchResults.slice(8, 20), [searchResults]);
+
+  const searchMatchSourcesLabel = useMemo(() => {
+    const labels = [
+      searchSources.local > 0 ? 'FuelIQ' : null,
+      searchSources.restaurant > 0 ? 'Restaurant' : null,
+      searchSources.usda > 0 ? 'USDA' : null,
+      searchSources.fatSecret > 0 ? 'FatSecret' : null,
+      searchSources.openFoodFacts > 0 ? 'Open Food Facts' : null,
+      searchSources.nutritionix > 0 ? 'Nutritionix' : null,
+    ].filter(Boolean);
+
+    return labels.join(' + ');
+  }, [searchSources]);
+
   // Handle selecting a search result - open FoodDetailModal
   const handleSelectResult = useCallback((product) => {
     hapticLight();
@@ -1720,16 +1792,6 @@ function AddScreenInner() {
   }, [logFoodInstant, selectedMeal]);
 
   // Stable renderItem and keyExtractor callbacks for FlatList optimization
-  const renderSearchResult = useCallback(({ item, index }) => (
-    <SearchResultItem
-      item={item}
-      index={index}
-      onPress={handleSelectResult}
-      onQuickAdd={handleQuickAddResult}
-      onReport={handleReportFood}
-    />
-  ), [handleSelectResult, handleQuickAddResult, handleReportFood]);
-
   const renderRecentFood = useCallback(({ item, index }) => (
     <RecentFoodItem
       item={item}
@@ -1752,7 +1814,10 @@ function AddScreenInner() {
     <ExerciseItem exercise={item} onPress={handleSelectExercise} />
   ), [handleSelectExercise]);
 
-  const searchKeyExtractor = useCallback((item) => item.barcode || item.id || item.name, []);
+  const searchKeyExtractor = useCallback(
+    (item) => item.barcode || item.canonicalId || item.id || item.name,
+    []
+  );
   const idKeyExtractor = useCallback((item) => String(item.id || item.name), []);
   const isShowingSearchResults = mode === 'food' && searchQuery.trim().length >= 2;
   const showFirstLogPrompt = (
@@ -1772,7 +1837,8 @@ function AddScreenInner() {
     mode === 'food' &&
     searchQuery.trim().length === 0 &&
     !recentFoodsLoading &&
-    !hasAddScreenHistory
+    !hasAddScreenHistory &&
+    !isOnboardingHandoff
   );
   const showStarterPicks = showFirstLogPrompt && starterFoods.length > 0;
   const searchPlaceholder = mode === 'food'
@@ -1941,39 +2007,110 @@ function AddScreenInner() {
                 </View>
               ) : searchResults.length === 0 ? (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No results found</Text>
+                  <Text style={styles.emptyText}>No strong matches yet</Text>
                   <Text style={styles.emptySubtext}>
-                    Try a different search term or scan a barcode
+                    Try steak, eggs, toast, or use Scan / Quick Cal below.
                   </Text>
+                  <View style={styles.searchFallbackActions}>
+                    <FastCaptureAction
+                      icon={ScanBarcode}
+                      label="Scan Barcode"
+                      hint="Best for packaged foods"
+                      onPress={handleOpenBarcodeLookup}
+                    />
+                    <FastCaptureAction
+                      icon={Plus}
+                      label="Quick Add"
+                      hint="Log calories and macros manually"
+                      onPress={() => setQuickCalVisible(true)}
+                    />
+                  </View>
                 </View>
               ) : (
-                <OptimizedFlatList
-                  data={searchResults}
-                  keyExtractor={searchKeyExtractor}
-                  renderItem={renderSearchResult}
+                <ScrollView
                   contentContainerStyle={styles.resultsList}
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
-                  initialNumToRender={8}
-                  maxToRenderPerBatch={5}
-                  windowSize={5}
-                  removeClippedSubviews={true}
-                  ListHeaderComponent={
-                    <Text style={styles.resultsHeader}>
-                      {searchResults.length} matches
-                      {(searchSources.openFoodFacts > 0 || searchSources.usda > 0 || searchSources.fatSecret > 0 || searchSources.nutritionix > 0)
-                        ? ` from ${[
-                            searchSources.local > 0 && 'local',
-                            searchSources.restaurant > 0 && 'restaurant',
-                            searchSources.usda > 0 && 'USDA',
-                            searchSources.fatSecret > 0 && 'FatSecret',
-                            searchSources.openFoodFacts > 0 && 'OpenFoodFacts',
-                            searchSources.nutritionix > 0 && 'Nutritionix',
-                          ].filter(Boolean).join(' + ')}`
-                        : ''}
-                    </Text>
-                  }
-                />
+                >
+                  <SearchSectionHeader
+                    title={`Best Matches (${bestSearchMatches.length})`}
+                    subtitle={searchMatchSourcesLabel ? `Trusted from ${searchMatchSourcesLabel}` : 'Trusted picks for this search'}
+                  />
+                  {bestSearchMatches.map((item, index) => (
+                    <SearchResultItem
+                      key={searchKeyExtractor(item)}
+                      item={item}
+                      index={index}
+                      onPress={handleSelectResult}
+                      onQuickAdd={handleQuickAddResult}
+                      onReport={handleReportFood}
+                    />
+                  ))}
+
+                  {queryMatchedRecentFoods.length > 0 && (
+                    <>
+                      <SearchSectionHeader
+                        title="Recent for this search"
+                        subtitle={`Foods you've already used for ${selectedMealLabel.toLowerCase()}`}
+                      />
+                      {queryMatchedRecentFoods.map((item, index) => (
+                        <RecentFoodItem
+                          key={`recent-${item.id || item.name}`}
+                          item={item}
+                          index={index}
+                          onPress={handleSelectLocalFood}
+                          onQuickAdd={handleQuickAddLocalFood}
+                        />
+                      ))}
+                    </>
+                  )}
+
+                  {additionalSearchMatches.length > 0 && (
+                    <>
+                      <SearchSectionHeader
+                        title="More Results"
+                        subtitle="Branded and secondary matches"
+                      />
+                      {additionalSearchMatches.map((item, index) => (
+                        <SearchResultItem
+                          key={`${searchKeyExtractor(item)}-more`}
+                          item={item}
+                          index={index}
+                          onPress={handleSelectResult}
+                          onQuickAdd={handleQuickAddResult}
+                          onReport={handleReportFood}
+                        />
+                      ))}
+                    </>
+                  )}
+
+                  <SearchSectionHeader
+                    title="Fast fallback"
+                    subtitle="Stay in the logging flow if search is not the fastest option"
+                  />
+                  <View style={styles.searchFallbackActions}>
+                    <FastCaptureAction
+                      icon={Plus}
+                      label="Quick Add"
+                      hint="Calories and macros in seconds"
+                      tone="primary"
+                      onPress={() => setQuickCalVisible(true)}
+                    />
+                    <FastCaptureAction
+                      icon={ScanBarcode}
+                      label="Scan"
+                      hint="Packaged foods"
+                      onPress={handleOpenBarcodeLookup}
+                    />
+                    <FastCaptureAction
+                      icon={Wand2}
+                      label="Create Food"
+                      hint="Save a custom item"
+                      onPress={() => router.push({ pathname: '/create-food', params: { meal: selectedMeal } })}
+                    />
+                  </View>
+                  <View style={styles.bottomSpacer} />
+                </ScrollView>
               )}
             </View>
           ) : activeTab === 'recent' ? (
@@ -2892,9 +3029,29 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
+  searchFallbackActions: {
+    width: '100%',
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
   resultsList: {
     paddingHorizontal: Spacing.md,
     paddingBottom: 120,
+  },
+  searchSectionHeader: {
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  searchSectionTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  searchSectionSubtitle: {
+    marginTop: 4,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 18,
   },
   resultsHeader: {
     fontSize: FontSize.sm,

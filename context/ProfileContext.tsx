@@ -5,14 +5,25 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticSuccess, hapticHeavy } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { MacroSet } from '../types';
-
-const PROFILE_CACHE_KEY = '@fueliq_profile_cache';
+import {
+  buildProfileCacheKey,
+  createStoredProfileMeta,
+  deriveTargetsFromProfile,
+  isEssentialProfileComplete,
+  getLegacyProfileCacheKeys,
+  normalizeStoredProfileCache,
+  resolveProfileHydration,
+  sanitizeMacroSet,
+  shouldRegenerateTargets,
+  type ProfileHydrationState,
+} from '../lib/profileState';
 
 interface ActivityLevelInfo {
   label: string;
@@ -88,9 +99,17 @@ interface ProfileContextValue {
   profile: Profile;
   isLoading: boolean;
   isHydrated: boolean;
-  updateProfile: (updates: Partial<Profile>) => Promise<void>;
+  updateProfile: (
+    updates: Partial<Profile>,
+    options?: ProfileUpdateOptions
+  ) => Promise<ProfileUpdateResult>;
   fetchProfile: () => Promise<void>;
   calculatedGoals: MacroSet;
+  pendingTargets: MacroSet | null;
+  hasCompletedOnboarding: boolean;
+  profileHydrationState: ProfileHydrationState;
+  applyPendingTargets: () => Promise<void>;
+  discardPendingTargets: () => Promise<void>;
   activityLevels: Record<string, ActivityLevelInfo>;
   weeklyGoals: Record<string, WeeklyGoalInfo>;
   macroPresets: Record<string, MacroPresetInfo>;
@@ -103,6 +122,19 @@ interface ProfileContextValue {
   weeklyWeightData: WeeklyWeightDataEntry[];
   weightStats: WeightStats;
   calculatedWaterGoal: number;
+}
+
+interface ProfileUpdateOptions {
+  commitTargets?: MacroSet | null;
+  onboardingCompleted?: boolean;
+  onboardingData?: Record<string, unknown> | null;
+  targetBehavior?: 'preserve' | 'commit_generated';
+}
+
+interface ProfileUpdateResult {
+  activeTargets: MacroSet | null;
+  pendingTargets: MacroSet | null;
+  targetAction: 'preserved' | 'committed' | 'pending';
 }
 
 const ProfileContext = createContext<ProfileContextValue | null>(null);
@@ -429,70 +461,310 @@ function getWeeklyWeightData(weightHistory: WeightHistoryEntry[], currentWeight:
   return result;
 }
 
+function createHydratedProfile(
+  rawProfile: Partial<Profile> | null | undefined,
+  fallbackProfile: Profile = initialProfile
+): Profile {
+  const mergedProfile: Profile = {
+    ...fallbackProfile,
+    ...rawProfile,
+    customMacros: {
+      ...fallbackProfile.customMacros,
+      ...(rawProfile?.customMacros || {}),
+    },
+    equipment: Array.isArray(rawProfile?.equipment) ? rawProfile.equipment : fallbackProfile.equipment,
+    dietaryRestrictions: Array.isArray(rawProfile?.dietaryRestrictions)
+      ? rawProfile.dietaryRestrictions
+      : fallbackProfile.dietaryRestrictions,
+    bmr: null,
+    tdee: null,
+  };
+
+  const bmr = calculateBMR(
+    mergedProfile.weight,
+    mergedProfile.height,
+    mergedProfile.age,
+    mergedProfile.gender
+  );
+  const tdee = calculateTDEE(bmr, mergedProfile.activityLevel);
+
+  return {
+    ...mergedProfile,
+    bmr,
+    tdee,
+  };
+}
+
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const userId = user?.id || null;
   const [profile, setProfile] = useState<Profile>(initialProfile);
   const [weightHistory, setWeightHistory] = useState<WeightHistoryEntry[]>([]);
+  const [activeTargets, setActiveTargets] = useState<MacroSet | null>(null);
+  const [pendingTargets, setPendingTargets] = useState<MacroSet | null>(null);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(false);
+  const [profileHydrationState, setProfileHydrationState] = useState<ProfileHydrationState>('missing');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
+  const onboardingDataRef = useRef<Record<string, unknown> | null>(null);
 
-  // Fetch profile from Supabase - extracted so it can be called externally
-  const fetchProfile = useCallback(async () => {
-    if (!user) {
-      setProfile(initialProfile);
-      setWeightHistory([]);
+  const profileCacheKey = useMemo(() => buildProfileCacheKey(userId), [userId]);
+
+  const applyResolvedState = useCallback((nextState: {
+    profile: Profile;
+    weightHistory: WeightHistoryEntry[];
+    activeTargets: MacroSet | null;
+    pendingTargets: MacroSet | null;
+    hasCompletedOnboarding: boolean;
+    hydrationState: ProfileHydrationState;
+    onboardingData?: Record<string, unknown> | null;
+  }) => {
+    setProfile(nextState.profile);
+    setWeightHistory(nextState.weightHistory);
+    setActiveTargets(nextState.activeTargets);
+    setPendingTargets(nextState.pendingTargets);
+    setHasCompletedOnboarding(nextState.hasCompletedOnboarding);
+    setProfileHydrationState(nextState.hydrationState);
+    onboardingDataRef.current = nextState.onboardingData || null;
+  }, []);
+
+  const persistProfileCache = useCallback(async (payload: {
+    profile: Profile;
+    weightHistory: WeightHistoryEntry[];
+    activeTargets: MacroSet | null;
+    pendingTargets: MacroSet | null;
+    hasCompletedOnboarding: boolean;
+  }) => {
+    if (!userId) {
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem(
+        profileCacheKey,
+        JSON.stringify({
+          version: 2,
+          profile: payload.profile,
+          weightHistory: payload.weightHistory,
+          meta: createStoredProfileMeta({
+            hasCompletedOnboarding: payload.hasCompletedOnboarding,
+            activeTargets: payload.activeTargets,
+            pendingTargets: payload.pendingTargets,
+            lastHydratedAt: Date.now(),
+          }),
+        })
+      );
+    } catch (cacheError: any) {
+      if (__DEV__) {
+        console.warn('Failed to write profile cache:', cacheError.message);
+      }
+    }
+  }, [profileCacheKey, userId]);
+
+  const readCachedProfile = useCallback(async () => {
+    if (!userId) {
+      return null;
+    }
+
+    for (const key of [profileCacheKey, ...getLegacyProfileCacheKeys()]) {
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) {
+          continue;
+        }
+
+        const normalized = normalizeStoredProfileCache<Profile>(JSON.parse(raw));
+        if (normalized) {
+          const cachedWeightHistory = (normalized.weightHistory || []) as unknown as WeightHistoryEntry[];
+          if (key !== profileCacheKey) {
+            void persistProfileCache({
+              profile: createHydratedProfile(normalized.profile || initialProfile),
+              weightHistory: cachedWeightHistory,
+              activeTargets: normalized.meta.activeTargets,
+              pendingTargets: normalized.meta.pendingTargets,
+              hasCompletedOnboarding: normalized.meta.hasCompletedOnboarding,
+            });
+          }
+          return {
+            ...normalized,
+            weightHistory: cachedWeightHistory as unknown as Array<Record<string, unknown>>,
+          };
+        }
+      } catch (cacheError: any) {
+        if (__DEV__) {
+          console.warn('Failed to read profile cache:', cacheError.message);
+        }
+      }
+    }
+
+    return null;
+  }, [persistProfileCache, profileCacheKey, userId]);
+
+  const hydrateProfile = useCallback(async (options: { preferCache?: boolean } = {}) => {
+    if (!userId) {
+      applyResolvedState({
+        profile: initialProfile,
+        weightHistory: [],
+        activeTargets: null,
+        pendingTargets: null,
+        hasCompletedOnboarding: false,
+        hydrationState: 'missing',
+        onboardingData: null,
+      });
       setIsLoading(false);
       setIsHydrated(true);
       return;
     }
 
+    const preferCache = options.preferCache !== false;
     setIsLoading(true);
+
+    const cachedSnapshot = preferCache ? await readCachedProfile() : null;
+
+    if (cachedSnapshot?.profile) {
+      const cachedProfile = createHydratedProfile(cachedSnapshot.profile, initialProfile);
+      const cachedResolution = resolveProfileHydration({
+        cachedActivation: cachedSnapshot.meta.hasCompletedOnboarding,
+        serverActivation: false,
+        profile: cachedProfile,
+        hasAnyPersistedProfileData: true,
+      });
+
+      applyResolvedState({
+        profile: cachedProfile,
+        weightHistory: (cachedSnapshot.weightHistory || []) as unknown as WeightHistoryEntry[],
+        activeTargets: cachedSnapshot.meta.activeTargets || deriveTargetsFromProfile(cachedProfile),
+        pendingTargets: cachedSnapshot.meta.pendingTargets,
+        hasCompletedOnboarding: cachedResolution.hasCompletedOnboarding,
+        hydrationState: cachedResolution.hydrationState,
+      });
+      setIsLoading(false);
+      setIsHydrated(true);
+    }
+
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single();
 
-      if (profileError && profileError.code !== 'PGRST116') {
-        if (__DEV__) {
-          console.error('Error fetching profile:', profileError.code, profileError.message, profileError.details);
-        }
+      if (profileError && profileError.code !== 'PGRST116' && __DEV__) {
+        console.error('Error fetching profile:', profileError.code, profileError.message, profileError.details);
       }
 
-      if (profileData) {
-        const loadedProfile: Profile = {
-          ...initialProfile,
-          name: profileData.name || '',
-          weight: profileData.weight,
-          height: profileData.height,
-          age: profileData.age,
-          gender: profileData.gender || 'male',
-          activityLevel: profileData.activity_level || 'moderate',
-          goalWeight: profileData.goal_weight,
-          weeklyGoal: profileData.weekly_goal || 'maintain',
-          macroPreset: profileData.macro_preset || 'balanced',
-          customMacros: profileData.custom_macros || { protein: 30, carbs: 40, fat: 30 },
-          weightUnit: profileData.weight_unit || 'lbs',
-          injuries: profileData.injuries || '',
-          equipment: profileData.equipment || [],
-          dietaryRestrictions: profileData.dietary_restrictions || [],
-          bmr: null,
-          tdee: null,
-        };
+      if (!profileData) {
+        const fallbackProfile = cachedSnapshot?.profile
+          ? createHydratedProfile(cachedSnapshot.profile, initialProfile)
+          : initialProfile;
+        const resolution = resolveProfileHydration({
+          cachedActivation: cachedSnapshot?.meta.hasCompletedOnboarding || false,
+          serverActivation: false,
+          profile: fallbackProfile,
+          hasAnyPersistedProfileData: Boolean(cachedSnapshot?.profile),
+        });
 
-        const bmr = calculateBMR(
-          loadedProfile.weight,
-          loadedProfile.height,
-          loadedProfile.age,
-          loadedProfile.gender
-        );
-        const tdee = calculateTDEE(bmr, loadedProfile.activityLevel);
+        applyResolvedState({
+          profile: fallbackProfile,
+          weightHistory: (cachedSnapshot?.weightHistory || []) as unknown as WeightHistoryEntry[],
+          activeTargets: cachedSnapshot?.meta.activeTargets || null,
+          pendingTargets: cachedSnapshot?.meta.pendingTargets || null,
+          hasCompletedOnboarding: resolution.hasCompletedOnboarding,
+          hydrationState: resolution.hydrationState,
+          onboardingData: onboardingDataRef.current,
+        });
 
-        setProfile({ ...loadedProfile, bmr, tdee });
+        try {
+          await supabase.from('profiles').insert({ user_id: userId }).select();
+        } catch (_insertError) {
+          // Best-effort bootstrap row creation only.
+        }
+        return;
+      }
 
-        if (profileData.weight_history) {
-          setWeightHistory(profileData.weight_history);
+      const fallbackProfile = cachedSnapshot?.profile
+        ? createHydratedProfile(cachedSnapshot.profile, initialProfile)
+        : initialProfile;
+      const preserveExisting = Boolean(cachedSnapshot?.meta.hasCompletedOnboarding) || Boolean(profileData.onboarding_completed);
+
+      const serverProfile = createHydratedProfile({
+        name: profileData.name ?? fallbackProfile.name,
+        weight: preserveExisting && profileData.weight == null ? fallbackProfile.weight : profileData.weight,
+        height: preserveExisting && profileData.height == null ? fallbackProfile.height : profileData.height,
+        age: preserveExisting && profileData.age == null ? fallbackProfile.age : profileData.age,
+        gender: preserveExisting && profileData.gender == null ? fallbackProfile.gender : profileData.gender || 'male',
+        activityLevel: preserveExisting && profileData.activity_level == null ? fallbackProfile.activityLevel : profileData.activity_level || 'moderate',
+        goalWeight: preserveExisting && profileData.goal_weight == null ? fallbackProfile.goalWeight : profileData.goal_weight,
+        weeklyGoal: preserveExisting && profileData.weekly_goal == null ? fallbackProfile.weeklyGoal : profileData.weekly_goal || 'maintain',
+        macroPreset: preserveExisting && profileData.macro_preset == null ? fallbackProfile.macroPreset : profileData.macro_preset || 'balanced',
+        customMacros: preserveExisting && profileData.custom_macros == null ? fallbackProfile.customMacros : profileData.custom_macros || { protein: 30, carbs: 40, fat: 30 },
+        weightUnit: preserveExisting && profileData.weight_unit == null ? fallbackProfile.weightUnit : profileData.weight_unit || 'lbs',
+        injuries: preserveExisting && profileData.injuries == null ? fallbackProfile.injuries : profileData.injuries || '',
+        equipment: preserveExisting && profileData.equipment == null ? fallbackProfile.equipment : profileData.equipment || [],
+        dietaryRestrictions: preserveExisting && profileData.dietary_restrictions == null ? fallbackProfile.dietaryRestrictions : profileData.dietary_restrictions || [],
+      }, fallbackProfile);
+
+      const nextWeightHistory = Array.isArray(profileData.weight_history)
+        ? profileData.weight_history as unknown as WeightHistoryEntry[]
+        : (cachedSnapshot?.weightHistory || []) as unknown as WeightHistoryEntry[];
+      const onboardingData =
+        profileData.onboarding_data && typeof profileData.onboarding_data === 'object'
+          ? profileData.onboarding_data
+          : onboardingDataRef.current;
+      const resolution = resolveProfileHydration({
+        cachedActivation: cachedSnapshot?.meta.hasCompletedOnboarding || false,
+        serverActivation: Boolean(profileData.onboarding_completed),
+        profile: serverProfile,
+        hasAnyPersistedProfileData: Boolean(cachedSnapshot?.profile) || Boolean(profileData),
+      });
+      const derivedServerTargets = deriveTargetsFromProfile(serverProfile);
+      const resolvedActiveTargets =
+        sanitizeMacroSet(onboardingData?.activeTargets) ||
+        cachedSnapshot?.meta.activeTargets ||
+        (resolution.hasCompletedOnboarding ? derivedServerTargets : null);
+
+      applyResolvedState({
+        profile: serverProfile,
+        weightHistory: nextWeightHistory,
+        activeTargets: resolvedActiveTargets,
+        pendingTargets: cachedSnapshot?.meta.pendingTargets || null,
+        hasCompletedOnboarding: resolution.hasCompletedOnboarding,
+        hydrationState: resolution.hydrationState,
+        onboardingData: onboardingData as Record<string, unknown> | null,
+      });
+
+      await persistProfileCache({
+        profile: serverProfile,
+        weightHistory: nextWeightHistory,
+        activeTargets: resolvedActiveTargets,
+        pendingTargets: cachedSnapshot?.meta.pendingTargets || null,
+        hasCompletedOnboarding: resolution.hasCompletedOnboarding,
+      });
+
+      if (resolution.hasCompletedOnboarding && resolvedActiveTargets) {
+        const serverTargets = derivedServerTargets;
+        if (
+          !sanitizeMacroSet(onboardingData?.activeTargets) ||
+          JSON.stringify(serverTargets) !== JSON.stringify(resolvedActiveTargets)
+        ) {
+          const nextOnboardingData = {
+            ...(onboardingData || {}),
+            activeTargets: resolvedActiveTargets,
+          };
+          onboardingDataRef.current = nextOnboardingData;
+          void (async () => {
+            try {
+              await supabase
+                .from('profiles')
+                .update({
+                  onboarding_completed: true,
+                  onboarding_data: nextOnboardingData,
+                })
+                .eq('user_id', userId);
+            } catch (_syncError) {
+              // Cache already holds the durable activation state.
+            }
+          })();
         }
       }
     } catch (error: any) {
@@ -503,186 +775,87 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       setIsHydrated(true);
     }
-  }, [user]);
+  }, [applyResolvedState, persistProfileCache, readCachedProfile, userId]);
 
-  // Fetch profile from Supabase when user changes
   useEffect(() => {
-    if (!user) {
-      setProfile(initialProfile);
-      setWeightHistory([]);
-      setIsLoading(false);
-      setIsHydrated(true);
-      return;
+    hydrateProfile({ preferCache: true });
+  }, [hydrateProfile]);
+
+  const fetchProfile = useCallback(async () => {
+    await hydrateProfile({ preferCache: false });
+  }, [hydrateProfile]);
+
+  const updateProfile = useCallback(async (
+    updates: Partial<Profile>,
+    options: ProfileUpdateOptions = {}
+  ): Promise<ProfileUpdateResult> => {
+    if (!userId) {
+      return {
+        activeTargets,
+        pendingTargets,
+        targetAction: 'preserved',
+      };
     }
-
-    async function fetchProfileInternal() {
-      setIsLoading(true);
-      try {
-        // Try loading from AsyncStorage cache first for faster startup
-        try {
-          const cached = await AsyncStorage.getItem(PROFILE_CACHE_KEY);
-          if (cached) {
-            const { profile: cachedProfile, weightHistory: cachedWeightHistory } = JSON.parse(cached);
-            if (cachedProfile) {
-              const bmr = calculateBMR(
-                cachedProfile.weight,
-                cachedProfile.height,
-                cachedProfile.age,
-                cachedProfile.gender
-              );
-              const tdee = calculateTDEE(bmr, cachedProfile.activityLevel);
-              setProfile({ ...cachedProfile, bmr, tdee });
-              if (cachedWeightHistory) {
-                setWeightHistory(cachedWeightHistory);
-              }
-              setIsLoading(false);
-              setIsHydrated(true);
-            }
-          }
-        } catch (cacheError: any) {
-          // Cache read failed, fall through to Supabase fetch
-          if (__DEV__) {
-            console.warn('Failed to read profile cache:', cacheError.message);
-          }
-        }
-
-        // Fetch profile from Supabase
-        // Security: Only select columns we actually need (avoid exposing unnecessary data)
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', user!.id)
-          .single();
-
-        if (profileError && profileError.code !== 'PGRST116') {
-          // PGRST116 = no rows found (new user)
-          if (__DEV__) {
-            console.error('Error fetching profile:', profileError.code, profileError.message, profileError.details);
-          }
-        }
-
-        if (profileData) {
-          // Map Supabase columns to local state
-          const loadedProfile: Profile = {
-            ...initialProfile,
-            name: profileData.name || '',
-            weight: profileData.weight,
-            height: profileData.height,
-            age: profileData.age,
-            gender: profileData.gender || 'male',
-            activityLevel: profileData.activity_level || 'moderate',
-            goalWeight: profileData.goal_weight,
-            weeklyGoal: profileData.weekly_goal || 'maintain',
-            macroPreset: profileData.macro_preset || 'balanced',
-            customMacros: profileData.custom_macros || { protein: 30, carbs: 40, fat: 30 },
-            weightUnit: profileData.weight_unit || 'lbs',
-            // Training Context
-            injuries: profileData.injuries || '',
-            equipment: profileData.equipment || [],
-            dietaryRestrictions: profileData.dietary_restrictions || [],
-            bmr: null,
-            tdee: null,
-          };
-
-          // Recalculate BMR and TDEE
-          const bmr = calculateBMR(
-            loadedProfile.weight,
-            loadedProfile.height,
-            loadedProfile.age,
-            loadedProfile.gender
-          );
-          const tdee = calculateTDEE(bmr, loadedProfile.activityLevel);
-
-          setProfile({ ...loadedProfile, bmr, tdee });
-
-          // Load weight history from profile
-          if (profileData.weight_history) {
-            setWeightHistory(profileData.weight_history);
-          }
-
-          // Write fetched profile to AsyncStorage cache
-          try {
-            await AsyncStorage.setItem(
-              PROFILE_CACHE_KEY,
-              JSON.stringify({
-                profile: loadedProfile,
-                weightHistory: profileData.weight_history || [],
-              })
-            );
-          } catch (cacheWriteError: any) {
-            if (__DEV__) {
-              console.warn('Failed to write profile cache:', cacheWriteError.message);
-            }
-          }
-        } else {
-          // Create initial profile for new user
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert({
-              user_id: user!.id,
-            })
-            .select();
-
-          if (insertError && __DEV__) {
-            if (__DEV__) console.error('Error creating profile:', insertError.code);
-          }
-        }
-      } catch (error: any) {
-        if (__DEV__) {
-          console.error('Failed to load profile:', error.message);
-        }
-      } finally {
-        setIsLoading(false);
-        setIsHydrated(true);
-      }
-    }
-
-    fetchProfileInternal();
-  }, [user]);
-
-  // Update profile and recalculate BMR/TDEE
-  const updateProfile = useCallback(async (updates: Partial<Profile>) => {
-    if (!user) return;
 
     const today = getTodayString();
-    let newWeightHistory = weightHistory;
+    let nextWeightHistory = weightHistory;
 
-    // If weight changed, update weight history
-    if (updates.weight) {
+    if (updates.weight !== undefined && updates.weight !== null) {
       const filtered = weightHistory.filter((entry) => entry.date !== today);
-      newWeightHistory = [...filtered, { date: today, weight: updates.weight }]
+      nextWeightHistory = [...filtered, { date: today, weight: updates.weight }]
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(-90);
-      setWeightHistory(newWeightHistory);
     }
 
-    // Update local state
-    setProfile((prev) => {
-      const newProfile = { ...prev, ...updates };
+    const nextProfile = createHydratedProfile({
+      ...profile,
+      ...updates,
+    }, profile);
 
-      // Recalculate BMR and TDEE if biometric data changed
-      const bmr = calculateBMR(
-        newProfile.weight,
-        newProfile.height,
-        newProfile.age,
-        newProfile.gender
-      );
+    let nextActiveTargets = activeTargets;
+    let nextPendingTargets = pendingTargets;
+    let targetAction: ProfileUpdateResult['targetAction'] = 'preserved';
+    const committedTargets = options.commitTargets || null;
 
-      const tdee = calculateTDEE(bmr, newProfile.activityLevel);
+    if (committedTargets) {
+      nextActiveTargets = committedTargets;
+      nextPendingTargets = null;
+      targetAction = 'committed';
+    } else if (options.targetBehavior === 'commit_generated') {
+      nextActiveTargets = deriveTargetsFromProfile(nextProfile);
+      nextPendingTargets = null;
+      targetAction = 'committed';
+    } else if (shouldRegenerateTargets(updates as Record<string, unknown>)) {
+      nextPendingTargets = deriveTargetsFromProfile(nextProfile);
+      targetAction = 'pending';
+    } else if (!nextActiveTargets) {
+      nextActiveTargets = deriveTargetsFromProfile(nextProfile);
+    }
 
-      return {
-        ...newProfile,
-        bmr,
-        tdee,
-      };
+    const nextResolution = resolveProfileHydration({
+      cachedActivation: hasCompletedOnboarding || Boolean(options.onboardingCompleted),
+      serverActivation: Boolean(options.onboardingCompleted),
+      profile: nextProfile,
+      hasAnyPersistedProfileData: true,
     });
 
-    // Save to Supabase
+    setProfile(nextProfile);
+    setWeightHistory(nextWeightHistory);
+    setActiveTargets(nextActiveTargets);
+    setPendingTargets(nextPendingTargets);
+    setHasCompletedOnboarding(nextResolution.hasCompletedOnboarding);
+    setProfileHydrationState(nextResolution.hydrationState);
+
+    const nextOnboardingData = {
+      ...(onboardingDataRef.current || {}),
+      ...(options.onboardingData || {}),
+      ...(nextActiveTargets ? { activeTargets: nextActiveTargets } : {}),
+    };
+    onboardingDataRef.current = nextOnboardingData;
+
     try {
       const supabaseUpdates: Record<string, unknown> = {};
 
-      // Map local keys to Supabase column names
-      // Note: 'name' column may not exist in DB, skip it
       if (updates.weight !== undefined) supabaseUpdates.weight = updates.weight;
       if (updates.height !== undefined) supabaseUpdates.height = updates.height;
       if (updates.age !== undefined) supabaseUpdates.age = updates.age;
@@ -693,14 +866,19 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       if (updates.macroPreset !== undefined) supabaseUpdates.macro_preset = updates.macroPreset;
       if (updates.customMacros !== undefined) supabaseUpdates.custom_macros = updates.customMacros;
       if (updates.weightUnit !== undefined) supabaseUpdates.weight_unit = updates.weightUnit;
-      // Training Context fields
       if (updates.injuries !== undefined) supabaseUpdates.injuries = updates.injuries;
       if (updates.equipment !== undefined) supabaseUpdates.equipment = updates.equipment;
       if (updates.dietaryRestrictions !== undefined) supabaseUpdates.dietary_restrictions = updates.dietaryRestrictions;
-
-      // Always update weight history if weight changed
       if (updates.weight !== undefined) {
-        supabaseUpdates.weight_history = newWeightHistory;
+        supabaseUpdates.weight_history = nextWeightHistory;
+      }
+
+      if (options.onboardingCompleted || hasCompletedOnboarding) {
+        supabaseUpdates.onboarding_completed = true;
+      }
+
+      if (Object.keys(nextOnboardingData).length > 0) {
+        supabaseUpdates.onboarding_data = nextOnboardingData;
       }
 
       supabaseUpdates.updated_at = new Date().toISOString();
@@ -708,11 +886,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase
         .from('profiles')
         .update(supabaseUpdates)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .select();
 
       if (error && __DEV__) {
-        if (__DEV__) console.error('Error updating profile:', error.code);
+        console.error('Error updating profile:', error.code);
       }
     } catch (error: any) {
       if (__DEV__) {
@@ -720,25 +898,76 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Update AsyncStorage cache with the merged profile
-    try {
-      const updatedProfile = { ...profile, ...updates };
-      await AsyncStorage.setItem(
-        PROFILE_CACHE_KEY,
-        JSON.stringify({
-          profile: updatedProfile,
-          weightHistory: newWeightHistory,
-        })
-      );
-    } catch (cacheError: any) {
-      if (__DEV__) {
-        console.warn('Failed to update profile cache:', cacheError.message);
-      }
+    await persistProfileCache({
+      profile: nextProfile,
+      weightHistory: nextWeightHistory,
+      activeTargets: nextActiveTargets,
+      pendingTargets: nextPendingTargets,
+      hasCompletedOnboarding: nextResolution.hasCompletedOnboarding,
+    });
+
+    await hapticSuccess();
+
+    return {
+      activeTargets: nextActiveTargets,
+      pendingTargets: nextPendingTargets,
+      targetAction,
+    };
+  }, [
+    activeTargets,
+    hasCompletedOnboarding,
+    pendingTargets,
+    persistProfileCache,
+    profile,
+    userId,
+    weightHistory,
+  ]);
+
+  const applyPendingTargets = useCallback(async () => {
+    if (!userId || !pendingTargets) {
+      return;
     }
 
-    // Haptic feedback
-    await hapticSuccess();
-  }, [user, profile, weightHistory]);
+    setActiveTargets(pendingTargets);
+    setPendingTargets(null);
+    onboardingDataRef.current = {
+      ...(onboardingDataRef.current || {}),
+      activeTargets: pendingTargets,
+    };
+
+    await persistProfileCache({
+      profile,
+      weightHistory,
+      activeTargets: pendingTargets,
+      pendingTargets: null,
+      hasCompletedOnboarding,
+    });
+
+    try {
+      await supabase
+        .from('profiles')
+        .update({
+          onboarding_completed: hasCompletedOnboarding,
+          onboarding_data: onboardingDataRef.current,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .select();
+    } catch (_applyError) {
+      // Local cache already reflects the applied targets.
+    }
+  }, [hasCompletedOnboarding, pendingTargets, persistProfileCache, profile, userId, weightHistory]);
+
+  const discardPendingTargets = useCallback(async () => {
+    setPendingTargets(null);
+    await persistProfileCache({
+      profile,
+      weightHistory,
+      activeTargets,
+      pendingTargets: null,
+      hasCompletedOnboarding,
+    });
+  }, [activeTargets, hasCompletedOnboarding, persistProfileCache, profile, weightHistory]);
 
   // Quick switch goal type (Cut/Maintain/Bulk)
   const switchGoalType = useCallback(async (goalType: string) => {
@@ -748,7 +977,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     await updateProfile({
       weeklyGoal: goalConfig.weeklyGoal,
       macroPreset: goalConfig.macroPreset,
-    });
+    }, { targetBehavior: 'commit_generated' });
 
     // Heavy haptic for mode switch
     await hapticHeavy();
@@ -764,19 +993,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   // Computed values
   const calculatedGoals = useMemo<MacroSet>(() => {
-    const calorieGoal = calculateDailyCalorieGoal(profile.tdee, profile.weeklyGoal);
-    const macros = calculateMacroGoals(
-      calorieGoal,
-      profile.macroPreset,
-      profile.customMacros,
-      profile.weight // Pass weight for bodyweight-based calculations
-    );
-
-    return {
-      calories: calorieGoal,
-      ...macros,
+    return activeTargets || deriveTargetsFromProfile(profile) || {
+      calories: 2000,
+      protein: 150,
+      carbs: 200,
+      fat: 65,
     };
-  }, [profile.tdee, profile.weeklyGoal, profile.macroPreset, profile.customMacros, profile.weight]);
+  }, [activeTargets, profile]);
 
   // Get current macro split percentages
   const currentMacroSplit = useMemo<{ protein: number; carbs: number; fat: number; isBodyweightBased?: boolean }>(() => {
@@ -836,8 +1059,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   // Check if essential profile data exists (for onboarding redirect)
   const isProfileComplete = useMemo<boolean>(() => {
-    return !!(profile.weight && profile.height && profile.age);
-  }, [profile.weight, profile.height, profile.age]);
+    return hasCompletedOnboarding || isEssentialProfileComplete(profile);
+  }, [hasCompletedOnboarding, profile]);
 
   const value = useMemo<ProfileContextValue>(
     () => ({
@@ -847,6 +1070,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       updateProfile,
       fetchProfile,
       calculatedGoals,
+      pendingTargets,
+      hasCompletedOnboarding,
+      profileHydrationState,
+      applyPendingTargets,
+      discardPendingTargets,
       activityLevels: ACTIVITY_LEVELS,
       weeklyGoals: WEEKLY_GOALS,
       macroPresets: MACRO_PRESETS,
@@ -864,7 +1092,27 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       // Hydration
       calculatedWaterGoal,
     }),
-    [profile, isLoading, isHydrated, updateProfile, fetchProfile, calculatedGoals, currentMacroSplit, switchGoalType, currentGoalType, isProfileComplete, weightHistory, weeklyWeightData, weightStats, calculatedWaterGoal]
+    [
+      profile,
+      isLoading,
+      isHydrated,
+      updateProfile,
+      fetchProfile,
+      calculatedGoals,
+      pendingTargets,
+      hasCompletedOnboarding,
+      profileHydrationState,
+      applyPendingTargets,
+      discardPendingTargets,
+      currentMacroSplit,
+      switchGoalType,
+      currentGoalType,
+      isProfileComplete,
+      weightHistory,
+      weeklyWeightData,
+      weightStats,
+      calculatedWaterGoal,
+    ]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

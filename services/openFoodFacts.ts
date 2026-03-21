@@ -98,6 +98,7 @@ export interface MicronutrientData {
 
 export interface ProductResult {
   barcode: string;
+  canonicalId?: string | null;
   name: string;
   brand: string | null;
   image: string | null;
@@ -138,6 +139,7 @@ export interface ProductResult {
     allergens: string | undefined;
     nutriscore: string | undefined;
   };
+  resultKind?: 'canonical' | 'branded' | 'recent' | 'quick_add' | 'restaurant';
 }
 
 export interface SearchResult {
@@ -149,6 +151,7 @@ export interface SearchResult {
 
 export interface FoodFromProduct {
   id: string;
+  canonicalId?: string | null;
   name: string;
   serving: string;
   servingSize: number;
@@ -173,6 +176,7 @@ export interface FoodFromProduct {
   reportable?: boolean;
   brand?: string | null;
   image?: string | null;
+  resultKind?: ProductResult['resultKind'];
 }
 
 /**
@@ -761,7 +765,8 @@ export async function fetchProductByBarcode(barcode: string): Promise<ProductRes
  */
 export function productToFood(product: ProductResult): FoodFromProduct {
   return {
-    id: `off-${product.barcode}-${Date.now()}`,
+    id: product.canonicalId || `off-${product.barcode}-${Date.now()}`,
+    canonicalId: product.canonicalId || null,
     name: product.name,
     serving: product.serving || '100g',
     servingSize: product.servingSize || 100,
@@ -786,5 +791,6 @@ export function productToFood(product: ProductResult): FoodFromProduct {
     reportable: product.reportable,
     brand: product.brand,
     image: product.image,
+    resultKind: product.resultKind,
   };
 }

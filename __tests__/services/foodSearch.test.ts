@@ -447,6 +447,7 @@ describe('local results priority', () => {
     const result = await searchAllSources('chicken', localResults);
     expect(result.products[0].name).toBe('Chicken Breast');
     expect(result.sources.local).toBe(1);
+    expect(result.products[0].resultKind).toBe('canonical');
   });
 
   it('deduplicates local results against external results', async () => {
@@ -663,6 +664,32 @@ describe('merging from multiple sources', () => {
 
     expect(result.products[0].name).toContain('Greek Yogurt');
     expect(result.products[0].confidenceLevel).not.toBe('review');
+    expect(result.products[0].canonicalId).toBe('greek-yogurt');
+  });
+
+  it('assigns a stable canonical id for steak-like results', async () => {
+    const localResults = [
+      {
+        barcode: 'local-sirloin-steak',
+        name: 'Sirloin Steak',
+        brand: null,
+        image: null,
+        calories: 240,
+        protein: 33,
+        carbs: 0,
+        fat: 12,
+        serving: '170g',
+        servingSize: 170,
+        servingUnit: 'g',
+        source: 'local',
+      },
+    ];
+
+    const result = await searchAllSources('steak', localResults);
+
+    expect(result.products[0].name).toContain('Steak');
+    expect(result.products[0].canonicalId).toBe('steak');
+    expect(result.products[0].resultKind).toBe('canonical');
   });
 
   it('downgrades weak community matches with review guidance', async () => {

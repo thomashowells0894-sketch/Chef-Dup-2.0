@@ -11,6 +11,7 @@ import {
   configureNotifications,
   requestPermissions,
   getNotificationSettings,
+  getPermissionStatus,
   saveNotificationSettings,
   rescheduleAll,
   scheduleActivationReminder as scheduleActivationReminderService,
@@ -29,6 +30,7 @@ interface NotificationContextValue {
   hasPermission: boolean;
   isLoading: boolean;
   updateSettings: (newSettings: Partial<NotificationSettings>) => void;
+  requestAccess: () => Promise<boolean>;
   scheduleFastingAlert: (endTime: Date) => Promise<void>;
   scheduleStreakWarning: (streakDays?: number, userName?: string) => Promise<void>;
   syncActivationReminder: (stage: ActivationStage, userName?: string) => Promise<void>;
@@ -76,7 +78,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     };
   }, []);
 
-  // Only authenticated users should be prompted and have active reminders.
+  // Keep permission state in sync without prompting mid-flow.
   useEffect(() => {
     if (!settingsLoaded) return;
 
@@ -93,7 +95,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setIsLoading(true);
 
       try {
-        const granted = await requestPermissions();
+        const granted = await getPermissionStatus();
         if (cancelled) return;
 
         setHasPermission(granted);
@@ -142,6 +144,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       return merged as NotificationSettings;
     });
   }, []);
+
+  const requestAccess = useCallback(async () => {
+    try {
+      const granted = await requestPermissions();
+      setHasPermission(granted);
+      if (!granted) {
+        await cancelAllScheduled();
+      } else {
+        await rescheduleAll(settings);
+      }
+      return granted;
+    } catch (error) {
+      if (__DEV__) console.error('Failed to request notification access:', error);
+      return false;
+    }
+  }, [settings]);
 
   // Passthrough: schedule a fasting completion alert
   const scheduleFastingAlert = useCallback(async (endTime: Date) => {
@@ -195,6 +213,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       isLoading,
       // Actions
       updateSettings,
+      requestAccess,
       scheduleFastingAlert,
       scheduleStreakWarning,
       syncActivationReminder,
@@ -205,6 +224,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       hasPermission,
       isLoading,
       updateSettings,
+      requestAccess,
       scheduleFastingAlert,
       scheduleStreakWarning,
       syncActivationReminder,

@@ -22,6 +22,7 @@ import { Sentry } from '../lib/sentry';
 import { recordFoodLogged } from '../lib/activationTracker';
 import { mergeFrequentFoods, recordFrequentFood } from '../lib/frequentFoodsStore';
 import { buildInitialMealHydration, normalizeCachedDayData } from '../lib/mealStartup';
+import { buildMealCacheKey, getLegacyMealCacheKeys } from '../lib/profileState';
 import { replaceRecentMealSnapshot, syncRecentMealsForDate } from '../lib/recentMeals';
 import type { ImportedFoodDiaryEntry } from '../services/importMyFitnessPal';
 import type {
@@ -120,6 +121,10 @@ interface ShoppingListItem {
   emoji: string;
 }
 
+interface FetchDayOptions {
+  silent?: boolean;
+}
+
 const MealContext = createContext<MealContextValue | null>(null);
 
 // Default goals (used when profile is not complete)
@@ -141,8 +146,6 @@ const EMPTY_DAY: DayData = {
 };
 
 const ALL_MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
-const MEAL_DAY_CACHE_PREFIX = '@fueliq_meals_';
-
 const initialState: MealState = {
   goals: DEFAULT_GOALS,
   waterGoal: 2500,
@@ -310,29 +313,46 @@ function getDayLabel(dateString: string): string {
   return format(date, 'EEE');
 }
 
-function buildCacheKey(dateKey: DateKey): string {
-  return `${MEAL_DAY_CACHE_PREFIX}${dateKey}`;
+function buildCacheKey(userId: string | null | undefined, dateKey: DateKey): string {
+  return buildMealCacheKey(userId, dateKey);
 }
 
-async function readCachedDayData(dateKey: DateKey): Promise<DayData | null> {
-  try {
-    const cached = await AsyncStorage.getItem(buildCacheKey(dateKey));
-    if (!cached) {
-      return null;
-    }
+async function readCachedDayData(
+  userId: string | null | undefined,
+  dateKey: DateKey
+): Promise<DayData | null> {
+  const primaryKey = buildCacheKey(userId, dateKey);
 
-    return normalizeCachedDayData(JSON.parse(cached));
-  } catch (error) {
-    if (__DEV__) {
-      console.warn('[Meal] Failed to read day cache:', error);
+  for (const key of [primaryKey, ...getLegacyMealCacheKeys(dateKey)]) {
+    try {
+      const cached = await AsyncStorage.getItem(key);
+      if (!cached) {
+        continue;
+      }
+
+      const normalized = normalizeCachedDayData(JSON.parse(cached));
+      if (normalized && key !== primaryKey) {
+        writeCachedDayData(userId, dateKey, normalized).catch(() => {});
+      }
+
+      return normalized;
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[Meal] Failed to read day cache:', error);
+      }
     }
-    return null;
   }
+
+  return null;
 }
 
-async function writeCachedDayData(dateKey: DateKey, dayData: DayData): Promise<void> {
+async function writeCachedDayData(
+  userId: string | null | undefined,
+  dateKey: DateKey,
+  dayData: DayData
+): Promise<void> {
   try {
-    await AsyncStorage.setItem(buildCacheKey(dateKey), JSON.stringify(dayData));
+    await AsyncStorage.setItem(buildCacheKey(userId, dateKey), JSON.stringify(dayData));
   } catch (error) {
     if (__DEV__) {
       console.warn('[Meal] Failed to write day cache:', error);
@@ -569,13 +589,15 @@ export function MealProvider({
   }, [calculatedWaterGoal, isHydrated, state.waterGoal]);
 
   // Fetch data for a specific date from Supabase
-  const fetchDayData = useCallback(async (dateKey: DateKey) => {
+  const fetchDayData = useCallback(async (dateKey: DateKey, options: FetchDayOptions = {}) => {
     if (!user) return;
     if (fetchingDatesRef.current.has(dateKey)) return;
     if (!(await checkOnline())) return;
 
     fetchingDatesRef.current.add(dateKey);
-    setIsFetchingDay(true);
+    if (!options.silent) {
+      setIsFetchingDay(true);
+    }
     try {
       const [foodResult, workoutResult] = await Promise.all([
         supabase.from('food_logs').select('*').eq('user_id', user.id).eq('date', dateKey),
@@ -640,7 +662,7 @@ export function MealProvider({
         },
       });
 
-      writeCachedDayData(dateKey, nextDayData).catch(() => {});
+      writeCachedDayData(user.id, dateKey, nextDayData).catch(() => {});
 
       syncRecentMealsForDate(dateKey, meals).catch((error) => {
         if (__DEV__) console.warn('[Meal] Failed to sync recent meal snapshots:', error);
@@ -651,7 +673,9 @@ export function MealProvider({
       if (__DEV__) console.error('[Meal] Fetch failed:', error.message);
     } finally {
       fetchingDatesRef.current.delete(dateKey);
-      setIsFetchingDay(false);
+      if (!options.silent) {
+        setIsFetchingDay(false);
+      }
     }
   }, [user, checkOnline]);
 
@@ -675,8 +699,9 @@ export function MealProvider({
       setIsLoading(true);
       const todayKey = getTodayString();
 
+      let cachedToday: DayData | null = null;
       try {
-        const cachedToday = await readCachedDayData(todayKey);
+        cachedToday = await readCachedDayData(user.id, todayKey);
         if (cachedToday) {
           dispatch({
             type: 'HYDRATE',
@@ -695,7 +720,7 @@ export function MealProvider({
         setIsHydrated(true);
       }
 
-      fetchDayData(todayKey).catch((error: any) => {
+      fetchDayData(todayKey, { silent: Boolean(cachedToday) }).catch((error: any) => {
         if (__DEV__) console.error('[Meal] Initial load failed:', error.message);
       });
     })();
@@ -706,17 +731,18 @@ export function MealProvider({
     if (disableInitialFetch) return;
     if (!user || !isHydrated) return;
     if (!fetchedDatesRef.current.has(selectedDateKey)) {
-      fetchDayData(selectedDateKey);
+      fetchDayData(selectedDateKey, {
+        silent: Boolean(stateRef.current.dayData[selectedDateKey]),
+      });
     }
     // Background prefetch yesterday & tomorrow for instant date navigation
     const yesterday = formatDateKey(subDays(selectedDate, 1));
     const tomorrow = formatDateKey(addDays(selectedDate, 1));
     if (!fetchedDatesRef.current.has(yesterday)) {
-      // Use setTimeout to avoid blocking the current fetch
-      setTimeout(() => fetchDayData(yesterday), 200);
+      setTimeout(() => fetchDayData(yesterday, { silent: true }), 200);
     }
     if (!fetchedDatesRef.current.has(tomorrow)) {
-      setTimeout(() => fetchDayData(tomorrow), 400);
+      setTimeout(() => fetchDayData(tomorrow, { silent: true }), 400);
     }
   }, [user, isHydrated, selectedDateKey, selectedDate, fetchDayData, disableInitialFetch]);
 
@@ -1618,7 +1644,7 @@ export function MealProvider({
 
   useEffect(() => {
     if (!user || !isHydrated) return;
-    writeCachedDayData(selectedDateKey, currentDayData).catch(() => {});
+    writeCachedDayData(user.id, selectedDateKey, currentDayData).catch(() => {});
   }, [currentDayData, isHydrated, selectedDateKey, user]);
 
   const weeklyData = useMemo<WeeklyDayData[]>(() => getCalorieData(state.dayData, activeGoals.calories, 7), [state.dayData, activeGoals.calories]);
