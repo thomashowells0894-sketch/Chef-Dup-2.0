@@ -46,6 +46,7 @@ const {
   useSubscription,
 } = require('../../context/SubscriptionContext');
 let consoleLogSpy: jest.SpyInstance;
+let consoleWarnSpy: jest.SpyInstance;
 
 describe('SubscriptionContext', () => {
   const premiumInfo = {
@@ -69,6 +70,7 @@ describe('SubscriptionContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockUseAuth.mockReturnValue({ user: { id: 'user-1' } });
     mockPurchasePackage.mockResolvedValue({ customerInfo: premiumInfo });
     mockRestorePurchases.mockResolvedValue({
@@ -84,6 +86,7 @@ describe('SubscriptionContext', () => {
 
   afterEach(() => {
     consoleLogSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
   });
 
   it('clears premium state when the signed-in user logs out', async () => {
@@ -126,6 +129,20 @@ describe('SubscriptionContext', () => {
     });
 
     expect(result.current.isPremium).toBe(false);
+  });
+
+  it('preserves cached premium state when identify fails during user sync', async () => {
+    mockLogIn.mockRejectedValueOnce(new Error('network down'));
+    mockGetCustomerInfo.mockResolvedValue(premiumInfo);
+
+    const { result } = renderHook(() => useSubscription(), { wrapper });
+
+    await waitFor(() => {
+      expect(mockLogIn).toHaveBeenCalledTimes(1);
+    });
+
+    expect(result.current.isPremium).toBe(true);
+    expect(result.current.customerInfo).toEqual(premiumInfo);
   });
 
   it('returns a clear error when a selected package is unavailable', async () => {

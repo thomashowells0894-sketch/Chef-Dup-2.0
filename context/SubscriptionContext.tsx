@@ -12,6 +12,7 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
 } from 'react';
 import { Platform, Alert } from 'react-native';
 import { useAuth } from './AuthContext';
@@ -127,6 +128,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [isTrialing, setIsTrialing] = useState<boolean>(false);
   const [trialEndDate, setTrialEndDate] = useState<string | null>(null);
   const [hasExpiredTrial, setHasExpiredTrial] = useState<boolean>(false);
+  const customerInfoRef = useRef<CustomerInfo | null>(null);
+  const identifiedUserIdRef = useRef<string | null>(null);
 
   const resetSubscriptionState = useCallback(() => {
     setCustomerInfo(null);
@@ -172,6 +175,10 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       resetSubscriptionState();
     }
   }, [resetSubscriptionState]);
+
+  useEffect(() => {
+    customerInfoRef.current = customerInfo;
+  }, [customerInfo]);
 
   // Initialize RevenueCat - crash-proof
   useEffect(() => {
@@ -313,6 +320,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       }
 
       if (!user) {
+        identifiedUserIdRef.current = null;
         try {
           await Purchases.logOut();
         } catch (error: any) {
@@ -327,11 +335,16 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         return;
       }
 
+      if (identifiedUserIdRef.current === user.id && customerInfoRef.current) {
+        return;
+      }
+
       try {
         // Log in user to RevenueCat
         const { customerInfo }: { customerInfo: CustomerInfo } = await Purchases.logIn(user.id);
         if (cancelled) return;
 
+        identifiedUserIdRef.current = user.id;
         setCustomerInfo(customerInfo);
         checkPremiumStatus(customerInfo);
 
@@ -344,6 +357,31 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         }
 
         if (!cancelled) {
+          try {
+            const fallbackInfo: CustomerInfo = await Purchases.getCustomerInfo();
+            if (cancelled) return;
+
+            if (fallbackInfo) {
+              setCustomerInfo(fallbackInfo);
+              checkPremiumStatus(fallbackInfo);
+
+              if (__DEV__) {
+                console.warn('[Subscriptions] Recovered entitlements from cached customer info');
+              }
+              return;
+            }
+          } catch (fallbackError: any) {
+            if (__DEV__) {
+              console.warn('[Subscriptions] Cached customer info recovery failed:', fallbackError.message);
+            }
+          }
+
+          if (customerInfoRef.current) {
+            if (__DEV__) {
+              console.warn('[Subscriptions] Preserving last known entitlements after identify failure');
+            }
+            return;
+          }
           resetSubscriptionState();
         }
       }

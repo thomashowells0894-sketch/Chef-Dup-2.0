@@ -90,6 +90,8 @@ const mealTypes = [
   { id: 'snacks', label: 'Snack', icon: Moon },
 ];
 
+const VALID_MEAL_TYPES = new Set(mealTypes.map((meal) => meal.id));
+
 const STARTER_FOOD_IDS_BY_MEAL = {
   breakfast: ['eggs', 'greek-yogurt', 'oatmeal', 'banana', 'whole-wheat-bread', 'whey-protein'],
   lunch: ['chicken-breast', 'brown-rice', 'avocado', 'apple', 'whole-wheat-bread', 'protein-shake'],
@@ -137,6 +139,28 @@ function getParamValue(param) {
     return param[0];
   }
   return param;
+}
+
+function normalizeMealParam(param) {
+  const value = getParamValue(param);
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  let normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith('meal-')) {
+    normalized = normalized.slice(5);
+  }
+
+  if (normalized === 'snack') {
+    normalized = 'snacks';
+  }
+
+  return VALID_MEAL_TYPES.has(normalized) ? normalized : null;
 }
 
 // API search result cache — avoids repeat network calls for common queries
@@ -792,7 +816,7 @@ const RepeatYesterdayChip = memo(function RepeatYesterdayChip({
 function AddScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const mealParam = getParamValue(params.meal);
+  const mealParam = normalizeMealParam(params.meal);
   const queryParam = getParamValue(params.query);
   const focusParam = getParamValue(params.focus);
   const sourceParam = getParamValue(params.source);

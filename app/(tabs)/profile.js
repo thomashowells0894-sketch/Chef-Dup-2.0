@@ -77,6 +77,42 @@ import { supabase } from '../../lib/supabase';
 import useAchievements from '../../hooks/useAchievements';
 import { ProfileSkeleton } from '../../components/SkeletonLoader';
 
+const LOCAL_ACCOUNT_STORAGE_KEYS = [
+  '@fueliq_gamification',
+  '@fueliq_fasting',
+  '@fueliq_recipes',
+  '@fueliq_offline_queue',
+  '@fueliq_mood_logs',
+  '@fueliq_dashboard_layout',
+  '@fueliq_chat_history',
+  '@fueliq_last_briefing_date',
+  '@fueliq_profile_cache',
+  '@fueliq_achievements',
+  '@fueliq_sleep_history',
+  '@fueliq_supplements',
+  '@fueliq_supplements_log',
+  '@fueliq_water_history',
+  '@fueliq_favorite_foods',
+  '@fueliq_meal_plan',
+  '@fueliq_personal_records',
+  '@fueliq_adaptive_macros',
+  '@fueliq_daily_challenges',
+  '@fueliq_weekly_digest',
+  '@fueliq_workout_history',
+  '@fueliq_body_measurements',
+  '@fueliq_body_measurements_unit',
+  '@fueliq_weight_history',
+  '@fueliq_weight_goal',
+  '@fueliq_workout_templates',
+  '@fueliq_breathing_history',
+  '@fueliq_fasting_history',
+  '@fueliq_habits',
+  '@fueliq_habits_log',
+  '@fueliq_activity_scores',
+  '@fueliq_recovery',
+  '@fueliq_allergens',
+];
+
 // Pre-computed rotation styles to avoid creating new objects on every render
 const ROTATE_MINUS_90 = { transform: [{ rotate: '-90deg' }] };
 const ROTATE_180 = { transform: [{ rotate: '180deg' }] };
@@ -712,116 +748,22 @@ function ProfileScreenInner() {
     if (!user) return;
 
     setIsDeleting(true);
-    const errors = [];
 
     try {
-      // Delete all user data from Supabase tables
-      // Order matters - delete child records first
-
-      // 1. Delete recipe_ingredients (child of recipes)
-      const { error: ingredientsError } = await supabase
-        .from('recipe_ingredients')
-        .delete()
-        .in('recipe_id',
-          supabase.from('recipes').select('id').eq('user_id', user.id)
-        );
-
-      if (ingredientsError) {
-        if (__DEV__) console.error('Error deleting recipe_ingredients:', ingredientsError.message);
-        // Non-critical: continue even if this fails (may not have recipes)
-      }
-
-      // 2. Delete recipes
-      const { error: recipeError } = await supabase
-        .from('recipes')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (recipeError) {
-        if (__DEV__) console.error('Error deleting recipes:', recipeError.message);
-      }
-
-      // 3. Delete food_logs (includes water and meals)
-      const { error: foodError } = await supabase
-        .from('food_logs')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (foodError) {
-        errors.push('food_logs');
-        if (__DEV__) console.error('Error deleting food_logs:', foodError.message);
-      }
-
-      // 4. Delete workouts
-      const { error: workoutError } = await supabase
-        .from('workouts')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (workoutError) {
-        errors.push('workouts');
-        if (__DEV__) console.error('Error deleting workouts:', workoutError.message);
-      }
-
-      // 5. Delete profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (profileError) {
-        errors.push('profile');
-        if (__DEV__) console.error('Error deleting profile:', profileError.message);
-      }
-
-      // Abort if critical tables failed to delete
-      if (errors.length > 0) {
+      const { error } = await supabase.functions.invoke('delete-account');
+      if (error) {
+        if (__DEV__) console.error('Error deleting account:', error.message);
         Alert.alert(
-          'Partial Deletion',
-          `Some data could not be deleted (${errors.join(', ')}). Please try again or contact support.`,
+          'Error',
+          'Failed to delete account. Please try again or contact support.',
           [{ text: 'OK' }]
         );
         return;
       }
 
-      // 6. Clear all local AsyncStorage data
-      await AsyncStorage.multiRemove([
-        '@fueliq_gamification',
-        '@fueliq_fasting',
-        '@fueliq_recipes',
-        '@fueliq_offline_queue',
-        '@fueliq_mood_logs',
-        '@fueliq_dashboard_layout',
-        '@fueliq_chat_history',
-        '@fueliq_last_briefing_date',
-        '@fueliq_profile_cache',
-        '@fueliq_achievements',
-        '@fueliq_sleep_history',
-        '@fueliq_supplements',
-        '@fueliq_supplements_log',
-        '@fueliq_water_history',
-        '@fueliq_favorite_foods',
-        '@fueliq_meal_plan',
-        '@fueliq_personal_records',
-        '@fueliq_adaptive_macros',
-        '@fueliq_daily_challenges',
-        '@fueliq_weekly_digest',
-        '@fueliq_workout_history',
-        '@fueliq_body_measurements',
-        '@fueliq_body_measurements_unit',
-        '@fueliq_weight_history',
-        '@fueliq_weight_goal',
-        '@fueliq_workout_templates',
-        '@fueliq_breathing_history',
-        '@fueliq_fasting_history',
-        '@fueliq_habits',
-        '@fueliq_habits_log',
-        '@fueliq_activity_scores',
-        '@fueliq_recovery',
-        '@fueliq_allergens',
-      ]);
+      await AsyncStorage.multiRemove(LOCAL_ACCOUNT_STORAGE_KEYS);
 
-      // 7. Sign out
+      // Clear local auth/session state after the server-side delete succeeds.
       await signOut();
 
       Alert.alert(

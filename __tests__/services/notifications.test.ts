@@ -40,6 +40,30 @@ describe('notification scheduling', () => {
     await scheduleMealReminders(DEFAULT_SETTINGS);
 
     expect(mockScheduleNotificationAsync).toHaveBeenCalledTimes(3);
+    expect(mockScheduleNotificationAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        content: expect.objectContaining({
+          data: expect.objectContaining({ type: 'meal-reminder', meal: 'breakfast' }),
+        }),
+      })
+    );
+    expect(mockScheduleNotificationAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        content: expect.objectContaining({
+          data: expect.objectContaining({ type: 'meal-reminder', meal: 'lunch' }),
+        }),
+      })
+    );
+    expect(mockScheduleNotificationAsync).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        content: expect.objectContaining({
+          data: expect.objectContaining({ type: 'meal-reminder', meal: 'dinner' }),
+        }),
+      })
+    );
     expect(AsyncStorage.setItem).not.toHaveBeenCalled();
   });
 

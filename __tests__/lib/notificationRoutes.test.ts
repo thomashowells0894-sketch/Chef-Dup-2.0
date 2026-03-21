@@ -24,4 +24,13 @@ describe('notificationRoutes', () => {
       params: { meal: 'dinner', source: 'meal_reminder' },
     });
   });
+
+  it('normalizes legacy meal reminder identifiers before routing', () => {
+    expect(
+      getRouteForNotificationData({ type: 'meal-reminder', meal: 'meal-breakfast' })
+    ).toEqual({
+      pathname: '/(tabs)/add',
+      params: { meal: 'breakfast', source: 'meal_reminder' },
+    });
+  });
 });

@@ -367,6 +367,7 @@ export async function saveNotificationSettings(settings: NotificationSettings): 
 
 interface MealReminderConfig {
   identifier: string;
+  mealType: 'breakfast' | 'lunch' | 'dinner';
   time: NotificationTime;
   title: string;
   body: string;
@@ -387,18 +388,21 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
   const meals: MealReminderConfig[] = [
     {
       identifier: 'meal-breakfast',
+      mealType: 'breakfast',
       time: settings.breakfastTime,
       title: 'Breakfast Reminder',
       body: randomMessage(BREAKFAST_MESSAGES),
     },
     {
       identifier: 'meal-lunch',
+      mealType: 'lunch',
       time: settings.lunchTime,
       title: 'Lunch Reminder',
       body: randomMessage(LUNCH_MESSAGES),
     },
     {
       identifier: 'meal-dinner',
+      mealType: 'dinner',
       time: settings.dinnerTime,
       title: 'Dinner Reminder',
       body: randomMessage(DINNER_MESSAGES),
@@ -413,7 +417,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
           title: meal.title,
           body: meal.body,
           categoryIdentifier: 'meal-reminder',
-          data: { type: 'meal-reminder', meal: meal.identifier },
+          data: { type: 'meal-reminder', meal: meal.mealType },
         },
         trigger: {
           type: 'daily',

@@ -9,6 +9,20 @@ function toText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+function normalizeMealType(value: unknown): string | null {
+  const raw = toText(value)?.toLowerCase();
+  if (!raw) {
+    return null;
+  }
+
+  let meal = raw.startsWith('meal-') ? raw.slice(5) : raw;
+  if (meal === 'snack') {
+    meal = 'snacks';
+  }
+
+  return ['breakfast', 'lunch', 'dinner', 'snacks'].includes(meal) ? meal : null;
+}
+
 export function getRouteForNotificationData(data: Record<string, unknown> | null | undefined): NotificationRoute | null {
   if (!data) {
     return null;
@@ -42,7 +56,7 @@ export function getRouteForNotificationData(data: Record<string, unknown> | null
       return {
         pathname: '/(tabs)/add',
         params: {
-          meal: toText(data.meal) || 'breakfast',
+          meal: normalizeMealType(data.meal) || 'breakfast',
           source: 'meal_reminder',
         },
       };
