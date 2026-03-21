@@ -3,7 +3,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, AppState } from 'react-native';
+import { View, Text, AppState, StyleSheet } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as QuickActions from 'expo-quick-actions';
@@ -46,6 +46,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import TrialExpirationBanner from '../components/TrialExpirationBanner';
 import WinBackOffer from '../components/WinBackOffer';
 import { useWinBack } from '../hooks/useWinBack';
+import { recordStartupCheckpoint } from '../lib/startupTrace';
 
 /**
  * Utility to compose multiple context providers without deep nesting.
@@ -61,7 +62,25 @@ function ComposeProviders({ providers, children }) {
 
 initSentry();
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+function AppBootstrapScreen({ title, subtitle }) {
+  return (
+    <View style={bootstrapStyles.root}>
+      <StatusBar style="light" />
+      <View style={bootstrapStyles.logoWrap}>
+        <Text style={bootstrapStyles.logoMark}>FuelIQ</Text>
+        <Text style={bootstrapStyles.title}>{title}</Text>
+        <Text style={bootstrapStyles.subtitle}>{subtitle}</Text>
+      </View>
+      <View style={bootstrapStyles.dotsRow}>
+        <View style={[bootstrapStyles.dot, bootstrapStyles.dotPrimary]} />
+        <View style={bootstrapStyles.dot} />
+        <View style={bootstrapStyles.dot} />
+      </View>
+    </View>
+  );
+}
 
 // Inner navigation component that handles profile-based routing
 function ProfileAwareNav() {
@@ -152,8 +171,10 @@ function RootLayoutNav() {
 
   useEffect(() => {
     if (loading) return;
-
-    SplashScreen.hideAsync();
+    recordStartupCheckpoint('auth_resolved', {
+      authenticated: !!user,
+      segment: segments[0] || 'root',
+    });
 
     const publicRoutes = new Set(['auth', 'forgot-password', 'update-password']);
     const inPublicRoute = publicRoutes.has(segments[0]);
@@ -264,7 +285,12 @@ function RootLayoutNav() {
   }, [router, user]);
 
   if (loading) {
-    return null;
+    return (
+      <AppBootstrapScreen
+        title="Restoring your day"
+        subtitle="Last targets and shortcuts load first. Everything else can refresh in the background."
+      />
+    );
   }
 
   const providers = [
@@ -307,8 +333,17 @@ function RootLayout() {
     }
   }, [fontError]);
 
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
   if (!fontsLoaded && !fontError) {
-    return null;
+    return (
+      <AppBootstrapScreen
+        title="Starting FuelIQ"
+        subtitle="Opening your nutrition coach and getting the fastest logging tools ready."
+      />
+    );
   }
 
   return (
@@ -326,3 +361,52 @@ function RootLayout() {
 // interferes with TextInput focus on iOS + New Architecture. Export directly
 // instead — Sentry error tracking and session replay still work via init().
 export default RootLayout;
+
+const bootstrapStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    paddingHorizontal: 32,
+  },
+  logoWrap: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  logoMark: {
+    color: Colors.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+  },
+  title: {
+    color: Colors.text,
+    fontSize: 28,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: -0.6,
+  },
+  subtitle: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 320,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 28,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  dotPrimary: {
+    backgroundColor: Colors.primary,
+  },
+});

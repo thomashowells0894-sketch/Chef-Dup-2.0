@@ -90,11 +90,8 @@ import { useGamification } from '../../context/GamificationContext';
 import { useFasting } from '../../context/FastingContext';
 import useSupplements from '../../hooks/useSupplements';
 import useNutritionScore from '../../hooks/useNutritionScore';
-import { DashboardSkeleton } from '../../components/SkeletonLoader';
-import FeatureTour from '../../components/FeatureTour';
-import { DASHBOARD_TOUR } from '../../data/tourSteps';
 import useTour from '../../hooks/useTour';
-import usePredictiveAnalytics from '../../hooks/usePredictiveAnalytics';
+import usePredictiveAnalyticsHook from '../../hooks/usePredictiveAnalytics';
 import AnimatedProgressRing from '../../components/AnimatedProgressRing';
 import ActionCard from '../../components/ActionCard';
 import AIFab from '../../components/AIFab';
@@ -114,7 +111,7 @@ import {
   recordTodayOpened,
 } from '../../lib/activationTracker';
 import { useFriends } from '../../hooks/useFriends';
-import useActivationTracker from '../../hooks/useActivationTracker';
+import useActivationTrackerHook from '../../hooks/useActivationTracker';
 import { useProactiveCoach } from '../../hooks/useProactiveCoach';
 import { useHealthSync } from '../../hooks/useHealthSync';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -123,6 +120,7 @@ import {
   useRecentMealSnapshots,
 } from '../../lib/recentMeals';
 import { trackEvent } from '../../lib/analytics';
+import { recordAppInteractive } from '../../lib/startupTrace';
 
 // Premium accent colors
 const ACCENT = Colors.primary; // Electric Blue
@@ -567,13 +565,14 @@ function DashboardScreenInner() {
   const { isPremium } = useIsPremium();
   const router = useRouter();
   const reduceMotion = useReducedMotion();
+  const startupRecordedRef = useRef(false);
   const {
     state: activationState,
     stage: activationStage,
     progress: activationProgress,
     isLoading: activationLoading,
     showValuePaywall,
-  } = useActivationTracker();
+  } = useActivationTrackerHook();
   const { hasSeen, markSeen, isLoading: tourLoading } = useTour();
   const {
     totals,
@@ -616,7 +615,7 @@ function DashboardScreenInner() {
     gradeColor: nutritionGradeColor,
   } = useNutritionScore();
 
-  const { fitnessScore } = usePredictiveAnalytics();
+  const { fitnessScore } = usePredictiveAnalyticsHook();
 
   const { todaysAverage: moodAverage } = useMood();
   const { scheduleStreakWarning, syncActivationReminder } = useNotifications();
@@ -624,6 +623,12 @@ function DashboardScreenInner() {
   useEffect(() => {
     recordTodayOpened();
   }, []);
+
+  useEffect(() => {
+    if (tourLoading) return;
+    if (hasSeen('dashboard')) return;
+    markSeen('dashboard').catch(() => {});
+  }, [hasSeen, markSeen, tourLoading]);
 
   // Health sync — feeds Apple Health / Google Fit data into the proactive coach
   const {
@@ -1083,6 +1088,8 @@ function DashboardScreenInner() {
       sections.push({ key: 'importSwitcher' });
     }
 
+    sections.push({ key: 'quickLog' });
+
     if (repeatSuggestions.length > 0) {
       sections.push({ key: 'logAgain' });
     }
@@ -1118,7 +1125,6 @@ function DashboardScreenInner() {
     sections.push(
       { key: 'daySummary' },
       { key: 'macros' },
-      { key: 'quickLog' },
       { key: 'wellnessScore' },
     );
     if (weeklyDigest) sections.push({ key: 'digest' });
@@ -1153,6 +1159,19 @@ function DashboardScreenInner() {
   const dashboardSections = useMemo(() => {
     return [...primarySections, ...advancedSections, { key: 'spacer' }];
   }, [primarySections, advancedSections]);
+
+  useEffect(() => {
+    if (startupRecordedRef.current) return;
+    if (isLoading) return;
+
+    startupRecordedRef.current = true;
+    recordAppInteractive({
+      screen: 'dashboard',
+      activationStage,
+      hasLoggedMealsToday,
+      selectedDateKey,
+    });
+  }, [activationStage, hasLoggedMealsToday, isLoading, selectedDateKey]);
 
   const sectionKeyExtractor = useCallback((item) => item.key, []);
 
@@ -1503,14 +1522,6 @@ function DashboardScreenInner() {
     isSelectedDateToday, repeatSuggestions, waterProgress,
   ]);
 
-  if (isLoading) {
-    return (
-      <ScreenWrapper>
-        <DashboardSkeleton />
-      </ScreenWrapper>
-    );
-  }
-
   return (
     <ScreenWrapper style={styles.safeArea} testID="dashboard-screen">
         {/* Ambient living background */}
@@ -1520,10 +1531,12 @@ function DashboardScreenInner() {
         <DateNavigator />
 
         {/* Fetching Day Data Indicator */}
-        {isFetchingDay && (
+        {(isLoading || isFetchingDay) && (
           <View style={styles.fetchingIndicator}>
             <ActivityIndicator size="small" color={ACCENT} />
-            <Text style={styles.fetchingText}>Loading...</Text>
+            <Text style={styles.fetchingText}>
+              {isLoading ? 'Getting today ready' : 'Refreshing today'}
+            </Text>
           </View>
         )}
 
@@ -1587,14 +1600,6 @@ function DashboardScreenInner() {
         </ReAnimated.View>
       )}
 
-      {/* Feature Tour Overlay */}
-      {!tourLoading && (
-        <FeatureTour
-          steps={DASHBOARD_TOUR}
-          visible={!hasSeen('dashboard')}
-          onComplete={() => markSeen('dashboard')}
-        />
-      )}
     </ScreenWrapper>
   );
 }

@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, View, Text, StyleSheet } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { hapticSuccess, hapticLight, hapticImpact } from '../lib/haptics';
@@ -20,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
 import { recordFoodLogged } from '../lib/activationTracker';
 import { mergeFrequentFoods, recordFrequentFood } from '../lib/frequentFoodsStore';
+import { buildInitialMealHydration, normalizeCachedDayData } from '../lib/mealStartup';
 import { replaceRecentMealSnapshot, syncRecentMealsForDate } from '../lib/recentMeals';
 import type { ImportedFoodDiaryEntry } from '../services/importMyFitnessPal';
 import type {
@@ -139,6 +141,7 @@ const EMPTY_DAY: DayData = {
 };
 
 const ALL_MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
+const MEAL_DAY_CACHE_PREFIX = '@fueliq_meals_';
 
 const initialState: MealState = {
   goals: DEFAULT_GOALS,
@@ -305,6 +308,36 @@ function getDateString(daysOffset: number = 0): DateKey {
 function getDayLabel(dateString: string): string {
   const date = parseISO(dateString);
   return format(date, 'EEE');
+}
+
+function buildCacheKey(dateKey: DateKey): string {
+  return `${MEAL_DAY_CACHE_PREFIX}${dateKey}`;
+}
+
+async function readCachedDayData(dateKey: DateKey): Promise<DayData | null> {
+  try {
+    const cached = await AsyncStorage.getItem(buildCacheKey(dateKey));
+    if (!cached) {
+      return null;
+    }
+
+    return normalizeCachedDayData(JSON.parse(cached));
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[Meal] Failed to read day cache:', error);
+    }
+    return null;
+  }
+}
+
+async function writeCachedDayData(dateKey: DateKey, dayData: DayData): Promise<void> {
+  try {
+    await AsyncStorage.setItem(buildCacheKey(dateKey), JSON.stringify(dayData));
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[Meal] Failed to write day cache:', error);
+    }
+  }
 }
 
 function getCalorieData(dayData: Record<DateKey, DayData>, goal: number, days: number = 7): WeeklyDayData[] {
@@ -515,12 +548,13 @@ export function MealProvider({
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [offlineToast, setOfflineToast] = useState<OfflineToast | null>(null);
   const fetchedDatesRef = useRef<Set<string>>(new Set());
+  const fetchingDatesRef = useRef<Set<string>>(new Set());
 
   // Ref for stable access to current state without dependency churn
   const stateRef = useRef<MealState>(state);
   stateRef.current = state;
 
-  const { calculatedGoals, isProfileComplete, isLoading: profileLoading, calculatedWaterGoal } = useProfile();
+  const { calculatedGoals, isProfileComplete, calculatedWaterGoal } = useProfile();
   const { awardXP } = useGamification();
   const { queueOperation, checkOnline, showOfflineAlert } = useOffline();
 
@@ -537,8 +571,10 @@ export function MealProvider({
   // Fetch data for a specific date from Supabase
   const fetchDayData = useCallback(async (dateKey: DateKey) => {
     if (!user) return;
+    if (fetchingDatesRef.current.has(dateKey)) return;
     if (!(await checkOnline())) return;
 
+    fetchingDatesRef.current.add(dateKey);
     setIsFetchingDay(true);
     try {
       const [foodResult, workoutResult] = await Promise.all([
@@ -592,15 +628,19 @@ export function MealProvider({
         });
       }
 
+      const nextDayData = { meals, totals, waterIntake, exercises, caloriesBurned, exerciseMinutes };
+
       dispatch({
         type: 'HYDRATE',
         payload: {
           dayData: {
             ...stateRef.current.dayData,
-            [dateKey]: { meals, totals, waterIntake, exercises, caloriesBurned, exerciseMinutes },
+            [dateKey]: nextDayData,
           },
         },
       });
+
+      writeCachedDayData(dateKey, nextDayData).catch(() => {});
 
       syncRecentMealsForDate(dateKey, meals).catch((error) => {
         if (__DEV__) console.warn('[Meal] Failed to sync recent meal snapshots:', error);
@@ -610,6 +650,7 @@ export function MealProvider({
     } catch (error: any) {
       if (__DEV__) console.error('[Meal] Fetch failed:', error.message);
     } finally {
+      fetchingDatesRef.current.delete(dateKey);
       setIsFetchingDay(false);
     }
   }, [user, checkOnline]);
@@ -627,18 +668,36 @@ export function MealProvider({
       setIsLoading(false);
       setIsHydrated(true);
       fetchedDatesRef.current.clear();
+      fetchingDatesRef.current.clear();
       return;
     }
     (async () => {
       setIsLoading(true);
+      const todayKey = getTodayString();
+
       try {
-        await fetchDayData(getTodayString());
+        const cachedToday = await readCachedDayData(todayKey);
+        if (cachedToday) {
+          dispatch({
+            type: 'HYDRATE',
+            payload: {
+              dayData: {
+                ...stateRef.current.dayData,
+                ...buildInitialMealHydration(todayKey, cachedToday),
+              },
+            },
+          });
+        }
       } catch (error: any) {
-        if (__DEV__) console.error('[Meal] Initial load failed:', error.message);
+        if (__DEV__) console.error('[Meal] Initial cache hydrate failed:', error.message);
       } finally {
         setIsLoading(false);
         setIsHydrated(true);
       }
+
+      fetchDayData(todayKey).catch((error: any) => {
+        if (__DEV__) console.error('[Meal] Initial load failed:', error.message);
+      });
     })();
   }, [user, disableInitialFetch, fetchDayData]);
 
@@ -1557,6 +1616,11 @@ export function MealProvider({
 
   const currentDayData = useMemo<DayData>(() => getDayData(state, selectedDateKey), [state, selectedDateKey]);
 
+  useEffect(() => {
+    if (!user || !isHydrated) return;
+    writeCachedDayData(selectedDateKey, currentDayData).catch(() => {});
+  }, [currentDayData, isHydrated, selectedDateKey, user]);
+
   const weeklyData = useMemo<WeeklyDayData[]>(() => getCalorieData(state.dayData, activeGoals.calories, 7), [state.dayData, activeGoals.calories]);
   const weeklyStats = useMemo<WeeklyStats>(() => calcWeeklyStats(weeklyData), [weeklyData]);
 
@@ -1604,7 +1668,7 @@ export function MealProvider({
       waterGoal: state.waterGoal,
       recentLogs: state.recentLogs,
       dayData: state.dayData,
-      isLoading: isLoading || profileLoading,
+      isLoading,
       isFetchingDay,
 
       // Selected date
@@ -1649,7 +1713,7 @@ export function MealProvider({
       dismissOfflineToast,
     }),
     [
-      state, activeGoals, isLoading, profileLoading, isFetchingDay,
+      state, activeGoals, isLoading, isFetchingDay,
       selectedDate, selectedDateKey, isPlanningMode,
       changeDate, goToToday, goToDate, getDateLabel, getShoppingList,
       currentDayData, waterProgress, calorieBalance, mealCalories,

@@ -8,9 +8,9 @@ import {
   Dimensions,
   Platform,
   Alert,
-  Switch,
   TextInput,
   KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +19,6 @@ import ReAnimated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
-  FadeOut,
   SlideInRight,
   SlideOutLeft,
   SlideInLeft,
@@ -27,65 +26,27 @@ import ReAnimated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withDelay,
-  withSequence,
-  withRepeat,
-  withSpring,
   Easing,
-  runOnJS,
-  interpolateColor,
 } from 'react-native-reanimated';
 import {
-  Target,
   Dumbbell,
-  Scale,
   Heart,
-  Zap,
   Trophy,
   ArrowLeft,
   ArrowRight,
   Sparkles,
   Check,
-  User,
-  Calendar,
-  Ruler,
-  Weight,
-  Activity,
   Utensils,
-  Leaf,
-  Apple,
-  Fish,
   Wheat,
-  Milk,
-  Nut,
-  Egg,
-  Shell,
-  Ban,
-  Clock,
-  Sun,
-  Moon,
-  Bell,
-  Smartphone,
-  Brain,
   Droplets,
-  Timer,
   ChevronRight,
   Flame,
   TrendingDown,
-  TrendingUp,
   Minus,
-  PersonStanding,
-  Bike,
-  Waves,
-  Footprints,
-  CircleDot,
-  Home,
-  Building2,
-  TreePine,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { hapticImpact, hapticSuccess, hapticHeavy } from '../../lib/haptics';
-import { useProfile, ACTIVITY_LEVELS } from '../../context/ProfileContext';
+import { hapticImpact, hapticHeavy } from '../../lib/haptics';
+import { useProfile } from '../../context/ProfileContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import {
@@ -94,9 +55,17 @@ import {
 } from '../../lib/activationTracker';
 import { Colors, Gradients, Spacing, BorderRadius, FontSize, FontWeight, Shadows } from '../../constants/theme';
 import MyFitnessPalImportCard from '../../components/MyFitnessPalImportCard';
+import {
+  ONBOARDING_STEP_COUNT,
+  buildStarterPlan,
+  canContinueOnboardingStep,
+  sanitizeDecimalInput,
+  sanitizeIntegerInput,
+} from '../../lib/onboardingFlow';
+import { recordAppInteractive } from '../../lib/startupTrace';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const TOTAL_STEPS = 6;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TOTAL_STEPS = ONBOARDING_STEP_COUNT;
 
 // ---------------------------------------------------------------------------
 // Data Constants
@@ -153,101 +122,6 @@ const ACTIVITY_OPTIONS = [
   { id: 'extreme', label: 'Extremely Active', description: 'Athlete or physical labor job', multiplier: 1.9 },
 ];
 
-const DIET_TYPES = [
-  'Standard', 'Keto', 'Low Carb', 'High Protein',
-  'Vegetarian', 'Vegan', 'Mediterranean', 'Paleo',
-];
-
-const ALLERGY_OPTIONS = [
-  'Gluten', 'Dairy', 'Nuts', 'Soy', 'Eggs', 'Shellfish', 'None',
-];
-
-const EXPERIENCE_LEVELS = [
-  { id: 'beginner', label: 'Beginner', description: '0 - 6 months training' },
-  { id: 'intermediate', label: 'Intermediate', description: '6 months - 2 years' },
-  { id: 'advanced', label: 'Advanced', description: '2+ years training' },
-];
-
-const WORKOUT_TYPES = [
-  'Strength', 'Cardio', 'HIIT', 'Yoga', 'Calisthenics', 'Swimming', 'Running',
-];
-
-const EQUIPMENT_OPTIONS = [
-  { id: 'bodyweight', label: 'Home (bodyweight)', icon: Home },
-  { id: 'home_gym', label: 'Home Gym', icon: Dumbbell },
-  { id: 'full_gym', label: 'Full Gym', icon: Building2 },
-  { id: 'outdoor', label: 'Outdoor', icon: TreePine },
-];
-
-const SESSION_DURATIONS = [20, 30, 45, 60, 90];
-
-// ---------------------------------------------------------------------------
-// Helper: BMR / TDEE / Macros
-// ---------------------------------------------------------------------------
-
-function computeBMR(weightKg, heightCm, age, gender) {
-  if (!weightKg || !heightCm || !age) return null;
-  const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
-  return Math.round(gender === 'male' ? base + 5 : base - 161);
-}
-
-function computeTDEE(bmr, activityId) {
-  if (!bmr) return null;
-  const option = ACTIVITY_OPTIONS.find((a) => a.id === activityId);
-  return Math.round(bmr * (option?.multiplier || 1.55));
-}
-
-function computeCalorieTarget(tdee, goalId) {
-  if (!tdee) return 2000;
-  switch (goalId) {
-    case 'lose': return Math.max(tdee - 500, 1200);
-    case 'build': return tdee + 300;
-    case 'maintain': return tdee;
-    case 'health': return tdee;
-    case 'athletic': return tdee + 200;
-    default: return tdee;
-  }
-}
-
-function computeMacros(calories, goalId) {
-  let proteinPct, carbsPct, fatPct;
-  switch (goalId) {
-    case 'lose':
-      proteinPct = 0.40; carbsPct = 0.30; fatPct = 0.30; break;
-    case 'build':
-      proteinPct = 0.35; carbsPct = 0.40; fatPct = 0.25; break;
-    case 'athletic':
-      proteinPct = 0.25; carbsPct = 0.50; fatPct = 0.25; break;
-    default:
-      proteinPct = 0.30; carbsPct = 0.40; fatPct = 0.30;
-  }
-  return {
-    protein: Math.round((calories * proteinPct) / 4),
-    carbs: Math.round((calories * carbsPct) / 4),
-    fat: Math.round((calories * fatPct) / 9),
-    proteinPct: Math.round(proteinPct * 100),
-    carbsPct: Math.round(carbsPct * 100),
-    fatPct: Math.round(fatPct * 100),
-  };
-}
-
-function goalToWeeklyGoal(goalId) {
-  switch (goalId) {
-    case 'lose': return 'lose1';
-    case 'build': return 'gain05';
-    default: return 'maintain';
-  }
-}
-
-function goalToMacroPreset(goalId) {
-  switch (goalId) {
-    case 'lose': return 'highProtein';
-    case 'build': return 'highProtein';
-    case 'athletic': return 'athletic';
-    default: return 'balanced';
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Reusable Sub-Components
 // ---------------------------------------------------------------------------
@@ -257,7 +131,7 @@ function ProgressBar({ step, total }) {
 
   useEffect(() => {
     progress.value = withTiming(step / total, { duration: 400, easing: Easing.out(Easing.cubic) });
-  }, [step, total]);
+  }, [progress, step, total]);
 
   const barStyle = useAnimatedStyle(() => ({
     width: `${progress.value * 100}%`,
@@ -325,21 +199,6 @@ function GoalCard({ item, selected, onPress, index }) {
   );
 }
 
-function SelectChip({ label, selected, onPress, color = Colors.primary }) {
-  return (
-    <Pressable
-      onPress={() => { hapticImpact(); onPress(); }}
-      hitSlop={4}
-      style={[
-        styles.chip,
-        selected && { backgroundColor: `${color}22`, borderColor: color },
-      ]}
-    >
-      <Text style={[styles.chipText, selected && { color }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 function OptionButton({ label, description, selected, onPress, index }) {
   return (
     <ReAnimated.View entering={FadeInDown.delay(index * 60).duration(350).springify()}>
@@ -362,58 +221,19 @@ function OptionButton({ label, description, selected, onPress, index }) {
   );
 }
 
-function SliderRow({ label, value, min, max, step, suffix, onChange }) {
-  const values = [];
-  for (let v = min; v <= max; v += step) values.push(v);
-
-  return (
-    <View style={styles.sliderRow}>
-      <Text style={styles.sliderLabel}>{label}</Text>
-      <View style={styles.sliderTrack}>
-        {values.map((v) => (
-          <Pressable
-            key={v}
-            onPress={() => { hapticImpact(); onChange(v); }}
-            style={[styles.sliderDot, v === value && styles.sliderDotActive]}
-          >
-            <Text style={[styles.sliderDotText, v === value && styles.sliderDotTextActive]}>
-              {v}{suffix || ''}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function ToggleRow({ icon: Icon, label, description, value, onChange }) {
-  return (
-    <View style={styles.toggleRow}>
-      <View style={styles.toggleIcon}>
-        <Icon size={20} color={Colors.primary} />
-      </View>
-      <View style={styles.toggleTextWrap}>
-        <Text style={styles.toggleLabel}>{label}</Text>
-        {description ? <Text style={styles.toggleDesc}>{description}</Text> : null}
-      </View>
-      <Switch
-        value={value}
-        onValueChange={(v) => { hapticImpact(); onChange(v); }}
-        trackColor={{ false: Colors.surfaceBright, true: Colors.primaryDim }}
-        thumbColor={value ? Colors.primary : Colors.textTertiary}
-        ios_backgroundColor={Colors.surfaceBright}
-      />
-    </View>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Step Components
 // ---------------------------------------------------------------------------
 
-function Step1Welcome({ data, onChange }) {
+function Step1Welcome({ data, onGoalSelect }) {
   return (
-    <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.stepScroll}
+      contentContainerStyle={styles.stepContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+    >
       <ReAnimated.View entering={FadeInDown.duration(500).springify()} style={styles.welcomeHeader}>
         <View style={styles.logoRow}>
           <Sparkles size={32} color={Colors.primary} />
@@ -434,7 +254,7 @@ function Step1Welcome({ data, onChange }) {
           key={item.id}
           item={item}
           selected={data.goal}
-          onPress={(id) => onChange({ goal: id })}
+          onPress={onGoalSelect}
           index={index}
         />
       ))}
@@ -444,12 +264,39 @@ function Step1Welcome({ data, onChange }) {
 
 function Step2BodyProfile({ data, onChange }) {
   const [isMetric, setIsMetric] = useState(data.heightUnit === 'cm');
+  const scrollRef = useRef(null);
+  const fieldPositions = useRef({});
+  const ageInputRef = useRef(null);
+  const heightCmInputRef = useRef(null);
+  const heightFtInputRef = useRef(null);
+  const heightInInputRef = useRef(null);
+  const weightInputRef = useRef(null);
+  const goalWeightInputRef = useRef(null);
+
+  useEffect(() => {
+    setIsMetric(data.heightUnit === 'cm');
+  }, [data.heightUnit]);
 
   const toggleUnit = useCallback((metric) => {
     setIsMetric(metric);
     onChange({ heightUnit: metric ? 'cm' : 'ft', weightUnit: metric ? 'kg' : 'lbs' });
     hapticImpact();
   }, [onChange]);
+
+  const scrollToField = useCallback((fieldKey) => {
+    requestAnimationFrame(() => {
+      const nextY = Math.max((fieldPositions.current[fieldKey] || 0) - 24, 0);
+      scrollRef.current?.scrollTo({ y: nextY, animated: true });
+    });
+  }, []);
+
+  const registerField = useCallback((fieldKey) => (event) => {
+    fieldPositions.current[fieldKey] = event.nativeEvent.layout.y;
+  }, []);
+
+  const focusNext = useCallback((ref) => {
+    ref?.current?.focus?.();
+  }, []);
 
   // Convert for display
   const displayWeight = useMemo(() => {
@@ -469,7 +316,15 @@ function Step2BodyProfile({ data, onChange }) {
   }, [data.weightRaw, data.goalWeightRaw]);
 
   return (
-    <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      ref={scrollRef}
+      style={styles.stepScroll}
+      contentContainerStyle={styles.stepContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      onScrollBeginDrag={Keyboard.dismiss}
+    >
       <StepHeader title="Set your daily targets" subtitle="These details make your calorie and protein goals trustworthy" />
 
       {/* Gender */}
@@ -490,15 +345,26 @@ function Step2BodyProfile({ data, onChange }) {
 
       {/* DOB / Age */}
       <Text style={styles.fieldLabel}>Age</Text>
-      <View style={styles.inputWrap}>
+      <View style={styles.inputWrap} onLayout={registerField('age')}>
         <TextInput
+          ref={ageInputRef}
           style={styles.textInput}
           placeholder="e.g. 28"
           placeholderTextColor={Colors.textTertiary}
           keyboardType="number-pad"
           value={data.ageStr}
-          onChangeText={(v) => onChange({ ageStr: v.replace(/[^0-9]/g, '') })}
+          onFocus={() => scrollToField('age')}
+          onChangeText={(v) => onChange({ ageStr: sanitizeIntegerInput(v, 3) })}
           maxLength={3}
+          returnKeyType="next"
+          blurOnSubmit={false}
+          onSubmitEditing={() => {
+            if (isMetric) {
+              focusNext(heightCmInputRef);
+              return;
+            }
+            focusNext(heightFtInputRef);
+          }}
         />
         <Text style={styles.inputSuffix}>years</Text>
       </View>
@@ -522,41 +388,56 @@ function Step2BodyProfile({ data, onChange }) {
       {/* Height */}
       <Text style={styles.fieldLabel}>Height</Text>
       {isMetric ? (
-        <View style={styles.inputWrap}>
+        <View style={styles.inputWrap} onLayout={registerField('height')}>
           <TextInput
+            ref={heightCmInputRef}
             style={styles.textInput}
             placeholder="175"
             placeholderTextColor={Colors.textTertiary}
             keyboardType="number-pad"
             value={data.heightCm}
-            onChangeText={(v) => onChange({ heightCm: v.replace(/[^0-9]/g, '') })}
+            onFocus={() => scrollToField('height')}
+            onChangeText={(v) => onChange({ heightCm: sanitizeIntegerInput(v, 3) })}
             maxLength={3}
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => focusNext(weightInputRef)}
           />
           <Text style={styles.inputSuffix}>cm</Text>
         </View>
       ) : (
         <View style={styles.heightRow}>
-          <View style={[styles.inputWrap, { flex: 1 }]}>
+          <View style={[styles.inputWrap, { flex: 1 }]} onLayout={registerField('height')}>
             <TextInput
+              ref={heightFtInputRef}
               style={styles.textInput}
               placeholder="5"
               placeholderTextColor={Colors.textTertiary}
               keyboardType="number-pad"
               value={data.heightFt}
-              onChangeText={(v) => onChange({ heightFt: v.replace(/[^0-9]/g, '') })}
+              onFocus={() => scrollToField('height')}
+              onChangeText={(v) => onChange({ heightFt: sanitizeIntegerInput(v, 1) })}
               maxLength={1}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => focusNext(heightInInputRef)}
             />
             <Text style={styles.inputSuffix}>ft</Text>
           </View>
           <View style={[styles.inputWrap, { flex: 1 }]}>
             <TextInput
+              ref={heightInInputRef}
               style={styles.textInput}
               placeholder="10"
               placeholderTextColor={Colors.textTertiary}
               keyboardType="number-pad"
               value={data.heightIn}
-              onChangeText={(v) => onChange({ heightIn: v.replace(/[^0-9]/g, '') })}
+              onFocus={() => scrollToField('height')}
+              onChangeText={(v) => onChange({ heightIn: sanitizeIntegerInput(v, 2) })}
               maxLength={2}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => focusNext(weightInputRef)}
             />
             <Text style={styles.inputSuffix}>in</Text>
           </View>
@@ -565,30 +446,39 @@ function Step2BodyProfile({ data, onChange }) {
 
       {/* Current weight */}
       <Text style={styles.fieldLabel}>Current Weight</Text>
-      <View style={styles.inputWrap}>
+      <View style={styles.inputWrap} onLayout={registerField('weight')}>
         <TextInput
+          ref={weightInputRef}
           style={styles.textInput}
           placeholder={isMetric ? '80' : '176'}
           placeholderTextColor={Colors.textTertiary}
           keyboardType="decimal-pad"
           value={displayWeight}
-          onChangeText={(v) => onChange({ weightRaw: v.replace(/[^0-9.]/g, '') })}
+          onFocus={() => scrollToField('weight')}
+          onChangeText={(v) => onChange({ weightRaw: sanitizeDecimalInput(v) })}
           maxLength={6}
+          returnKeyType="next"
+          blurOnSubmit={false}
+          onSubmitEditing={() => focusNext(goalWeightInputRef)}
         />
         <Text style={styles.inputSuffix}>{isMetric ? 'kg' : 'lbs'}</Text>
       </View>
 
       {/* Goal weight */}
       <Text style={styles.fieldLabel}>Goal Weight</Text>
-      <View style={styles.inputWrap}>
+      <View style={styles.inputWrap} onLayout={registerField('goalWeight')}>
         <TextInput
+          ref={goalWeightInputRef}
           style={styles.textInput}
           placeholder={isMetric ? '75' : '165'}
           placeholderTextColor={Colors.textTertiary}
           keyboardType="decimal-pad"
           value={displayGoalWeight}
-          onChangeText={(v) => onChange({ goalWeightRaw: v.replace(/[^0-9.]/g, '') })}
+          onFocus={() => scrollToField('goalWeight')}
+          onChangeText={(v) => onChange({ goalWeightRaw: sanitizeDecimalInput(v) })}
           maxLength={6}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
         />
         <Text style={styles.inputSuffix}>{isMetric ? 'kg' : 'lbs'}</Text>
       </View>
@@ -619,377 +509,27 @@ function Step2BodyProfile({ data, onChange }) {
   );
 }
 
-function Step3Dietary({ data, onChange }) {
-  const toggleAllergy = useCallback((allergy) => {
-    const current = data.allergies || [];
-    if (allergy === 'None') {
-      onChange({ allergies: ['None'] });
-      return;
-    }
-    const filtered = current.filter((a) => a !== 'None');
-    if (filtered.includes(allergy)) {
-      onChange({ allergies: filtered.filter((a) => a !== allergy) });
-    } else {
-      onChange({ allergies: [...filtered, allergy] });
-    }
-  }, [data.allergies, onChange]);
+function Step6Generation({ data, onComplete, onImport, onQuickLog }) {
+  const results = useMemo(() => buildStarterPlan(data), [data]);
 
   return (
-    <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Food preferences" subtitle="We'll keep search, meals, and suggestions relevant to what you actually eat" />
-
-      {/* Diet type */}
-      <Text style={styles.fieldLabel}>Diet Type</Text>
-      <View style={styles.chipWrap}>
-        {DIET_TYPES.map((dt) => (
-          <SelectChip
-            key={dt}
-            label={dt}
-            selected={data.dietType === dt}
-            onPress={() => onChange({ dietType: dt })}
-          />
-        ))}
-      </View>
-
-      {/* Allergies */}
-      <Text style={styles.fieldLabel}>Allergies / Intolerances</Text>
-      <View style={styles.chipWrap}>
-        {ALLERGY_OPTIONS.map((a) => (
-          <SelectChip
-            key={a}
-            label={a}
-            selected={(data.allergies || []).includes(a)}
-            onPress={() => toggleAllergy(a)}
-            color={a === 'None' ? Colors.success : Colors.secondary}
-          />
-        ))}
-      </View>
-
-      {/* Meals per day */}
-      <SliderRow
-        label="Meals Per Day"
-        value={data.mealsPerDay || 3}
-        min={2}
-        max={6}
-        step={1}
-        onChange={(v) => onChange({ mealsPerDay: v })}
-      />
-
-      {/* Intermittent fasting */}
-      <Text style={styles.fieldLabel}>Interested in Intermittent Fasting?</Text>
-      <View style={styles.genderRow}>
-        <Pressable
-          onPress={() => { hapticImpact(); onChange({ interestedInFasting: true }); }}
-          style={[styles.genderBtn, data.interestedInFasting === true && styles.genderBtnActive]}
-        >
-          <Text style={[styles.genderText, data.interestedInFasting === true && styles.genderTextActive]}>Yes</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => { hapticImpact(); onChange({ interestedInFasting: false }); }}
-          style={[styles.genderBtn, data.interestedInFasting === false && styles.genderBtnActive]}
-        >
-          <Text style={[styles.genderText, data.interestedInFasting === false && styles.genderTextActive]}>No</Text>
-        </Pressable>
-      </View>
-
-      <View style={{ height: 40 }} />
-    </ScrollView>
-  );
-}
-
-function Step4Fitness({ data, onChange }) {
-  const toggleWorkoutType = useCallback((type) => {
-    const current = data.workoutTypes || [];
-    if (current.includes(type)) {
-      onChange({ workoutTypes: current.filter((t) => t !== type) });
-    } else {
-      onChange({ workoutTypes: [...current, type] });
-    }
-  }, [data.workoutTypes, onChange]);
-
-  const toggleEquipment = useCallback((eq) => {
-    const current = data.equipment || [];
-    if (current.includes(eq)) {
-      onChange({ equipment: current.filter((e) => e !== eq) });
-    } else {
-      onChange({ equipment: [...current, eq] });
-    }
-  }, [data.equipment, onChange]);
-
-  return (
-    <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Movement context" subtitle="This helps with activity guidance, but your daily nutrition targets stay front and center" />
-
-      {/* Experience level */}
-      <Text style={styles.fieldLabel}>Training Experience</Text>
-      {EXPERIENCE_LEVELS.map((opt, index) => (
-        <OptionButton
-          key={opt.id}
-          label={opt.label}
-          description={opt.description}
-          selected={data.experience === opt.id}
-          onPress={() => onChange({ experience: opt.id })}
-          index={index}
-        />
-      ))}
-
-      {/* Workout types */}
-      <Text style={styles.fieldLabel}>Preferred Workout Types</Text>
-      <View style={styles.chipWrap}>
-        {WORKOUT_TYPES.map((wt) => (
-          <SelectChip
-            key={wt}
-            label={wt}
-            selected={(data.workoutTypes || []).includes(wt)}
-            onPress={() => toggleWorkoutType(wt)}
-            color={Colors.success}
-          />
-        ))}
-      </View>
-
-      {/* Equipment */}
-      <Text style={styles.fieldLabel}>Available Equipment</Text>
-      {EQUIPMENT_OPTIONS.map((eq, index) => {
-        const EqIcon = eq.icon;
-        const selected = (data.equipment || []).includes(eq.id);
-        return (
-          <ReAnimated.View key={eq.id} entering={FadeInDown.delay(index * 60).duration(350).springify()}>
-            <Pressable
-              onPress={() => { hapticImpact(); toggleEquipment(eq.id); }}
-              hitSlop={4}
-              style={[styles.optionBtn, selected && styles.optionBtnSelected]}
-            >
-              <View style={styles.equipIconWrap}>
-                <EqIcon size={18} color={selected ? Colors.primary : Colors.textTertiary} />
-              </View>
-              <Text style={[styles.optionLabel, selected && styles.optionLabelSelected, { flex: 1 }]}>{eq.label}</Text>
-              {selected && (
-                <View style={styles.optionCheck}>
-                  <Check size={14} color="#fff" strokeWidth={3} />
-                </View>
-              )}
-            </Pressable>
-          </ReAnimated.View>
-        );
-      })}
-
-      {/* Days per week */}
-      <SliderRow
-        label="Days Per Week"
-        value={data.daysPerWeek || 4}
-        min={2}
-        max={7}
-        step={1}
-        onChange={(v) => onChange({ daysPerWeek: v })}
-      />
-
-      {/* Session duration */}
-      <Text style={styles.fieldLabel}>Session Duration</Text>
-      <View style={styles.chipWrap}>
-        {SESSION_DURATIONS.map((d) => (
-          <SelectChip
-            key={d}
-            label={`${d} min`}
-            selected={data.sessionDuration === d}
-            onPress={() => onChange({ sessionDuration: d })}
-            color={Colors.primary}
-          />
-        ))}
-      </View>
-
-      <View style={{ height: 40 }} />
-    </ScrollView>
-  );
-}
-
-function Step5SmartFeatures({ data, onChange }) {
-  return (
-    <ScrollView style={styles.stepScroll} contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-      <StepHeader title="Daily logging setup" subtitle="Choose the few things that make logging easier and more accurate" />
-
-      <ToggleRow
-        icon={Bell}
-        label="Logging Reminders"
-        description="Nudges to capture breakfast, lunch, dinner, and stay consistent"
-        value={data.enableMealReminders !== false}
-        onChange={(v) => onChange({ enableMealReminders: v })}
-      />
-
-      <ToggleRow
-        icon={Dumbbell}
-        label="Movement Reminders"
-        description="Optional prompts to stay on track with training and daily activity"
-        value={data.enableWorkoutReminders !== false}
-        onChange={(v) => onChange({ enableWorkoutReminders: v })}
-      />
-
-      <ToggleRow
-        icon={Flame}
-        label="Streak Warnings"
-        description="Alerts before you're about to lose a streak"
-        value={data.enableStreakWarnings !== false}
-        onChange={(v) => onChange({ enableStreakWarnings: v })}
-      />
-
-      <View style={styles.featureDivider} />
-
-      <ToggleRow
-        icon={Smartphone}
-        label="Connect Health App"
-        description="Sync steps and active calories from Apple Health or Google Fit"
-        value={data.connectHealth === true}
-        onChange={(v) => onChange({ connectHealth: v })}
-      />
-
-      <ToggleRow
-        icon={Brain}
-        label="AI Coaching"
-        description="Optional coaching after you log food and build a daily pattern"
-        value={data.enableAI !== false}
-        onChange={(v) => onChange({ enableAI: v })}
-      />
-
-      <View style={styles.featureDivider} />
-
-      {/* Water goal */}
-      <Text style={styles.fieldLabel}>Daily Water Goal</Text>
-      <View style={styles.chipWrap}>
-        {[1500, 2000, 2500, 3000, 3500, 4000].map((ml) => (
-          <SelectChip
-            key={ml}
-            label={`${(ml / 1000).toFixed(1)}L`}
-            selected={(data.waterGoal || 2500) === ml}
-            onPress={() => onChange({ waterGoal: ml })}
-            color={Colors.primary}
-          />
-        ))}
-      </View>
-
-      <ToggleRow
-        icon={Timer}
-        label="Show Fasting Tracker"
-        description="Keep fasting windows available without crowding the main flow"
-        value={data.enableFasting === true}
-        onChange={(v) => onChange({ enableFasting: v })}
-      />
-
-      <View style={{ height: 40 }} />
-    </ScrollView>
-  );
-}
-
-function Step6Generation({ data, onComplete, onImport }) {
-  const [phase, setPhase] = useState(0);
-  const [showResults, setShowResults] = useState(false);
-  const progressWidth = useSharedValue(0);
-
-  const phases = [
-    'Setting your calorie target...',
-    'Setting your protein target...',
-    'Preparing fast logging defaults...',
-    'Getting today ready...',
-  ];
-
-  // Calculate results
-  const results = useMemo(() => {
-    const isMetric = data.heightUnit === 'cm';
-
-    let weightKg, heightCm;
-    if (isMetric) {
-      weightKg = parseFloat(data.weightRaw) || 75;
-      heightCm = parseFloat(data.heightCm) || 170;
-    } else {
-      const lbs = parseFloat(data.weightRaw) || 165;
-      weightKg = lbs * 0.453592;
-      const ft = parseInt(data.heightFt || '5', 10);
-      const inches = parseInt(data.heightIn || '9', 10);
-      heightCm = (ft * 12 + inches) * 2.54;
-    }
-
-    const age = parseInt(data.ageStr || '30', 10);
-    const gender = data.gender === 'female' ? 'female' : 'male';
-
-    const bmr = computeBMR(weightKg, heightCm, age, gender);
-    const tdee = computeTDEE(bmr, data.activityLevel || 'moderate');
-    const calories = computeCalorieTarget(tdee, data.goal || 'maintain');
-    const macros = computeMacros(calories, data.goal || 'maintain');
-
-    return { bmr, tdee, calories, macros, weightKg, heightCm, age, gender };
-  }, [data]);
-
-  useEffect(() => {
-    // Animated progress through phases
-    const timers = [];
-    let currentPhase = 0;
-
-    const advancePhase = () => {
-      currentPhase += 1;
-      if (currentPhase < phases.length) {
-        setPhase(currentPhase);
-        progressWidth.value = withTiming((currentPhase + 1) / phases.length, { duration: 1200 });
-        timers.push(setTimeout(advancePhase, 1400));
-      } else {
-        // All done
-        timers.push(setTimeout(() => {
-          setShowResults(true);
-          hapticSuccess();
-        }, 800));
-      }
-    };
-
-    progressWidth.value = withTiming(1 / phases.length, { duration: 1200 });
-    timers.push(setTimeout(advancePhase, 1400));
-
-    return () => timers.forEach(clearTimeout);
-  }, []);
-
-  const genBarStyle = useAnimatedStyle(() => ({
-    width: `${progressWidth.value * 100}%`,
-  }));
-
-  if (!showResults) {
-    return (
-      <View style={styles.generationWrap}>
-        <ReAnimated.View entering={FadeIn.duration(400)} style={styles.generationInner}>
-          {/* Pulsing icon */}
-          <PulsingOrb />
-
-          <Text style={styles.genTitle}>Preparing Today</Text>
-
-          {/* Phase text */}
-          <ReAnimated.View key={phase} entering={FadeIn.duration(300)}>
-            <Text style={styles.genPhaseText}>{phases[phase]}</Text>
-          </ReAnimated.View>
-
-          {/* Progress bar */}
-          <View style={styles.genBarTrack}>
-            <ReAnimated.View style={[styles.genBarFill, genBarStyle]}>
-              <LinearGradient
-                colors={Gradients.electric}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </ReAnimated.View>
-          </View>
-        </ReAnimated.View>
-      </View>
-    );
-  }
-
-  // Show results
-  return (
-    <ScrollView style={styles.stepScroll} contentContainerStyle={[styles.stepContent, { alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
-      {/* Confetti-like top decoration */}
+    <ScrollView
+      style={styles.stepScroll}
+      contentContainerStyle={[styles.stepContent, { alignItems: 'center' }]}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+    >
       <ReAnimated.View entering={FadeInDown.duration(600).springify()} style={styles.resultsHeader}>
         <View style={styles.resultsCheckCircle}>
           <Check size={32} color="#fff" strokeWidth={3} />
         </View>
-        <Text style={styles.resultsTitle}>Your Daily Targets Are Ready</Text>
-        <Text style={styles.resultsSubtitle}>Log your first meal and FuelIQ will keep today clear</Text>
+        <Text style={styles.resultsTitle}>Starter targets, ready now</Text>
+        <Text style={styles.resultsSubtitle}>
+          You can fine-tune reminders and preferences later. Today only needs one clean first action.
+        </Text>
       </ReAnimated.View>
 
-      {/* Stats cards */}
       <View style={styles.resultsGrid}>
         <ReAnimated.View entering={FadeInDown.delay(100).duration(400).springify()} style={styles.resultCard}>
           <LinearGradient colors={['rgba(0,212,255,0.12)', 'rgba(0,212,255,0.03)']} style={StyleSheet.absoluteFill} />
@@ -1020,7 +560,6 @@ function Step6Generation({ data, onComplete, onImport }) {
         </ReAnimated.View>
       </View>
 
-      {/* Macro split bar */}
       <ReAnimated.View entering={FadeInDown.delay(500).duration(400).springify()} style={styles.macroBar}>
         <View style={[styles.macroSegment, { flex: results.macros.proteinPct, backgroundColor: Colors.protein, borderTopLeftRadius: 6, borderBottomLeftRadius: 6 }]} />
         <View style={[styles.macroSegment, { flex: results.macros.carbsPct, backgroundColor: Colors.carbs }]} />
@@ -1041,13 +580,11 @@ function Step6Generation({ data, onComplete, onImport }) {
         </View>
       </View>
 
-      {/* Workout frequency */}
       <ReAnimated.View entering={FadeInDown.delay(600).duration(400).springify()} style={styles.resultInfoRow}>
         <Utensils size={20} color={Colors.primary} />
-        <Text style={styles.resultInfoText}>{data.mealsPerDay || 3} meals per day, ready for fast logging</Text>
+        <Text style={styles.resultInfoText}>Fast logging is live. The rest of setup can happen after your first day.</Text>
       </ReAnimated.View>
 
-      {/* CTA */}
       <ReAnimated.View entering={FadeInUp.delay(700).duration(500).springify()} style={{ width: '100%', marginTop: Spacing.xl }}>
         <Pressable onPress={onComplete} style={styles.ctaButton}>
           <LinearGradient
@@ -1057,8 +594,15 @@ function Step6Generation({ data, onComplete, onImport }) {
             style={StyleSheet.absoluteFill}
           />
           <Sparkles size={20} color="#fff" />
-          <Text style={styles.ctaText}>Start Logging</Text>
+          <Text style={styles.ctaText}>Open Today</Text>
           <ArrowRight size={20} color="#fff" />
+        </Pressable>
+      </ReAnimated.View>
+
+      <ReAnimated.View entering={FadeInUp.delay(740).duration(500).springify()} style={styles.secondaryCtaWrap}>
+        <Pressable onPress={onQuickLog} style={styles.secondaryCtaButton}>
+          <Text style={styles.secondaryCtaText}>Log first meal now</Text>
+          <ChevronRight size={18} color={Colors.text} />
         </Pressable>
       </ReAnimated.View>
 
@@ -1078,58 +622,20 @@ function Step6Generation({ data, onComplete, onImport }) {
   );
 }
 
-function PulsingOrb() {
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(0.4);
-
-  useEffect(() => {
-    scale.value = withRepeat(
-      withSequence(
-        withTiming(1.3, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      true,
-    );
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.8, { duration: 1000 }),
-        withTiming(0.4, { duration: 1000 }),
-      ),
-      -1,
-      true,
-    );
-  }, []);
-
-  const orbStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <View style={styles.orbContainer}>
-      <ReAnimated.View style={[styles.orbGlow, orbStyle]} />
-      <View style={styles.orbCenter}>
-        <Sparkles size={28} color="#fff" />
-      </View>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main Onboarding Screen
-// ---------------------------------------------------------------------------
-
 export default function OnboardingScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { updateProfile, fetchProfile } = useProfile();
+  const { updateProfile } = useProfile();
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState('forward');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     recordOnboardingStarted().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    recordAppInteractive({ screen: 'onboarding' });
   }, []);
 
   // All onboarding data in one state
@@ -1173,28 +679,11 @@ export default function OnboardingScreen() {
   }, []);
 
   // Validation per step
-  const canProceed = useMemo(() => {
-    switch (step) {
-      case 1: return !!data.goal;
-      case 2: {
-        const hasAge = data.ageStr && parseInt(data.ageStr) >= 13;
-        const hasWeight = data.weightRaw && parseFloat(data.weightRaw) > 0;
-        const isMetric = data.heightUnit === 'cm';
-        const hasHeight = isMetric
-          ? (data.heightCm && parseInt(data.heightCm) > 0)
-          : (data.heightFt && parseInt(data.heightFt) > 0);
-        return hasAge && hasWeight && hasHeight;
-      }
-      case 3: return !!data.dietType;
-      case 4: return !!data.experience;
-      case 5: return true;
-      case 6: return true;
-      default: return false;
-    }
-  }, [step, data]);
+  const canProceed = useMemo(() => canContinueOnboardingStep(step, data), [step, data]);
 
   const goNext = useCallback(() => {
     if (step < TOTAL_STEPS && canProceed) {
+      Keyboard.dismiss();
       setDirection('forward');
       hapticImpact();
       setStep((s) => s + 1);
@@ -1203,11 +692,24 @@ export default function OnboardingScreen() {
 
   const goBack = useCallback(() => {
     if (step > 1) {
+      Keyboard.dismiss();
       setDirection('back');
       hapticImpact();
       setStep((s) => s - 1);
     }
   }, [step]);
+
+  const handleGoalSelect = useCallback((goal) => {
+    onChange({ goal });
+    if (step !== 1) {
+      return;
+    }
+
+    Keyboard.dismiss();
+    setDirection('forward');
+    hapticImpact();
+    setStep(2);
+  }, [onChange, step]);
 
   // Save everything and navigate to main app
   const completeOnboarding = useCallback(async (nextDestination) => {
@@ -1215,74 +717,11 @@ export default function OnboardingScreen() {
     setSaving(true);
 
     try {
-      const isMetric = data.heightUnit === 'cm';
-      let weightKg, heightCm, goalWeightKg;
-
-      if (isMetric) {
-        weightKg = parseFloat(data.weightRaw) || 75;
-        heightCm = parseFloat(data.heightCm) || 170;
-        goalWeightKg = data.goalWeightRaw ? parseFloat(data.goalWeightRaw) : null;
-      } else {
-        const lbs = parseFloat(data.weightRaw) || 165;
-        weightKg = lbs * 0.453592;
-        const ft = parseInt(data.heightFt || '5', 10);
-        const inches = parseInt(data.heightIn || '9', 10);
-        heightCm = (ft * 12 + inches) * 2.54;
-        goalWeightKg = data.goalWeightRaw ? parseFloat(data.goalWeightRaw) * 0.453592 : null;
-      }
-
-      const age = parseInt(data.ageStr || '30', 10);
-      const gender = data.gender === 'female' ? 'female' : 'male';
-      const bmr = computeBMR(weightKg, heightCm, age, gender);
-      const tdee = computeTDEE(bmr, data.activityLevel || 'moderate');
-      const calories = computeCalorieTarget(tdee, data.goal || 'maintain');
-      const macros = computeMacros(calories, data.goal || 'maintain');
-      const weeklyGoal = goalToWeeklyGoal(data.goal);
-      const macroPreset = goalToMacroPreset(data.goal);
-
-      // Convert stored weight/height to lbs/inches for ProfileContext compatibility
-      const weightLbs = Math.round(weightKg / 0.453592 * 10) / 10;
-      const heightInches = Math.round(heightCm / 2.54 * 10) / 10;
-      const goalWeightLbs = goalWeightKg ? Math.round(goalWeightKg / 0.453592 * 10) / 10 : null;
-
-      // Build dietary restrictions array
-      const dietaryRestrictions = [];
-      if (data.dietType && data.dietType !== 'Standard') dietaryRestrictions.push(data.dietType.toLowerCase());
-      if (data.allergies && !data.allergies.includes('None')) {
-        data.allergies.forEach((a) => dietaryRestrictions.push(a.toLowerCase()));
-      }
-
-      // Build equipment list
-      const equipmentList = (data.equipment || []).map((e) => {
-        switch (e) {
-          case 'bodyweight': return 'bodyweight';
-          case 'home_gym': return 'dumbbells';
-          case 'full_gym': return 'full gym';
-          case 'outdoor': return 'outdoor';
-          default: return e;
-        }
-      });
+      const starterPlan = buildStarterPlan(data);
 
       // Update ProfileContext state so isProfileComplete becomes true.
       // This sets local state immediately AND saves core fields to Supabase.
-      await updateProfile({
-        weight: weightLbs,
-        height: heightInches,
-        age,
-        gender,
-        activityLevel: data.activityLevel || 'moderate',
-        goalWeight: goalWeightLbs,
-        weeklyGoal,
-        macroPreset,
-        weightUnit: isMetric ? 'kg' : 'lbs',
-        dietaryRestrictions,
-        equipment: equipmentList,
-        customMacros: {
-          protein: macros.proteinPct,
-          carbs: macros.carbsPct,
-          fat: macros.fatPct,
-        },
-      });
+      await updateProfile(starterPlan.profileUpdates);
 
       // Save additional onboarding metadata to Supabase (non-blocking best-effort).
       // These are supplementary fields — the core profile is already saved above.
@@ -1291,35 +730,12 @@ export default function OnboardingScreen() {
           .from('profiles')
           .update({
             onboarding_completed: true,
-            onboarding_data: {
-              goal: data.goal,
-              dietType: data.dietType,
-              allergies: data.allergies,
-              mealsPerDay: data.mealsPerDay,
-              interestedInFasting: data.interestedInFasting,
-              experience: data.experience,
-              workoutTypes: data.workoutTypes,
-              equipment: data.equipment,
-              daysPerWeek: data.daysPerWeek,
-              sessionDuration: data.sessionDuration,
-              enableMealReminders: data.enableMealReminders,
-              enableWorkoutReminders: data.enableWorkoutReminders,
-              enableStreakWarnings: data.enableStreakWarnings,
-              connectHealth: data.connectHealth,
-              enableAI: data.enableAI,
-              waterGoal: data.waterGoal,
-              enableFasting: data.enableFasting,
-            },
+            onboarding_data: starterPlan.onboardingData,
           })
           .eq('user_id', user.id)
           .then(() => {})
           .catch(() => {});
       }
-
-      // NOTE: Do NOT call fetchProfile() here. It would re-fetch from Supabase and
-      // potentially overwrite the local state with stale data (if the Supabase write
-      // hasn't propagated yet), causing isProfileComplete to flip back to false and
-      // triggering a redirect loop back to onboarding.
 
       hapticHeavy();
       await recordOnboardingCompleted();
@@ -1327,13 +743,7 @@ export default function OnboardingScreen() {
       // Small delay to let React commit the profile state update before navigation,
       // ensuring ProfileAwareNav sees isProfileComplete = true when it evaluates.
       setTimeout(() => {
-        router.replace(nextDestination || {
-          pathname: '/(tabs)/add',
-          params: {
-            focus: 'browse',
-            source: 'onboarding_complete',
-          },
-        });
+        router.replace(nextDestination || '/(tabs)');
       }, 50);
     } catch (err) {
       if (__DEV__) console.error('Onboarding complete error:', err);
@@ -1351,6 +761,16 @@ export default function OnboardingScreen() {
     });
   }, [completeOnboarding]);
 
+  const completeOnboardingAndQuickLog = useCallback(() => {
+    completeOnboarding({
+      pathname: '/(tabs)/add',
+      params: {
+        focus: 'browse',
+        source: 'onboarding_complete',
+      },
+    });
+  }, [completeOnboarding]);
+
   // Choose entering/exiting animations based on direction
   const entering = direction === 'forward'
     ? SlideInRight.duration(350).springify().damping(18)
@@ -1362,12 +782,17 @@ export default function OnboardingScreen() {
 
   const renderStep = () => {
     switch (step) {
-      case 1: return <Step1Welcome data={data} onChange={onChange} />;
+      case 1: return <Step1Welcome data={data} onGoalSelect={handleGoalSelect} />;
       case 2: return <Step2BodyProfile data={data} onChange={onChange} />;
-      case 3: return <Step3Dietary data={data} onChange={onChange} />;
-      case 4: return <Step4Fitness data={data} onChange={onChange} />;
-      case 5: return <Step5SmartFeatures data={data} onChange={onChange} />;
-      case 6: return <Step6Generation data={data} onComplete={completeOnboarding} onImport={completeOnboardingAndImport} />;
+      case 3:
+        return (
+          <Step6Generation
+            data={data}
+            onComplete={completeOnboarding}
+            onImport={completeOnboardingAndImport}
+            onQuickLog={completeOnboardingAndQuickLog}
+          />
+        );
       default: return null;
     }
   };
@@ -1394,12 +819,12 @@ export default function OnboardingScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
           {/* Top navigation bar */}
           <View style={styles.navBar}>
-            {step > 1 && step < 6 ? (
+            {step > 1 && step < TOTAL_STEPS ? (
               <Pressable onPress={goBack} style={styles.navBtn} hitSlop={12}>
                 <ArrowLeft size={22} color={Colors.text} />
               </Pressable>
@@ -1425,36 +850,35 @@ export default function OnboardingScreen() {
             </ReAnimated.View>
           </View>
 
-          {/* Bottom navigation (not shown on step 6 — it has its own CTA) */}
-          {step < 6 && (
+          {/* Bottom navigation (not shown on final step — it has its own CTA) */}
+          {step < TOTAL_STEPS && (
             <View style={styles.bottomBar}>
               {step === 1 ? (
-                <Pressable
-                  onPress={() => router.replace('/(tabs)')}
-                  style={styles.skipBtn}
-                >
-                  <Text style={styles.skipText}>Skip for now</Text>
-                </Pressable>
+                <View style={styles.bottomHintWrap}>
+                  <Text style={styles.bottomHintText}>Two quick steps. Preferences can wait until after your first log.</Text>
+                </View>
               ) : (
                 <View />
               )}
 
-              <Pressable
-                onPress={goNext}
-                disabled={!canProceed}
-                style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
-              >
-                <LinearGradient
-                  colors={canProceed ? Gradients.electric : Gradients.disabled}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}
-                />
-                <Text style={styles.nextBtnText}>
-                  {step === 5 ? 'Build My Targets' : 'Continue'}
-                </Text>
-                <ArrowRight size={18} color="#fff" strokeWidth={2.5} />
-              </Pressable>
+              {step === 1 ? (
+                <View style={styles.nextBtnPlaceholder} />
+              ) : (
+                <Pressable
+                  onPress={goNext}
+                  disabled={!canProceed}
+                  style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
+                >
+                  <LinearGradient
+                    colors={canProceed ? Gradients.electric : Gradients.disabled}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}
+                  />
+                  <Text style={styles.nextBtnText}>See My Targets</Text>
+                  <ArrowRight size={18} color="#fff" strokeWidth={2.5} />
+                </Pressable>
+              )}
             </View>
           )}
         </KeyboardAvoidingView>
@@ -1889,6 +1313,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
   },
+  bottomHintWrap: {
+    flex: 1,
+    paddingRight: Spacing.md,
+  },
+  bottomHintText: {
+    fontSize: FontSize.sm,
+    color: Colors.textTertiary,
+    lineHeight: 18,
+  },
+  nextBtnPlaceholder: {
+    width: 152,
+  },
   skipBtn: {
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
@@ -2107,6 +1543,26 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: '#fff',
+  },
+  secondaryCtaWrap: {
+    width: '100%',
+    marginTop: Spacing.md,
+  },
+  secondaryCtaButton: {
+    minHeight: 48,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+  },
+  secondaryCtaText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
   },
   resultsImportCardWrap: {
     width: '100%',

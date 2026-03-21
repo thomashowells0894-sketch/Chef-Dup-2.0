@@ -23,30 +23,24 @@ import {
   ChevronRight,
   Download,
   Trophy,
-  CalendarDays,
   ArrowUpRight,
   ArrowDownRight,
   Zap,
-  Timer,
-  Apple,
   Activity,
   BarChart3,
   FileText,
   Crosshair,
-  Dumbbell,
-  Brain,
 } from 'lucide-react-native';
-import Svg, { Line as SvgLine, Rect as SvgRect, Circle as SvgCircle } from 'react-native-svg';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
 import ScreenWrapper from '../../components/ScreenWrapper';
-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Glass, Gradients } from '../../constants/theme';
+import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../../constants/theme';
 import { useMeals } from '../../context/MealContext';
 import { useProfile } from '../../context/ProfileContext';
 import { useGamification } from '../../context/GamificationContext';
 import { exportFoodDiaryCSV, exportWeeklySummaryPDF } from '../../services/exportData';
 import { hapticLight } from '../../lib/haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import usePredictiveAnalytics from '../../hooks/usePredictiveAnalytics';
+import usePredictiveAnalyticsHook from '../../hooks/usePredictiveAnalytics';
 import InsightCard from '../../components/InsightCard';
 import AnimatedProgressRing from '../../components/AnimatedProgressRing';
 import HabitHeatmap from '../../components/HabitHeatmap';
@@ -56,13 +50,12 @@ import {
   calculateAdherenceScore,
   analyzeMacroConsistency,
   calculateCorrelation,
-  analyzeStreaks,
   calculateProgressRate,
 } from '../../lib/analyticsEngine';
 import { generateInsights } from '../../lib/insightGenerator';
 import useWorkoutHistory from '../../hooks/useWorkoutHistory';
 import { useWeightHistory as useWeightHistoryHook } from '../../hooks/useWeightHistory';
-import useActivationTracker from '../../hooks/useActivationTracker';
+import useActivationTrackerHook from '../../hooks/useActivationTracker';
 import { getCoreLoopMetrics } from '../../lib/activationTracker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -420,16 +413,24 @@ const DailyAverageCard = memo(function DailyAverageCard({ avgCalories, avgProtei
 
 function StatsScreenInner() {
   const router = useRouter();
-  const { weeklyData, weeklyStats, goals, isLoading, getCalorieDataForRange, dayData } = useMeals();
+  const {
+    weeklyData,
+    weeklyStats,
+    goals,
+    isLoading,
+    isFetchingDay,
+    getCalorieDataForRange,
+    dayData,
+  } = useMeals();
   const { weeklyWeightData, profile } = useProfile();
   const { currentStreak, stats: gamificationStats } = useGamification();
-  const { weightTrend, plateauStatus, todayNutritionScore, fitnessScore, weeklyInsights } = usePredictiveAnalytics();
+  const { plateauStatus, todayNutritionScore, fitnessScore, weeklyInsights } = usePredictiveAnalyticsHook();
   const {
     state: activationState,
     stage: activationStage,
     progress: activationProgress,
     showValuePaywall,
-  } = useActivationTracker();
+  } = useActivationTrackerHook();
 
   const [selectedRange, setSelectedRange] = useState(7);
   const [isExporting, setIsExporting] = useState(false);
@@ -448,7 +449,7 @@ function StatsScreenInner() {
               const start = new Date();
               start.setDate(start.getDate() - 30);
               await exportFoodDiaryCSV(dayData, { start, end });
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Export Failed', 'Could not export your food diary. Please try again.');
             } finally {
               setIsExporting(false);
@@ -469,7 +470,7 @@ function StatsScreenInner() {
                 },
                 profile
               );
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Export Failed', 'Could not generate your report. Please try again.');
             } finally {
               setIsExporting(false);
@@ -832,7 +833,6 @@ function StatsScreenInner() {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
     const dayOfMonth = now.getDate();
 
     let loggedDays = 0;
@@ -917,17 +917,6 @@ function StatsScreenInner() {
     };
   }, [weeklyData]);
 
-  if (isLoading) {
-    return (
-      <ScreenWrapper>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading your stats...</Text>
-        </View>
-      </ScreenWrapper>
-    );
-  }
-
   return (
     <ScreenWrapper testID="stats-screen">
       <ScrollView
@@ -953,6 +942,15 @@ function StatsScreenInner() {
           </View>
           <Text style={styles.subtitle}>Know if you're winning or losing</Text>
         </ReAnimated.View>
+
+        {(isLoading || isFetchingDay) && (
+          <View style={styles.refreshBanner}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.refreshBannerText}>
+              {isLoading ? 'Building your baseline' : 'Refreshing your stats'}
+            </Text>
+          </View>
+        )}
 
         {/* Range Selector */}
         <ReAnimated.View entering={FadeInDown.delay(80).springify().mass(0.5).damping(10)}>
@@ -1730,6 +1728,23 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: FontSize.md,
     color: Colors.textSecondary,
+  },
+  refreshBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  refreshBannerText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.medium,
   },
   scrollView: {
     flex: 1,
