@@ -49,3 +49,8 @@ coverage/
 
 # Supabase CLI temp files
 supabase/.temp/
+
+# Local one-off admin helpers
+scripts/sentry-mcp.mjs
+scripts/supabase-admin.mjs
+scripts/supabase-rest-admin.mjs
