@@ -11,24 +11,59 @@ import {
   UIManager,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Zap, Plus, ScanBarcode } from 'lucide-react-native';
+import { Zap, Plus, ScanBarcode, Search, Bookmark, Link } from 'lucide-react-native';
 import { hapticImpact, hapticSuccess } from '../lib/haptics';
-import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
+import { Colors, Spacing, FontSize, FontWeight } from '../constants/theme';
 import { useFood } from '../context/FoodContext';
+import { useFrequentFoods } from '../hooks/useFrequentFoods';
+import { buildQuickLogItems } from '../lib/quickLogItems';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Default quick foods if no history
-const DEFAULT_QUICK_FOODS = [
-  { name: 'Coffee', emoji: '☕', calories: 5, protein: 0, carbs: 0, fat: 0 },
-  { name: 'Eggs (2)', emoji: '🥚', calories: 140, protein: 12, carbs: 1, fat: 10 },
-  { name: 'Banana', emoji: '🍌', calories: 105, protein: 1, carbs: 27, fat: 0 },
-  { name: 'Greek Yogurt', emoji: '🥛', calories: 100, protein: 17, carbs: 6, fat: 1 },
-  { name: 'Apple', emoji: '🍎', calories: 95, protein: 0, carbs: 25, fat: 0 },
-];
+const MEAL_LABELS = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+  snacks: 'Snack',
+};
+
+const ActionChip = memo(function ActionChip({ icon: Icon, label, onPress }) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.92,
+      friction: 8,
+      tension: 400,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 4,
+      tension: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+    >
+      <Animated.View style={[styles.actionChip, { transform: [{ scale: scaleAnim }] }]}>
+        <Icon size={18} color={Colors.primary} />
+        <Text style={styles.actionChipText}>{label}</Text>
+      </Animated.View>
+    </Pressable>
+  );
+});
 
 const ScanChip = memo(function ScanChip({ onPress }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -130,6 +165,7 @@ const QuickChip = memo(function QuickChip({ food, onPress }) {
       <Animated.View
         style={[
           styles.chip,
+          food.kind === 'saved_meal' && styles.savedMealChip,
           {
             transform: [{ scale: scaleAnim }],
             opacity: opacityAnim,
@@ -139,77 +175,82 @@ const QuickChip = memo(function QuickChip({ food, onPress }) {
         <Text style={styles.chipEmoji}>{food.emoji}</Text>
         <View style={styles.chipContent}>
           <Text style={styles.chipName} numberOfLines={1}>{food.name}</Text>
-          <Text style={styles.chipCalories}>{food.calories} kcal</Text>
+          <Text style={styles.chipCalories} numberOfLines={1}>
+            {food.subtitle || `${food.calories} kcal`}
+          </Text>
         </View>
-        <View style={styles.chipAction}>
-          <Plus size={14} color={Colors.primary} />
+        <View style={[styles.chipAction, food.kind === 'saved_meal' && styles.savedMealChipAction]}>
+          {food.kind === 'saved_meal' ? (
+            <Bookmark size={14} color={Colors.primary} />
+          ) : (
+            <Plus size={14} color={Colors.primary} />
+          )}
         </View>
       </Animated.View>
     </Pressable>
   );
 });
 
-function QuickLog() {
+function QuickLog({ mealType = 'snacks' }) {
   const router = useRouter();
-  const { recentLogs, addFood } = useFood();
+  const { addFood, recipes } = useFood();
+  const { getTopFoods } = useFrequentFoods();
+  const mealLabel = MEAL_LABELS[mealType] || 'Meal';
 
-  // Calculate most frequent foods from recent logs
-  const frequentFoods = useMemo(() => {
-    if (!recentLogs || recentLogs.length === 0) {
-      return DEFAULT_QUICK_FOODS;
-    }
-
-    // Count occurrences of each food by name
-    const foodCounts = {};
-    recentLogs.forEach((log) => {
-      const key = log.name;
-      if (!foodCounts[key]) {
-        foodCounts[key] = {
-          name: log.name,
-          emoji: log.emoji || '🍽️',
-          calories: log.calories,
-          protein: log.protein,
-          carbs: log.carbs,
-          fat: log.fat,
-          count: 0,
-        };
-      }
-      foodCounts[key].count++;
-    });
-
-    // Sort by count and take top 5
-    const sorted = Object.values(foodCounts)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    // If we have less than 5 from history, fill with defaults
-    if (sorted.length < 5) {
-      const existingNames = new Set(sorted.map(f => f.name));
-      const additional = DEFAULT_QUICK_FOODS.filter(f => !existingNames.has(f.name));
-      return [...sorted, ...additional].slice(0, 5);
-    }
-
-    return sorted;
-  }, [recentLogs]);
+  const quickItems = useMemo(() => buildQuickLogItems({
+    recipes,
+    frequentFoods: getTopFoods(6),
+    limit: 6,
+  }), [getTopFoods, recipes]);
 
   const handleQuickAdd = useCallback(async (food) => {
-    // Add to snacks by default for quick logging
-    await addFood(
-      {
-        name: food.name,
-        emoji: food.emoji,
-        calories: food.calories,
-        protein: food.protein,
-        carbs: food.carbs,
-        fat: food.fat,
+    await addFood({
+      ...food,
+      id: undefined,
+      clientRequestId: undefined,
+    }, mealType);
+  }, [addFood, mealType]);
+
+  const handleOpenSearch = useCallback(async () => {
+    await hapticImpact();
+    router.push({
+      pathname: '/add',
+      params: {
+        meal: mealType,
+        source: 'home_quick_log_search',
       },
-      'snacks'
-    );
-  }, [addFood]);
+    });
+  }, [mealType, router]);
 
   const handleOpenScanner = useCallback(() => {
-    router.push('/scanner');
-  }, [router]);
+    router.push({
+      pathname: '/barcode',
+      params: { meal: mealType },
+    });
+  }, [mealType, router]);
+
+  const handleOpenGoToMeals = useCallback(async () => {
+    await hapticImpact();
+    router.push({
+      pathname: '/add',
+      params: {
+        meal: mealType,
+        focus: 'recent',
+        source: 'home_quick_log_go_to',
+      },
+    });
+  }, [mealType, router]);
+
+  const handleOpenRecipeImport = useCallback(async () => {
+    await hapticImpact();
+    router.push({
+      pathname: '/recipe-import',
+      params: {
+        meal: mealType,
+        source: 'home_quick_log_import',
+      },
+    });
+  }, [mealType, router]);
 
   return (
     <View style={styles.container}>
@@ -218,17 +259,20 @@ function QuickLog() {
           <Zap size={16} color={Colors.primary} />
           <Text style={styles.title}>Quick Log</Text>
         </View>
-        <Text style={styles.subtitle}>Tap to add instantly</Text>
+        <Text style={styles.subtitle}>Go-to meals, repeat foods, and fast capture for {mealLabel.toLowerCase()}</Text>
       </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        <ActionChip icon={Search} label="Search" onPress={handleOpenSearch} />
         <ScanChip onPress={handleOpenScanner} />
-        {frequentFoods.map((food, index) => (
+        <ActionChip icon={Bookmark} label="Go-To" onPress={handleOpenGoToMeals} />
+        <ActionChip icon={Link} label="Import" onPress={handleOpenRecipeImport} />
+        {quickItems.map((food, index) => (
           <QuickChip
-            key={`${food.name}-${index}`}
+            key={`${food.kind}-${food.name}-${index}`}
             food={food}
             onPress={handleQuickAdd}
           />
@@ -268,6 +312,22 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.md,
     gap: Spacing.sm,
   },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '12',
+    borderRadius: 24,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.primary + '26',
+  },
+  actionChipText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -278,6 +338,10 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  savedMealChip: {
+    borderColor: Colors.primary + '35',
+    backgroundColor: Colors.primary + '12',
   },
   chipEmoji: {
     fontSize: 24,
@@ -301,6 +365,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  savedMealChipAction: {
+    backgroundColor: Colors.surfaceElevated,
   },
   scanChip: {
     flexDirection: 'row',

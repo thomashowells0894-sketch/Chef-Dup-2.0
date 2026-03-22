@@ -52,6 +52,7 @@ import {
   assessSearchResultTrust,
   bigramSimilarity,
   expandAbbreviations,
+  groupSearchResultsForDisplay,
   looksLikeBarcodeQuery,
   normalizeBarcodeQuery,
   normalizeServing,
@@ -717,6 +718,219 @@ describe('merging from multiple sources', () => {
     expect(result.products[0].qualityLabel).toBe('Community');
     expect(result.products[0].confidenceLevel).toBe('review');
     expect(result.products[0].qualityIssues).toContain('Calories missing or zero');
+  });
+
+  it('keeps canonical staple foods ahead of weaker branded matches for common foods', async () => {
+    mockSearchUSDA.mockResolvedValue({
+      products: [
+        {
+          barcode: 'usda-banana',
+          name: 'Banana',
+          brand: null,
+          image: null,
+          calories: 105,
+          protein: 1.3,
+          carbs: 27,
+          fat: 0.4,
+          serving: '1 medium',
+          servingSize: 118,
+          servingUnit: 'g',
+        },
+      ],
+      count: 1,
+    });
+    mockSearchProductsGlobal.mockResolvedValue({
+      products: [
+        {
+          barcode: 'off-banana-snack',
+          name: 'Banana Chips Snack',
+          brand: 'SnackCo',
+          image: null,
+          calories: 160,
+          protein: 1,
+          carbs: 18,
+          fat: 9,
+          serving: '1 bag',
+          servingSize: 28,
+          servingUnit: 'g',
+        },
+      ],
+      count: 1,
+    });
+
+    const result = await searchAllSources('banana');
+
+    expect(result.products[0].name).toBe('Banana');
+    expect(result.products[0].resultKind).toBe('canonical');
+  });
+
+  it('dedupes semantically identical canonical foods across sources', async () => {
+    const localResults = [
+      {
+        barcode: 'local-banana',
+        canonicalId: 'banana',
+        name: 'Banana',
+        brand: null,
+        image: null,
+        calories: 105,
+        protein: 1.3,
+        carbs: 27,
+        fat: 0.4,
+        serving: '1 medium',
+        servingSize: 118,
+        servingUnit: 'g',
+        source: 'local',
+      },
+    ];
+
+    mockSearchUSDA.mockResolvedValue({
+      products: [
+        {
+          barcode: 'usda-banana',
+          canonicalId: 'banana',
+          name: 'Banana, raw',
+          brand: null,
+          image: null,
+          calories: 105,
+          protein: 1.3,
+          carbs: 27,
+          fat: 0.4,
+          serving: '1 medium',
+          servingSize: 118,
+          servingUnit: 'g',
+        },
+      ],
+      count: 1,
+    });
+
+    const result = await searchAllSources('banana', localResults);
+    const bananaMatches = result.products.filter((item) => item.canonicalId === 'banana');
+
+    expect(bananaMatches).toHaveLength(1);
+    expect(result.products[0].source).toBe('local');
+  });
+
+  it('keeps canonical oatmeal ahead of branded instant oatmeal for simple oats queries', async () => {
+    const localResults = [
+      {
+        barcode: 'local-oatmeal',
+        canonicalId: 'oatmeal',
+        name: 'Oatmeal',
+        brand: null,
+        image: null,
+        calories: 150,
+        protein: 5,
+        carbs: 27,
+        fat: 3,
+        serving: '40g dry',
+        servingSize: 40,
+        servingUnit: 'g',
+        source: 'local',
+      },
+    ];
+
+    mockSearchProductsGlobal.mockResolvedValue({
+      products: [
+        {
+          barcode: 'off-instant-oats',
+          name: 'Instant Oatmeal Maple Packet',
+          brand: 'OatCo',
+          image: null,
+          calories: 180,
+          protein: 4,
+          carbs: 33,
+          fat: 3,
+          serving: '1 packet',
+          servingSize: 43,
+          servingUnit: 'g',
+        },
+      ],
+      count: 1,
+    });
+
+    const result = await searchAllSources('oats', localResults);
+
+    expect(result.products[0].name).toBe('Oatmeal');
+    expect(result.products[0].resultKind).toBe('canonical');
+    expect(result.products[0].canonicalId).toBe('oatmeal');
+  });
+});
+
+describe('groupSearchResultsForDisplay', () => {
+  it('builds best matches first, then keeps the remaining results in more results', () => {
+    const sections = groupSearchResultsForDisplay([
+      { name: 'Chicken Breast', resultKind: 'canonical', confidenceLevel: 'high' },
+      { name: 'Protein Yogurt', resultKind: 'branded', confidenceLevel: 'medium' },
+      { name: 'Chipotle Bowl', resultKind: 'restaurant', confidenceLevel: 'medium' },
+      { name: 'Scanned Item', resultKind: 'branded', confidenceLevel: 'review' },
+    ] as any, { bestMatchLimit: 3 });
+
+    expect(sections.map((section) => section.key)).toEqual([
+      'best_matches',
+      'more_results',
+    ]);
+    expect(sections[0].items[0].name).toBe('Chicken Breast');
+    expect(sections[0].items.map((item) => item.name)).toEqual([
+      'Chicken Breast',
+      'Protein Yogurt',
+      'Chipotle Bowl',
+    ]);
+    expect(sections[1].items[0].name).toBe('Scanned Item');
+  });
+
+  it('uses fallback canonical foods to fill best matches when backend results are weak', () => {
+    const sections = groupSearchResultsForDisplay(
+      [
+        { name: 'Scanned Item', barcode: 'weak-1', resultKind: 'branded', confidenceLevel: 'review' },
+      ] as any,
+      {
+        fallbackProducts: [
+          {
+            name: 'Banana',
+            barcode: 'local-banana',
+            canonicalId: 'banana',
+            resultKind: 'canonical',
+            confidenceLevel: 'high',
+          },
+          {
+            name: 'Eggs',
+            barcode: 'local-eggs',
+            canonicalId: 'eggs',
+            resultKind: 'canonical',
+            confidenceLevel: 'high',
+          },
+        ] as any,
+        bestMatchLimit: 2,
+      }
+    );
+
+    expect(sections[0].key).toBe('best_matches');
+    expect(sections[0].items.map((item) => item.name)).toEqual(['Banana', 'Eggs']);
+    expect(sections[1].key).toBe('more_results');
+    expect(sections[1].items[0].name).toBe('Scanned Item');
+  });
+
+  it('prefers canonical and fallback foods above non-canonical medium-confidence matches', () => {
+    const sections = groupSearchResultsForDisplay(
+      [
+        { name: 'Instant Oatmeal Maple Packet', barcode: 'off-oats', resultKind: 'branded', confidenceLevel: 'medium' },
+        { name: 'Protein Oats Pot', barcode: 'partner-oats', resultKind: 'branded', confidenceLevel: 'medium' },
+      ] as any,
+      {
+        fallbackProducts: [
+          {
+            name: 'Oatmeal',
+            barcode: 'local-oatmeal',
+            canonicalId: 'oatmeal',
+            resultKind: 'canonical',
+            confidenceLevel: 'high',
+          },
+        ] as any,
+        bestMatchLimit: 2,
+      }
+    );
+
+    expect(sections[0].items[0].name).toBe('Oatmeal');
   });
 });
 

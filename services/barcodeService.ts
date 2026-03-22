@@ -70,6 +70,8 @@ interface BarcodeFoodData {
   serving: string;
   image: string | null;
   barcode: string;
+  canonicalId?: string | null;
+  sourceLabel?: string | null;
   micronutrients?: BarcodeMicronutrients;
 }
 
@@ -79,11 +81,24 @@ export interface BarcodeLookupResult {
   found: boolean;
   food?: BarcodeFoodData;
   /** Where the result came from */
-  source?: 'cache' | 'openfoodfacts' | 'usda' | 'user_submitted';
+  source?: 'cache' | 'openfoodfacts' | 'usda' | 'user_submitted' | 'user_corrected';
   /** Scan confidence based on data completeness */
   confidence?: ScanConfidence;
   /** Whether this barcode was previously scanned */
   wasCached?: boolean;
+}
+
+interface BarcodeCorrectionInput {
+  name: string;
+  brand?: string | null;
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+  serving?: string | null;
+  image?: string | null;
+  canonicalId?: string | null;
+  sourceLabel?: string | null;
 }
 
 interface CachedBarcode {
@@ -134,12 +149,12 @@ interface USDABrandedFood {
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
-  foodNutrients: Array<{
+  foodNutrients: {
     nutrientId: number;
     nutrientName: string;
     value: number;
     unitName: string;
-  }>;
+  }[];
 }
 
 interface USDASearchResponse {
@@ -272,6 +287,28 @@ function calculateConfidence(food: BarcodeFoodData): ScanConfidence {
   return 'low';
 }
 
+function toBarcodeFoodData(
+  barcode: string,
+  food: BarcodeCorrectionInput,
+): BarcodeFoodData {
+  return {
+    name: food.name,
+    brand: food.brand || '',
+    calories: Math.max(Math.round(Number(food.calories) || 0), 0),
+    protein: Math.max(Math.round((Number(food.protein) || 0) * 10) / 10, 0),
+    carbs: Math.max(Math.round((Number(food.carbs) || 0) * 10) / 10, 0),
+    fat: Math.max(Math.round((Number(food.fat) || 0) * 10) / 10, 0),
+    fiber: 0,
+    sodium: 0,
+    sugar: 0,
+    serving: String(food.serving || '1 serving').trim() || '1 serving',
+    image: food.image || null,
+    barcode,
+    canonicalId: food.canonicalId || null,
+    sourceLabel: food.sourceLabel || 'Saved correction',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Open Food Facts Lookup
 // ---------------------------------------------------------------------------
@@ -376,6 +413,7 @@ async function lookupOFP(barcode: string): Promise<BarcodeFoodData | null> {
       serving: product.serving_size || '100g',
       image: product.image_front_url || product.image_url || null,
       barcode,
+      sourceLabel: 'Open Food Facts',
       micronutrients: Object.keys(micro).length > 0 ? micro : undefined,
     };
   } catch (e) {
@@ -455,6 +493,7 @@ async function lookupUSDA(barcode: string): Promise<BarcodeFoodData | null> {
       serving: servingText,
       image: null, // USDA doesn't provide images
       barcode,
+      sourceLabel: 'USDA',
     };
   } catch (e) {
     Sentry.captureException(e);
@@ -504,11 +543,13 @@ export async function lookupBarcode(barcode: string): Promise<BarcodeLookupResul
       serving: fastCached.serving,
       image: null,
       barcode: cleanBarcode,
+      canonicalId: fastCached.canonicalId || null,
+      sourceLabel: fastCached.sourceLabel || null,
     };
     return {
       found: true,
       food: fastFood,
-      source: 'cache',
+      source: fastCached.source === 'user_corrected' ? 'user_corrected' : 'cache',
       confidence: calculateConfidence(fastFood),
       wasCached: true,
     };
@@ -522,7 +563,7 @@ export async function lookupBarcode(barcode: string): Promise<BarcodeLookupResul
     return {
       found: true,
       food: cached.food,
-      source: 'cache',
+      source: cached.source === 'user_corrected' ? 'user_corrected' : 'cache',
       confidence: calculateConfidence(cached.food),
       wasCached: true,
     };
@@ -582,6 +623,33 @@ export async function submitBarcodeData(
   food: BarcodeFoodData,
 ): Promise<void> {
   await cacheBarcodeResult(barcode, food, 'user_submitted');
+}
+
+export async function rememberBarcodeCorrection(
+  barcode: string,
+  food: BarcodeCorrectionInput,
+): Promise<void> {
+  const cleanBarcode = barcode.replace(/[^0-9]/g, '').trim();
+  if (!cleanBarcode || !food?.name) {
+    return;
+  }
+
+  const correctedFood = toBarcodeFoodData(cleanBarcode, food);
+  await Promise.all([
+    cacheBarcodeResult(cleanBarcode, correctedFood, 'user_corrected'),
+    setFastCachedBarcode(cleanBarcode, {
+      name: correctedFood.name,
+      calories: correctedFood.calories,
+      protein: correctedFood.protein,
+      carbs: correctedFood.carbs,
+      fat: correctedFood.fat,
+      serving: correctedFood.serving,
+      brand: correctedFood.brand,
+      source: 'user_corrected',
+      sourceLabel: correctedFood.sourceLabel || 'Saved correction',
+      canonicalId: correctedFood.canonicalId || null,
+    }),
+  ]);
 }
 
 // ---------------------------------------------------------------------------

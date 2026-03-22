@@ -1,5 +1,5 @@
 import '../lib/i18n';
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -47,6 +47,8 @@ import TrialExpirationBanner from '../components/TrialExpirationBanner';
 import WinBackOffer from '../components/WinBackOffer';
 import { useWinBack } from '../hooks/useWinBack';
 import { recordStartupCheckpoint } from '../lib/startupTrace';
+import { useActivationTracker } from '../hooks/useActivationTracker';
+import { shouldAllowDeferredStartupPrompts } from '../lib/startupExperience';
 
 /**
  * Utility to compose multiple context providers without deep nesting.
@@ -91,9 +93,24 @@ function ProfileAwareNav() {
     isHydrated,
     isLoading,
   } = useProfile();
+  const { state: activationState, stage: activationStage, isLoading: activationLoading } = useActivationTracker();
   const segments = useSegments();
   const router = useRouter();
   const { offer: winBackOffer, dismissOffer: dismissWinBack } = useWinBack();
+  const [promptDelayElapsed, setPromptDelayElapsed] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setPromptDelayElapsed(false);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setPromptDelayElapsed(true);
+    }, 4000);
+
+    return () => clearTimeout(timeoutId);
+  }, [user]);
 
   useEffect(() => {
     if (!isHydrated || isLoading) return;
@@ -116,6 +133,15 @@ function ProfileAwareNav() {
     router.push('/settings');
   }, [dismissWinBack, router]);
 
+  const showDeferredPrompts = shouldAllowDeferredStartupPrompts({
+    hasUser: Boolean(user),
+    delayElapsed: promptDelayElapsed && !activationLoading,
+    activationStage,
+    foodLogCount: activationState.foodLogCount,
+    hasCompletedOnboarding,
+    profileHydrationState,
+  });
+
   if (user && (!isHydrated || isLoading)) {
     return (
       <AppBootstrapScreen
@@ -137,11 +163,11 @@ function ProfileAwareNav() {
             animationDuration: 150,
           }}
         />
-        {user ? <TrialExpirationBanner /> : null}
+        {user && showDeferredPrompts ? <TrialExpirationBanner /> : null}
         <XPToast />
-        <FastingPromptModal />
+        {showDeferredPrompts ? <FastingPromptModal /> : null}
         <CelebrationOverlay />
-        {user ? (
+        {user && showDeferredPrompts ? (
           <WinBackOffer
             offer={winBackOffer}
             onAccept={handleWinBackAccept}
@@ -347,17 +373,17 @@ function RootLayout() {
   }, [fontError]);
 
   useEffect(() => {
+    if (fontsLoaded || fontError) {
+      recordStartupCheckpoint('fonts_ready', {
+        loaded: fontsLoaded,
+        errored: Boolean(fontError),
+      });
+    }
+  }, [fontError, fontsLoaded]);
+
+  useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
-
-  if (!fontsLoaded && !fontError) {
-    return (
-      <AppBootstrapScreen
-        title="Starting FuelIQ"
-        subtitle="Opening your nutrition coach and getting the fastest logging tools ready."
-      />
-    );
-  }
 
   return (
     <ErrorBoundary onReset={handleErrorReset}>

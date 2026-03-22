@@ -3,6 +3,7 @@ import { Sentry } from './sentry';
 
 export interface FrequentFoodStoreItem {
   id: string | number;
+  canonicalId?: string | null;
   name: string;
   emoji?: string;
   calories?: number;
@@ -10,7 +11,16 @@ export interface FrequentFoodStoreItem {
   carbs?: number;
   fat?: number;
   serving?: string;
+  servingSize?: number;
   servingUnit?: string;
+  brand?: string | null;
+  barcode?: string;
+  image?: string | null;
+  source?: string;
+  sourceLabel?: string;
+  qualityTag?: 'verified' | 'curated' | 'partner' | 'restaurant' | 'community';
+  qualityLabel?: string;
+  resultKind?: 'canonical' | 'branded' | 'custom' | 'saved_meal' | 'recent' | 'quick_add' | 'restaurant';
   count?: number;
   lastUsed?: string;
   pinned?: boolean;
@@ -46,6 +56,31 @@ function sortByRecency(foods: FrequentFoodStoreItem[]): FrequentFoodStoreItem[] 
   return [...foods].sort(
     (a, b) => new Date(b.lastUsed || 0).getTime() - new Date(a.lastUsed || 0).getTime()
   );
+}
+
+function normalizeIdentityText(value: string | number | null | undefined): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildFoodIdentityKey(food: Partial<FrequentFoodStoreItem> & { name?: string }): string {
+  const canonicalId = normalizeIdentityText(food.canonicalId);
+  if (canonicalId) {
+    return `canonical:${canonicalId}`;
+  }
+
+  const barcode = normalizeIdentityText(food.barcode);
+  if (barcode) {
+    return `barcode:${barcode}`;
+  }
+
+  const resultKind = normalizeIdentityText(food.resultKind || 'food');
+  const brand = normalizeIdentityText(food.brand);
+  const name = normalizeIdentityText(food.name);
+  return `${resultKind}:${brand}:${name}`;
 }
 
 function notifyListeners() {
@@ -114,10 +149,13 @@ export async function recordFrequentFood(
   if (!food?.name) return;
 
   const foods = await loadFrequentFoods();
-  const normalizedName = food.name.toLowerCase().trim();
+  const incomingIdentity = buildFoodIdentityKey(food);
+  const normalizedName = normalizeIdentityText(food.name);
   const now = new Date().toISOString();
   const existingIndex = foods.findIndex(
-    (entry) => entry.name && entry.name.toLowerCase().trim() === normalizedName
+    (entry) =>
+      buildFoodIdentityKey(entry) === incomingIdentity ||
+      normalizeIdentityText(entry.name) === normalizedName
   );
 
   let nextFoods: FrequentFoodStoreItem[];
@@ -131,15 +169,26 @@ export async function recordFrequentFood(
       protein: food.protein ?? existing.protein ?? 0,
       carbs: food.carbs ?? existing.carbs ?? 0,
       fat: food.fat ?? existing.fat ?? 0,
+      canonicalId: food.canonicalId ?? existing.canonicalId ?? null,
       emoji: food.emoji || existing.emoji,
       serving: food.serving || existing.serving || '1 serving',
+      servingSize: food.servingSize ?? existing.servingSize ?? 1,
       servingUnit: food.servingUnit || existing.servingUnit || 'serving',
+      brand: food.brand ?? existing.brand ?? null,
+      barcode: food.barcode || existing.barcode,
+      image: food.image ?? existing.image ?? null,
+      source: food.source || existing.source,
+      sourceLabel: food.sourceLabel || existing.sourceLabel,
+      qualityTag: food.qualityTag || existing.qualityTag,
+      qualityLabel: food.qualityLabel || existing.qualityLabel,
+      resultKind: food.resultKind || existing.resultKind || 'recent',
     };
     nextFoods = [updated, ...foods.filter((_, index) => index !== existingIndex)];
   } else {
     nextFoods = [
       {
         id: String(food.id || `freq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+        canonicalId: food.canonicalId ?? null,
         name: food.name,
         emoji: food.emoji || food.name.charAt(0) || '?',
         calories: food.calories || 0,
@@ -147,7 +196,16 @@ export async function recordFrequentFood(
         carbs: food.carbs || 0,
         fat: food.fat || 0,
         serving: food.serving || '1 serving',
+        servingSize: food.servingSize || 1,
         servingUnit: food.servingUnit || 'serving',
+        brand: food.brand ?? null,
+        barcode: food.barcode,
+        image: food.image ?? null,
+        source: food.source,
+        sourceLabel: food.sourceLabel,
+        qualityTag: food.qualityTag,
+        qualityLabel: food.qualityLabel,
+        resultKind: food.resultKind || 'recent',
         count: 1,
         lastUsed: now,
         pinned: false,
@@ -199,9 +257,19 @@ export async function mergeFrequentFoods(
         protein: food.protein ?? existing.protein ?? 0,
         carbs: food.carbs ?? existing.carbs ?? 0,
         fat: food.fat ?? existing.fat ?? 0,
+        canonicalId: food.canonicalId ?? existing.canonicalId ?? null,
         emoji: food.emoji || existing.emoji,
         serving: food.serving || existing.serving || '1 serving',
+        servingSize: food.servingSize ?? existing.servingSize ?? 1,
         servingUnit: food.servingUnit || existing.servingUnit || 'serving',
+        brand: food.brand ?? existing.brand ?? null,
+        barcode: food.barcode || existing.barcode,
+        image: food.image ?? existing.image ?? null,
+        source: food.source || existing.source,
+        sourceLabel: food.sourceLabel || existing.sourceLabel,
+        qualityTag: food.qualityTag || existing.qualityTag,
+        qualityLabel: food.qualityLabel || existing.qualityLabel,
+        resultKind: food.resultKind || existing.resultKind || 'recent',
         pinned: existing.pinned || false,
       });
       return;
@@ -209,6 +277,7 @@ export async function mergeFrequentFoods(
 
     mergedByName.set(normalizedName, {
       id: String(food.id || `freq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+      canonicalId: food.canonicalId ?? null,
       name: food.name,
       emoji: food.emoji || food.name.charAt(0) || '?',
       calories: food.calories || 0,
@@ -216,7 +285,16 @@ export async function mergeFrequentFoods(
       carbs: food.carbs || 0,
       fat: food.fat || 0,
       serving: food.serving || '1 serving',
+      servingSize: food.servingSize || 1,
       servingUnit: food.servingUnit || 'serving',
+      brand: food.brand ?? null,
+      barcode: food.barcode,
+      image: food.image ?? null,
+      source: food.source,
+      sourceLabel: food.sourceLabel,
+      qualityTag: food.qualityTag,
+      qualityLabel: food.qualityLabel,
+      resultKind: food.resultKind || 'recent',
       count: incomingCount,
       lastUsed: incomingLastUsed,
       pinned: false,

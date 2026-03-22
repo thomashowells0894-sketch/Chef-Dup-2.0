@@ -33,6 +33,7 @@ interface RecipeContextValue {
   recipes: RecipeItem[];
   recentFoods: RecentFoodItem[];
   recentFoodsLoading: boolean;
+  recentFoodsError: string | null;
   isLoading: boolean;
   saveRecipe: (name: string, ingredients: FoodItem[], servings: number, emoji?: string) => Promise<RecipeItem>;
   updateRecipe: (recipeId: string, updates: Partial<RecipeItem>) => Promise<void>;
@@ -44,6 +45,9 @@ interface RecipeContextValue {
 const RecipeContext = createContext<RecipeContextValue | null>(null);
 
 const RECIPES_KEY = '@fueliq_recipes';
+function buildRecentFoodsCacheKey(userId?: string | null) {
+  return userId ? `@fueliq_recent_foods:${userId}` : '@fueliq_recent_foods';
+}
 
 export function RecipeProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -51,6 +55,7 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
   const [recipes, setRecipes] = useState<RecipeItem[]>([]);
   const [recentFoods, setRecentFoods] = useState<RecentFoodItem[]>([]);
   const [recentFoodsLoading, setRecentFoodsLoading] = useState<boolean>(false);
+  const [recentFoodsError, setRecentFoodsError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Ref for stable callbacks that don't re-create when recipes changes
@@ -71,14 +76,27 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     if (!user) {
       setRecipes([]);
       setRecentFoods([]);
+      setRecentFoodsError(null);
       setIsLoading(false);
       return;
     }
 
     (async () => {
       try {
-        const saved = await AsyncStorage.getItem(RECIPES_KEY);
-        if (saved) setRecipes(JSON.parse(saved));
+        const [savedRecipes, savedRecentFoods] = await Promise.all([
+          AsyncStorage.getItem(RECIPES_KEY),
+          AsyncStorage.getItem(buildRecentFoodsCacheKey(user.id)),
+        ]);
+
+        if (savedRecipes) {
+          setRecipes(JSON.parse(savedRecipes));
+        }
+        if (savedRecentFoods) {
+          const parsedRecentFoods = JSON.parse(savedRecentFoods);
+          if (Array.isArray(parsedRecentFoods)) {
+            setRecentFoods(parsedRecentFoods);
+          }
+        }
       } catch (error: any) {
         if (__DEV__) console.error('[Recipe] Failed to load cached recipes:', error.message);
       } finally {
@@ -280,6 +298,7 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     setRecentFoodsLoading(true);
+    setRecentFoodsError(null);
 
     try {
       const { data, error } = await supabase
@@ -292,8 +311,7 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         if (__DEV__) console.error('[Recipe] Error fetching recent foods:', error.message);
-        setRecentFoods([]);
-        setRecentFoodsLoading(false);
+        setRecentFoodsError('Showing saved recent foods until connection improves.');
         return;
       }
 
@@ -322,9 +340,16 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
       }
 
       setRecentFoods(uniqueFoods);
+      setRecentFoodsError(null);
+      await AsyncStorage.setItem(
+        buildRecentFoodsCacheKey(user.id),
+        JSON.stringify(uniqueFoods)
+      ).catch((cacheError: any) => {
+        if (__DEV__) console.error('[Recipe] Failed to cache recent foods:', cacheError.message);
+      });
     } catch (error: any) {
       if (__DEV__) console.error('[Recipe] Failed to fetch recent foods:', error.message);
-      setRecentFoods([]);
+      setRecentFoodsError('Showing saved recent foods until connection improves.');
     } finally {
       setRecentFoodsLoading(false);
     }
@@ -335,6 +360,7 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
       recipes,
       recentFoods,
       recentFoodsLoading,
+      recentFoodsError,
       isLoading,
       saveRecipe,
       updateRecipe,
@@ -342,7 +368,7 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
       fetchRecentFoods,
       getSmartSuggestion,
     }),
-    [recipes, recentFoods, recentFoodsLoading, isLoading, saveRecipe, updateRecipe, deleteRecipe, fetchRecentFoods, getSmartSuggestion]
+    [recipes, recentFoods, recentFoodsLoading, recentFoodsError, isLoading, saveRecipe, updateRecipe, deleteRecipe, fetchRecentFoods, getSmartSuggestion]
   );
 
   return <RecipeContext.Provider value={value}>{children}</RecipeContext.Provider>;

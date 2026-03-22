@@ -20,6 +20,13 @@ import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 import FoodSwapSheet from './FoodSwapSheet';
 import { useFavoriteFoods } from '../hooks/useFavoriteFoods';
+import {
+  buildMeasureQuickAmounts,
+  calculateFoodDetailValues,
+  convertFoodDetailQuantity,
+  DEFAULT_SERVING_QUICK_AMOUNTS,
+  getFoodMeasurementOption,
+} from '../lib/foodDetailMath';
 
 // Performance: Blurhash placeholder for smooth loading
 const BLURHASH = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
@@ -94,10 +101,12 @@ function getConfidenceTextColor(level) {
   return Colors.warning;
 }
 
-function UnitSelector({ value, onChange, servingLabel }) {
+function UnitSelector({ value, onChange, servingLabel, measurementOption }) {
   const options = [
     { id: 'serving', label: servingLabel || 'Serving' },
-    { id: 'grams', label: 'Grams' },
+    ...(measurementOption
+      ? [{ id: 'measure', label: measurementOption.selectorLabel }]
+      : []),
   ];
 
   const handleSelect = async (unit) => {
@@ -199,6 +208,7 @@ function FoodDetailModal({
   const [manualProtein, setManualProtein] = useState('');
   const [manualCarbs, setManualCarbs] = useState('');
   const [manualFat, setManualFat] = useState('');
+  const measurementOption = useMemo(() => getFoodMeasurementOption(food), [food]);
 
   // Parse base nutritional values from food
   const baseValues = useMemo(() => {
@@ -216,27 +226,14 @@ function FoodDetailModal({
 
   // Calculate current values based on quantity and unit
   const calculatedValues = useMemo(() => {
-    const qty = parseFloat(quantity) || 0;
+    return calculateFoodDetailValues(baseValues, quantity, unit, measurementOption);
+  }, [baseValues, measurementOption, quantity, unit]);
 
-    // Calculate multiplier based on unit
-    let multiplier;
-    if (unit === 'grams') {
-      // qty grams / 100g base = multiplier
-      multiplier = qty / 100;
-    } else {
-      // qty servings * 1 = multiplier (base is per serving)
-      multiplier = qty;
-    }
-
-    return {
-      calories: Math.round(baseValues.calories * multiplier),
-      protein: Math.round(baseValues.protein * multiplier * 10) / 10,
-      carbs: Math.round(baseValues.carbs * multiplier * 10) / 10,
-      fat: Math.round(baseValues.fat * multiplier * 10) / 10,
-      quantity: qty,
-      multiplier,
-    };
-  }, [quantity, unit, baseValues]);
+  const quickAmountOptions = useMemo(() => (
+    unit === 'measure'
+      ? buildMeasureQuickAmounts(measurementOption)
+      : DEFAULT_SERVING_QUICK_AMOUNTS
+  ), [measurementOption, unit]);
 
   // Final values (manual override or calculated)
   const finalValues = useMemo(() => {
@@ -253,32 +250,45 @@ function FoodDetailModal({
 
   // Reset state when modal opens with new food
   useEffect(() => {
-    if (visible && food) {
-      setManualOverride(false);
-      setManualCalories('');
-      setManualProtein('');
-      setManualCarbs('');
-      setManualFat('');
-
-      // Restore last-used quantity for this food, or default to 1 serving
-      getQtyMemory().then((mem) => {
-        const saved = mem[food.name];
-        if (saved) {
-          setQuantity(saved.quantity);
-          setUnit(saved.unit);
-        } else {
-          setQuantity('1');
-          setUnit('serving');
-        }
-      });
-
-      // Auto-focus after modal transition completes (no arbitrary delay)
-      const handle = InteractionManager.runAfterInteractions(() => {
-        quantityInputRef.current?.focus();
-      });
-      return () => handle.cancel();
+    if (!visible || !food) {
+      return undefined;
     }
-  }, [visible, food]);
+
+    let cancelled = false;
+    setManualOverride(false);
+    setManualCalories('');
+    setManualProtein('');
+    setManualCarbs('');
+    setManualFat('');
+
+    // Restore last-used quantity for this food, or default to 1 serving.
+    // Guard against late async restores overwriting a newer food selection.
+    getQtyMemory().then((mem) => {
+      if (cancelled) {
+        return;
+      }
+
+      const saved = mem[food.name];
+      const normalizedSavedUnit = saved?.unit === 'grams' ? 'measure' : saved?.unit;
+      const savedUnit = normalizedSavedUnit === 'measure' && !measurementOption
+        ? 'serving'
+        : normalizedSavedUnit;
+      setQuantity(saved?.quantity || '1');
+      setUnit(savedUnit || 'serving');
+    });
+
+    // Auto-focus after modal transition completes (no arbitrary delay)
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (!cancelled) {
+        quantityInputRef.current?.focus();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      handle.cancel();
+    };
+  }, [food, measurementOption, visible]);
 
   // Sync manual values with calculated when toggling override on
   useEffect(() => {
@@ -299,24 +309,9 @@ function FoodDetailModal({
   }, []);
 
   const handleUnitChange = useCallback((newUnit) => {
-    // Convert quantity when switching units
-    setQuantity((prevQuantity) => {
-      const qty = parseFloat(prevQuantity) || 1;
-
-      if (unit === 'serving' && newUnit === 'grams') {
-        // Convert servings to grams
-        const grams = Math.round(qty * baseValues.servingSize);
-        return grams.toString();
-      } else if (unit === 'grams' && newUnit === 'serving') {
-        // Convert grams to servings
-        const servings = qty / baseValues.servingSize;
-        return servings.toFixed(1).replace(/\.0$/, '');
-      }
-      return prevQuantity;
-    });
-
+    setQuantity((prevQuantity) => convertFoodDetailQuantity(prevQuantity, unit, newUnit, measurementOption));
     setUnit(newUnit);
-  }, [unit, baseValues.servingSize]);
+  }, [measurementOption, unit]);
 
   const handleQuickAmount = useCallback(async (amount, selectedUnit) => {
     await hapticLight();
@@ -404,8 +399,8 @@ function FoodDetailModal({
       : food.confidenceReason;
 
   // Build breakdown string
-  const breakdownText = unit === 'grams'
-    ? `${quantityNum}g = ${finalValues.calories} kcal`
+  const breakdownText = unit === 'measure' && measurementOption
+    ? `${quantityNum}${measurementOption.shortLabel} = ${finalValues.calories} kcal`
     : `${quantityNum} serving${quantityNum !== 1 ? 's' : ''} = ${finalValues.calories} kcal`;
 
   return (
@@ -518,6 +513,7 @@ function FoodDetailModal({
               value={unit}
               onChange={handleUnitChange}
               servingLabel={food.serving ? `Serving (${food.serving})` : 'Serving'}
+              measurementOption={measurementOption}
             />
 
             {/* Large Quantity Input */}
@@ -534,67 +530,21 @@ function FoodDetailModal({
                 placeholderTextColor={Colors.textTertiary}
               />
               <Text style={styles.quantityUnit}>
-                {unit === 'grams' ? 'g' : 'serving(s)'}
+                {unit === 'measure' && measurementOption ? measurementOption.shortLabel : 'serving(s)'}
               </Text>
             </View>
 
             {/* Quick Amounts */}
             <View style={styles.quickAmounts}>
-              {unit === 'serving' ? (
-                <>
-                  <QuickAmountChip
-                    amount="0.5"
-                    label="½"
-                    isSelected={quantity === '0.5'}
-                    onPress={() => handleQuickAmount('0.5')}
-                  />
-                  <QuickAmountChip
-                    amount="1"
-                    label="1"
-                    isSelected={quantity === '1'}
-                    onPress={() => handleQuickAmount('1')}
-                  />
-                  <QuickAmountChip
-                    amount="1.5"
-                    label="1½"
-                    isSelected={quantity === '1.5'}
-                    onPress={() => handleQuickAmount('1.5')}
-                  />
-                  <QuickAmountChip
-                    amount="2"
-                    label="2"
-                    isSelected={quantity === '2'}
-                    onPress={() => handleQuickAmount('2')}
-                  />
-                </>
-              ) : (
-                <>
-                  <QuickAmountChip
-                    amount="50"
-                    label="50g"
-                    isSelected={quantity === '50'}
-                    onPress={() => handleQuickAmount('50')}
-                  />
-                  <QuickAmountChip
-                    amount="100"
-                    label="100g"
-                    isSelected={quantity === '100'}
-                    onPress={() => handleQuickAmount('100')}
-                  />
-                  <QuickAmountChip
-                    amount="150"
-                    label="150g"
-                    isSelected={quantity === '150'}
-                    onPress={() => handleQuickAmount('150')}
-                  />
-                  <QuickAmountChip
-                    amount="200"
-                    label="200g"
-                    isSelected={quantity === '200'}
-                    onPress={() => handleQuickAmount('200')}
-                  />
-                </>
-              )}
+              {quickAmountOptions.map((option) => (
+                <QuickAmountChip
+                  key={option.amount}
+                  amount={option.amount}
+                  label={option.label}
+                  isSelected={quantity === option.amount}
+                  onPress={() => handleQuickAmount(option.amount)}
+                />
+              ))}
             </View>
           </View>
 

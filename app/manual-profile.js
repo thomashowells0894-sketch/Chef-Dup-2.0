@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '../lib/supabase';
 import { ArrowLeft } from 'lucide-react-native';
 import { useProfile } from '../context/ProfileContext';
-import { Colors, Spacing, FontSize, FontWeight, BorderRadius, Gradients } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
+import { normalizeManualProfileMeasurements } from '../lib/profileState';
+import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 
 export default function ManualProfile() {
   const router = useRouter();
-  const { profile, fetchProfile } = useProfile();
+  const { user } = useAuth();
+  const { profile, updateProfile } = useProfile();
   const [loading, setLoading] = useState(false);
+  const prefilledUserRef = useRef(null);
 
   // Unit preference (true = Imperial, false = Metric)
   const [isImperial, setIsImperial] = useState(true);
@@ -30,6 +33,11 @@ export default function ManualProfile() {
 
   // Pre-fill form from existing profile data
   useEffect(() => {
+    const currentUserId = user?.id || 'anonymous';
+    if (prefilledUserRef.current === currentUserId) {
+      return;
+    }
+
     if (profile && profile.weight && profile.height && profile.age) {
       // Profile stores weight in lbs and height in inches
       const storedWeightLbs = profile.weight;
@@ -61,8 +69,9 @@ export default function ManualProfile() {
       const cm = Math.round(storedHeightInches * 2.54);
       setWeightKg(kg?.toString() || '');
       setHeightCm(cm?.toString() || '');
+      prefilledUserRef.current = currentUserId;
     }
-  }, [profile]);
+  }, [profile, user?.id]);
 
   // Validate inputs based on unit selection
   const validateInputs = () => {
@@ -118,107 +127,40 @@ export default function ManualProfile() {
 
     setLoading(true);
     try {
-      // 1. Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
+      const { weightLbs: canonicalWeightLbs, heightInches: canonicalHeightInches } =
+        normalizeManualProfileMeasurements({
+          isImperial,
+          weightLbs,
+          heightFeet,
+          heightInches,
+          weightKg,
+          heightCm,
+        });
 
-      // 2. Convert inputs to METRIC (kg and cm) for database storage
-      let finalWeightKg, finalHeightCm;
-
-      if (isImperial) {
-        // Convert Imperial to Metric
-        finalWeightKg = parseFloat(weightLbs) / 2.20462;
-        const totalInches = (parseInt(heightFeet) * 12) + (parseInt(heightInches) || 0);
-        finalHeightCm = totalInches * 2.54;
-      } else {
-        // Already Metric
-        finalWeightKg = parseFloat(weightKg);
-        finalHeightCm = parseFloat(heightCm);
+      if (!canonicalWeightLbs || !canonicalHeightInches) {
+        throw new Error('Could not convert your measurements. Please review your inputs.');
       }
 
-      // Round for cleaner storage
-      finalWeightKg = Math.round(finalWeightKg * 10) / 10; // 1 decimal
-      finalHeightCm = Math.round(finalHeightCm);
-
-      const ageNum = parseInt(age);
-
-      // 3. Calculate BMR using Mifflin-St Jeor equation (uses kg and cm)
-      let bmr;
-      if (gender === 'Male') {
-        bmr = 10 * finalWeightKg + 6.25 * finalHeightCm - 5 * ageNum + 5;
-      } else {
-        bmr = 10 * finalWeightKg + 6.25 * finalHeightCm - 5 * ageNum - 161;
-      }
-      bmr = Math.round(bmr);
-
-      // 4. Calculate TDEE (using moderate activity level = 1.55)
-      const activityMultiplier = 1.55;
-      let tdee = Math.round(bmr * activityMultiplier);
-
-      // 5. Adjust TDEE based on goal
       const goalMap = {
         'Lose Fat': 'lose1',
         'Maintain': 'maintain',
-        'Build Muscle': 'gain05'
+        'Build Muscle': 'gain05',
       };
       const weeklyGoal = goalMap[goal] || 'maintain';
 
-      if (weeklyGoal === 'lose1') {
-        tdee -= 500; // Deficit for weight loss
-      } else if (weeklyGoal === 'gain05') {
-        tdee += 250; // Surplus for muscle gain
-      }
-
-      // 6. Calculate Macros
-      // Protein: 2g per kg of bodyweight
-      const proteinGrams = Math.round(finalWeightKg * 2);
-      const proteinCalories = proteinGrams * 4;
-
-      // Fat: 25% of total calories
-      const fatCalories = Math.round(tdee * 0.25);
-      const fatGrams = Math.round(fatCalories / 9);
-
-      // Carbs: remaining calories
-      const carbCalories = tdee - proteinCalories - fatCalories;
-      const carbGrams = Math.round(carbCalories / 4);
-
-      const customMacros = {
-        calories: tdee,
-        protein: proteinGrams,
-        fat: fatGrams,
-        carbs: carbGrams,
-      };
-
-      // 7. Prepare data object - store in METRIC (kg, cm)
-      const updates = {
-        user_id: user.id,
-        daily_calories: tdee,
-        age: ageNum,
-        weight: finalWeightKg,      // Stored as kg
-        height: finalHeightCm,      // Stored as cm
+      await updateProfile({
+        age: parseInt(age, 10),
+        weight: canonicalWeightLbs,
+        height: canonicalHeightInches,
         gender: gender.toLowerCase(),
-        weekly_goal: weeklyGoal,
-        activity_level: 'moderate',
-        weight_unit: isImperial ? 'lbs' : 'kg', // User's display preference
-        bmr: bmr,
-        tdee: tdee,
-        custom_macros: customMacros,
-        onboarding_completed: true,
-        updated_at: new Date(),
-      };
+        weeklyGoal,
+        activityLevel: 'moderate',
+        weightUnit: isImperial ? 'lbs' : 'kg',
+      }, {
+        onboardingCompleted: true,
+        targetBehavior: 'commit_generated',
+      });
 
-      // 8. Save to Supabase
-      const { data, error } = await supabase
-        .from('profiles')
-        .upsert(updates)
-        .select();
-
-      if (error) throw error;
-
-      if (__DEV__) console.log('Profile saved successfully:', data);
-
-      // 9. Refresh context data before navigating
-      await fetchProfile();
       router.replace('/(tabs)');
     } catch (error) {
       if (__DEV__) console.error("Save failed:", error);

@@ -14,6 +14,9 @@ interface CachedBarcode {
     fat: number;
     serving: string;
     brand?: string;
+    source?: string;
+    sourceLabel?: string;
+    canonicalId?: string | null;
   };
   cachedAt: number;
 }

@@ -15,6 +15,7 @@ type FoodContextValue = ReturnType<typeof useMeals> & {
   recipes: ReturnType<typeof useRecipes>['recipes'];
   recentFoods: ReturnType<typeof useRecipes>['recentFoods'];
   recentFoodsLoading: ReturnType<typeof useRecipes>['recentFoodsLoading'];
+  recentFoodsError: ReturnType<typeof useRecipes>['recentFoodsError'];
   saveRecipe: ReturnType<typeof useRecipes>['saveRecipe'];
   updateRecipe: ReturnType<typeof useRecipes>['updateRecipe'];
   deleteRecipe: ReturnType<typeof useRecipes>['deleteRecipe'];
@@ -40,6 +41,7 @@ function FoodBridge({ children }: { children: React.ReactNode }) {
       recipes: recipes.recipes,
       recentFoods: recipes.recentFoods,
       recentFoodsLoading: recipes.recentFoodsLoading,
+      recentFoodsError: recipes.recentFoodsError,
 
       // Recipe actions
       saveRecipe: recipes.saveRecipe,

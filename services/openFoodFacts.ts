@@ -139,7 +139,14 @@ export interface ProductResult {
     allergens: string | undefined;
     nutriscore: string | undefined;
   };
-  resultKind?: 'canonical' | 'branded' | 'recent' | 'quick_add' | 'restaurant';
+  resultKind?:
+    | 'canonical'
+    | 'branded'
+    | 'custom'
+    | 'saved_meal'
+    | 'recent'
+    | 'quick_add'
+    | 'restaurant';
 }
 
 export interface SearchResult {

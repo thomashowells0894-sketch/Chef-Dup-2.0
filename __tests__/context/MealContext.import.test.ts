@@ -19,6 +19,8 @@ const mockSyncRecentMealsForDate = jest.fn(async () => undefined);
 let foodLogsStore: any[] = [];
 let workoutsStore: any[] = [];
 let foodLogIdCounter = 1;
+let foodLogsSelectError: { message: string } | null = null;
+let workoutsSelectError: { message: string } | null = null;
 let consoleErrorSpy: jest.SpyInstance;
 let alertSpy: jest.SpyInstance;
 
@@ -63,11 +65,12 @@ function createSelectBuilder(table: string) {
       filters.lte = { field, value };
       return builder;
     },
-    then(resolve: (value: { data: any[]; error: null }) => unknown, reject?: (reason?: unknown) => unknown) {
+    then(resolve: (value: { data: any[] | null; error: { message: string } | null }) => unknown, reject?: (reason?: unknown) => unknown) {
       try {
         const sourceRows = table === 'food_logs' ? foodLogsStore : workoutsStore;
+        const error = table === 'food_logs' ? foodLogsSelectError : workoutsSelectError;
         const data = cloneRows(applyFilters(sourceRows, filters));
-        return Promise.resolve(resolve({ data, error: null }));
+        return Promise.resolve(resolve({ data: error ? null : data, error }));
       } catch (error) {
         if (reject) {
           return Promise.resolve(reject(error));
@@ -164,6 +167,10 @@ jest.mock('../../lib/recentMeals', () => ({
   syncRecentMealsForDate: (...args: any[]) => mockSyncRecentMealsForDate(...args),
 }));
 
+jest.mock('../../lib/startupTrace', () => ({
+  recordFirstFoodAddFromStartup: jest.fn(),
+}));
+
 jest.mock('../../lib/haptics', () => ({
   hapticSuccess: jest.fn(async () => undefined),
   hapticLight: jest.fn(async () => undefined),
@@ -181,6 +188,8 @@ describe('MealContext importFoodDiary', () => {
     foodLogsStore = [];
     workoutsStore = [];
     foodLogIdCounter = 1;
+    foodLogsSelectError = null;
+    workoutsSelectError = null;
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   });
@@ -353,6 +362,44 @@ Date,Meal,Food Name,Calories,Protein (g),Carbs (g),Fat (g),Serving
       })
     );
     expect(mockRecordFrequentFood).toHaveBeenCalledTimes(2);
+
+    hook.unmount();
+  });
+
+  it('preserves the current day when a refresh returns a food fetch error', async () => {
+    const hook = await renderAndInit();
+    const todayKey = hook.result.current.selectedDateKey;
+    const parsed = parseMyFitnessPalCsv(`
+Date,Meal,Food Name,Calories,Protein (g),Carbs (g),Fat (g),Serving
+${todayKey},Breakfast,Eggs,140,12,1,10,2 eggs
+    `);
+
+    await act(async () => {
+      await hook.result.current.importFoodDiary(parsed.entries);
+    });
+
+    await waitFor(() => {
+      expect(hook.result.current.dayData[todayKey].meals.breakfast).toHaveLength(1);
+    });
+
+    foodLogsStore = [];
+    foodLogsSelectError = { message: 'temporary timeout' };
+
+    await act(async () => {
+      await hook.result.current.refreshDate(todayKey);
+    });
+
+    expect(hook.result.current.dayData[todayKey].meals.breakfast).toHaveLength(1);
+    expect(hook.result.current.dayData[todayKey].meals.breakfast[0]).toMatchObject({
+      name: 'Eggs',
+      calories: 140,
+    });
+    expect(hook.result.current.dayData[todayKey].totals).toMatchObject({
+      calories: 140,
+      protein: 12,
+      carbs: 1,
+      fat: 10,
+    });
 
     hook.unmount();
   });

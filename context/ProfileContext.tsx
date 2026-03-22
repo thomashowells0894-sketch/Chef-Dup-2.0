@@ -13,14 +13,20 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { MacroSet } from '../types';
 import {
+  buildOnboardingStatePayload,
+  buildProfileSupabaseUpdates,
   buildProfileCacheKey,
   createStoredProfileMeta,
   deriveTargetsFromProfile,
+  hasExplicitActivationMarker,
   isEssentialProfileComplete,
   getLegacyProfileCacheKeys,
+  normalizeStoredProfileMeasurements,
   normalizeStoredProfileCache,
   resolveProfileHydration,
+  resolvePersistedTargets,
   sanitizeMacroSet,
+  shouldTrustHydratedProfileSnapshot,
   shouldRegenerateTargets,
   type ProfileHydrationState,
 } from '../lib/profileState';
@@ -465,16 +471,17 @@ function createHydratedProfile(
   rawProfile: Partial<Profile> | null | undefined,
   fallbackProfile: Profile = initialProfile
 ): Profile {
+  const normalizedRawProfile = normalizeStoredProfileMeasurements(rawProfile);
   const mergedProfile: Profile = {
     ...fallbackProfile,
-    ...rawProfile,
+    ...normalizedRawProfile,
     customMacros: {
       ...fallbackProfile.customMacros,
-      ...(rawProfile?.customMacros || {}),
+      ...(normalizedRawProfile?.customMacros || {}),
     },
-    equipment: Array.isArray(rawProfile?.equipment) ? rawProfile.equipment : fallbackProfile.equipment,
-    dietaryRestrictions: Array.isArray(rawProfile?.dietaryRestrictions)
-      ? rawProfile.dietaryRestrictions
+    equipment: Array.isArray(normalizedRawProfile?.equipment) ? normalizedRawProfile.equipment : fallbackProfile.equipment,
+    dietaryRestrictions: Array.isArray(normalizedRawProfile?.dietaryRestrictions)
+      ? normalizedRawProfile.dietaryRestrictions
       : fallbackProfile.dietaryRestrictions,
     bmr: null,
     tdee: null,
@@ -495,6 +502,10 @@ function createHydratedProfile(
   };
 }
 
+function preferPersistedValue<T>(incomingValue: T | null | undefined, fallbackValue: T): T {
+  return incomingValue ?? fallbackValue;
+}
+
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id || null;
@@ -507,8 +518,24 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
   const onboardingDataRef = useRef<Record<string, unknown> | null>(null);
+  const hydrationRequestIdRef = useRef(0);
+  const profileRef = useRef<Profile>(initialProfile);
+  const weightHistoryRef = useRef<WeightHistoryEntry[]>([]);
+  const activeTargetsRef = useRef<MacroSet | null>(null);
+  const pendingTargetsRef = useRef<MacroSet | null>(null);
+  const hasCompletedOnboardingRef = useRef<boolean>(false);
+  const isHydratedRef = useRef<boolean>(false);
 
   const profileCacheKey = useMemo(() => buildProfileCacheKey(userId), [userId]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+    weightHistoryRef.current = weightHistory;
+    activeTargetsRef.current = activeTargets;
+    pendingTargetsRef.current = pendingTargets;
+    hasCompletedOnboardingRef.current = hasCompletedOnboarding;
+    isHydratedRef.current = isHydrated;
+  }, [activeTargets, hasCompletedOnboarding, isHydrated, pendingTargets, profile, weightHistory]);
 
   const applyResolvedState = useCallback((nextState: {
     profile: Profile;
@@ -519,13 +546,20 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     hydrationState: ProfileHydrationState;
     onboardingData?: Record<string, unknown> | null;
   }) => {
+    profileRef.current = nextState.profile;
+    weightHistoryRef.current = nextState.weightHistory;
+    activeTargetsRef.current = nextState.activeTargets;
+    pendingTargetsRef.current = nextState.pendingTargets;
+    hasCompletedOnboardingRef.current = nextState.hasCompletedOnboarding;
     setProfile(nextState.profile);
     setWeightHistory(nextState.weightHistory);
     setActiveTargets(nextState.activeTargets);
     setPendingTargets(nextState.pendingTargets);
     setHasCompletedOnboarding(nextState.hasCompletedOnboarding);
     setProfileHydrationState(nextState.hydrationState);
-    onboardingDataRef.current = nextState.onboardingData || null;
+    if (nextState.onboardingData !== undefined) {
+      onboardingDataRef.current = nextState.onboardingData || null;
+    }
   }, []);
 
   const persistProfileCache = useCallback(async (payload: {
@@ -548,6 +582,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           weightHistory: payload.weightHistory,
           meta: createStoredProfileMeta({
             hasCompletedOnboarding: payload.hasCompletedOnboarding,
+            activationCompletedAt: Number(onboardingDataRef.current?.activationCompletedAt) || null,
             activeTargets: payload.activeTargets,
             pendingTargets: payload.pendingTargets,
             lastHydratedAt: Date.now(),
@@ -587,7 +622,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           }
           return {
             ...normalized,
-            weightHistory: cachedWeightHistory as unknown as Array<Record<string, unknown>>,
+            weightHistory: cachedWeightHistory as unknown as Record<string, unknown>[],
           };
         }
       } catch (cacheError: any) {
@@ -601,45 +636,84 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }, [persistProfileCache, profileCacheKey, userId]);
 
   const hydrateProfile = useCallback(async (options: { preferCache?: boolean } = {}) => {
+    const requestId = hydrationRequestIdRef.current + 1;
+    hydrationRequestIdRef.current = requestId;
+    const isCurrentRequest = () => hydrationRequestIdRef.current === requestId;
+
     if (!userId) {
-      applyResolvedState({
-        profile: initialProfile,
-        weightHistory: [],
-        activeTargets: null,
-        pendingTargets: null,
-        hasCompletedOnboarding: false,
-        hydrationState: 'missing',
-        onboardingData: null,
-      });
-      setIsLoading(false);
-      setIsHydrated(true);
+      if (isCurrentRequest()) {
+        applyResolvedState({
+          profile: initialProfile,
+          weightHistory: [],
+          activeTargets: null,
+          pendingTargets: null,
+          hasCompletedOnboarding: false,
+          hydrationState: 'missing',
+          onboardingData: null,
+        });
+        setIsLoading(false);
+        setIsHydrated(true);
+        isHydratedRef.current = true;
+      }
       return;
     }
 
     const preferCache = options.preferCache !== false;
-    setIsLoading(true);
+    if (!isHydratedRef.current) {
+      setIsLoading(true);
+      setIsHydrated(false);
+      isHydratedRef.current = false;
+    }
 
     const cachedSnapshot = preferCache ? await readCachedProfile() : null;
+    if (!isCurrentRequest()) {
+      return;
+    }
+
+    const inMemoryProfile = isHydratedRef.current
+      ? createHydratedProfile(profileRef.current, initialProfile)
+      : initialProfile;
+    const inMemoryWeightHistory = isHydratedRef.current ? weightHistoryRef.current : [];
+    const persistedActivation =
+      Boolean(cachedSnapshot?.meta.hasCompletedOnboarding) ||
+      Boolean(cachedSnapshot?.meta.activationCompletedAt) ||
+      hasCompletedOnboardingRef.current ||
+      hasExplicitActivationMarker(onboardingDataRef.current);
+    const persistedActiveTargets = cachedSnapshot?.meta.activeTargets || activeTargetsRef.current || null;
+    const persistedPendingTargets = cachedSnapshot?.meta.pendingTargets || pendingTargetsRef.current || null;
 
     if (cachedSnapshot?.profile) {
-      const cachedProfile = createHydratedProfile(cachedSnapshot.profile, initialProfile);
+      const cachedProfile = createHydratedProfile(cachedSnapshot.profile, inMemoryProfile);
       const cachedResolution = resolveProfileHydration({
-        cachedActivation: cachedSnapshot.meta.hasCompletedOnboarding,
+        cachedActivation: persistedActivation,
         serverActivation: false,
         profile: cachedProfile,
         hasAnyPersistedProfileData: true,
+      });
+      const cachedTargets = resolvePersistedTargets({
+        cachedActiveTargets: persistedActiveTargets,
+        cachedPendingTargets: persistedPendingTargets,
+        onboardingData: onboardingDataRef.current,
+        hasCompletedOnboarding: cachedResolution.hasCompletedOnboarding,
+        derivedTargets: cachedResolution.hasCompletedOnboarding
+          ? deriveTargetsFromProfile(cachedProfile)
+          : null,
       });
 
       applyResolvedState({
         profile: cachedProfile,
         weightHistory: (cachedSnapshot.weightHistory || []) as unknown as WeightHistoryEntry[],
-        activeTargets: cachedSnapshot.meta.activeTargets || deriveTargetsFromProfile(cachedProfile),
-        pendingTargets: cachedSnapshot.meta.pendingTargets,
+        activeTargets: cachedTargets.activeTargets,
+        pendingTargets: cachedTargets.pendingTargets,
         hasCompletedOnboarding: cachedResolution.hasCompletedOnboarding,
         hydrationState: cachedResolution.hydrationState,
       });
-      setIsLoading(false);
-      setIsHydrated(true);
+
+      if (shouldTrustHydratedProfileSnapshot(cachedResolution)) {
+        setIsLoading(false);
+        setIsHydrated(true);
+        isHydratedRef.current = true;
+      }
     }
 
     try {
@@ -655,125 +729,151 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
       if (!profileData) {
         const fallbackProfile = cachedSnapshot?.profile
-          ? createHydratedProfile(cachedSnapshot.profile, initialProfile)
-          : initialProfile;
+          ? createHydratedProfile(cachedSnapshot.profile, inMemoryProfile)
+          : inMemoryProfile;
         const resolution = resolveProfileHydration({
-          cachedActivation: cachedSnapshot?.meta.hasCompletedOnboarding || false,
+          cachedActivation: persistedActivation,
           serverActivation: false,
           profile: fallbackProfile,
-          hasAnyPersistedProfileData: Boolean(cachedSnapshot?.profile),
+          hasAnyPersistedProfileData: Boolean(cachedSnapshot?.profile) || isHydratedRef.current,
+        });
+        const targetResolution = resolvePersistedTargets({
+          cachedActiveTargets: persistedActiveTargets,
+          cachedPendingTargets: persistedPendingTargets,
+          onboardingData: onboardingDataRef.current,
+          hasCompletedOnboarding: resolution.hasCompletedOnboarding,
+          derivedTargets: resolution.hasCompletedOnboarding
+            ? deriveTargetsFromProfile(fallbackProfile)
+            : null,
+        });
+        const nextOnboardingData = buildOnboardingStatePayload({
+          existingData: onboardingDataRef.current,
+          activeTargets: targetResolution.activeTargets,
+          draftTargets: targetResolution.pendingTargets,
+          onboardingCompleted: resolution.hasCompletedOnboarding,
         });
 
         applyResolvedState({
           profile: fallbackProfile,
-          weightHistory: (cachedSnapshot?.weightHistory || []) as unknown as WeightHistoryEntry[],
-          activeTargets: cachedSnapshot?.meta.activeTargets || null,
-          pendingTargets: cachedSnapshot?.meta.pendingTargets || null,
+          weightHistory: (cachedSnapshot?.weightHistory || inMemoryWeightHistory) as unknown as WeightHistoryEntry[],
+          activeTargets: targetResolution.activeTargets,
+          pendingTargets: targetResolution.pendingTargets,
           hasCompletedOnboarding: resolution.hasCompletedOnboarding,
           hydrationState: resolution.hydrationState,
-          onboardingData: onboardingDataRef.current,
+          onboardingData: nextOnboardingData,
         });
 
         try {
           await supabase.from('profiles').insert({ user_id: userId }).select();
-        } catch (_insertError) {
+        } catch {
           // Best-effort bootstrap row creation only.
         }
         return;
       }
+      if (!isCurrentRequest()) {
+        return;
+      }
 
       const fallbackProfile = cachedSnapshot?.profile
-        ? createHydratedProfile(cachedSnapshot.profile, initialProfile)
-        : initialProfile;
-      const preserveExisting = Boolean(cachedSnapshot?.meta.hasCompletedOnboarding) || Boolean(profileData.onboarding_completed);
+        ? createHydratedProfile(cachedSnapshot.profile, inMemoryProfile)
+        : inMemoryProfile;
+      const serverOnboardingData =
+        profileData.onboarding_data && typeof profileData.onboarding_data === 'object'
+          ? profileData.onboarding_data
+          : null;
+      const serverActivation =
+        Boolean(profileData.onboarding_completed) ||
+        hasExplicitActivationMarker(serverOnboardingData);
 
       const serverProfile = createHydratedProfile({
-        name: profileData.name ?? fallbackProfile.name,
-        weight: preserveExisting && profileData.weight == null ? fallbackProfile.weight : profileData.weight,
-        height: preserveExisting && profileData.height == null ? fallbackProfile.height : profileData.height,
-        age: preserveExisting && profileData.age == null ? fallbackProfile.age : profileData.age,
-        gender: preserveExisting && profileData.gender == null ? fallbackProfile.gender : profileData.gender || 'male',
-        activityLevel: preserveExisting && profileData.activity_level == null ? fallbackProfile.activityLevel : profileData.activity_level || 'moderate',
-        goalWeight: preserveExisting && profileData.goal_weight == null ? fallbackProfile.goalWeight : profileData.goal_weight,
-        weeklyGoal: preserveExisting && profileData.weekly_goal == null ? fallbackProfile.weeklyGoal : profileData.weekly_goal || 'maintain',
-        macroPreset: preserveExisting && profileData.macro_preset == null ? fallbackProfile.macroPreset : profileData.macro_preset || 'balanced',
-        customMacros: preserveExisting && profileData.custom_macros == null ? fallbackProfile.customMacros : profileData.custom_macros || { protein: 30, carbs: 40, fat: 30 },
-        weightUnit: preserveExisting && profileData.weight_unit == null ? fallbackProfile.weightUnit : profileData.weight_unit || 'lbs',
-        injuries: preserveExisting && profileData.injuries == null ? fallbackProfile.injuries : profileData.injuries || '',
-        equipment: preserveExisting && profileData.equipment == null ? fallbackProfile.equipment : profileData.equipment || [],
-        dietaryRestrictions: preserveExisting && profileData.dietary_restrictions == null ? fallbackProfile.dietaryRestrictions : profileData.dietary_restrictions || [],
+        name: preferPersistedValue(profileData.name, fallbackProfile.name),
+        weight: preferPersistedValue(profileData.weight, fallbackProfile.weight),
+        height: preferPersistedValue(profileData.height, fallbackProfile.height),
+        age: preferPersistedValue(profileData.age, fallbackProfile.age),
+        gender: preferPersistedValue(profileData.gender, fallbackProfile.gender) || 'male',
+        activityLevel: preferPersistedValue(profileData.activity_level, fallbackProfile.activityLevel) || 'moderate',
+        goalWeight: preferPersistedValue(profileData.goal_weight, fallbackProfile.goalWeight),
+        weeklyGoal: preferPersistedValue(profileData.weekly_goal, fallbackProfile.weeklyGoal) || 'maintain',
+        macroPreset: preferPersistedValue(profileData.macro_preset, fallbackProfile.macroPreset) || 'balanced',
+        customMacros: preferPersistedValue(profileData.custom_macros, fallbackProfile.customMacros) || { protein: 30, carbs: 40, fat: 30 },
+        weightUnit: preferPersistedValue(profileData.weight_unit, fallbackProfile.weightUnit) || 'lbs',
+        injuries: preferPersistedValue(profileData.injuries, fallbackProfile.injuries) || '',
+        equipment: preferPersistedValue(profileData.equipment, fallbackProfile.equipment) || [],
+        dietaryRestrictions: preferPersistedValue(profileData.dietary_restrictions, fallbackProfile.dietaryRestrictions) || [],
       }, fallbackProfile);
 
       const nextWeightHistory = Array.isArray(profileData.weight_history)
         ? profileData.weight_history as unknown as WeightHistoryEntry[]
-        : (cachedSnapshot?.weightHistory || []) as unknown as WeightHistoryEntry[];
-      const onboardingData =
-        profileData.onboarding_data && typeof profileData.onboarding_data === 'object'
-          ? profileData.onboarding_data
-          : onboardingDataRef.current;
+        : (cachedSnapshot?.weightHistory || inMemoryWeightHistory) as unknown as WeightHistoryEntry[];
       const resolution = resolveProfileHydration({
-        cachedActivation: cachedSnapshot?.meta.hasCompletedOnboarding || false,
-        serverActivation: Boolean(profileData.onboarding_completed),
+        cachedActivation: persistedActivation,
+        serverActivation,
         profile: serverProfile,
-        hasAnyPersistedProfileData: Boolean(cachedSnapshot?.profile) || Boolean(profileData),
+        hasAnyPersistedProfileData: Boolean(cachedSnapshot?.profile) || isHydratedRef.current || Boolean(profileData),
       });
       const derivedServerTargets = deriveTargetsFromProfile(serverProfile);
-      const resolvedActiveTargets =
-        sanitizeMacroSet(onboardingData?.activeTargets) ||
-        cachedSnapshot?.meta.activeTargets ||
-        (resolution.hasCompletedOnboarding ? derivedServerTargets : null);
+      const targetResolution = resolvePersistedTargets({
+        cachedActiveTargets: persistedActiveTargets,
+        cachedPendingTargets: persistedPendingTargets,
+        onboardingData: serverOnboardingData || onboardingDataRef.current,
+        hasCompletedOnboarding: resolution.hasCompletedOnboarding,
+        derivedTargets: resolution.hasCompletedOnboarding ? derivedServerTargets : null,
+      });
+      const nextOnboardingData = buildOnboardingStatePayload({
+        existingData: (serverOnboardingData as Record<string, unknown> | null) || onboardingDataRef.current,
+        activeTargets: targetResolution.activeTargets,
+        draftTargets: targetResolution.pendingTargets,
+        onboardingCompleted: resolution.hasCompletedOnboarding,
+      });
 
       applyResolvedState({
         profile: serverProfile,
         weightHistory: nextWeightHistory,
-        activeTargets: resolvedActiveTargets,
-        pendingTargets: cachedSnapshot?.meta.pendingTargets || null,
+        activeTargets: targetResolution.activeTargets,
+        pendingTargets: targetResolution.pendingTargets,
         hasCompletedOnboarding: resolution.hasCompletedOnboarding,
         hydrationState: resolution.hydrationState,
-        onboardingData: onboardingData as Record<string, unknown> | null,
+        onboardingData: nextOnboardingData,
       });
 
       await persistProfileCache({
         profile: serverProfile,
         weightHistory: nextWeightHistory,
-        activeTargets: resolvedActiveTargets,
-        pendingTargets: cachedSnapshot?.meta.pendingTargets || null,
+        activeTargets: targetResolution.activeTargets,
+        pendingTargets: targetResolution.pendingTargets,
         hasCompletedOnboarding: resolution.hasCompletedOnboarding,
       });
 
-      if (resolution.hasCompletedOnboarding && resolvedActiveTargets) {
-        const serverTargets = derivedServerTargets;
-        if (
-          !sanitizeMacroSet(onboardingData?.activeTargets) ||
-          JSON.stringify(serverTargets) !== JSON.stringify(resolvedActiveTargets)
-        ) {
-          const nextOnboardingData = {
-            ...(onboardingData || {}),
-            activeTargets: resolvedActiveTargets,
-          };
-          onboardingDataRef.current = nextOnboardingData;
-          void (async () => {
-            try {
-              await supabase
-                .from('profiles')
-                .update({
-                  onboarding_completed: true,
-                  onboarding_data: nextOnboardingData,
-                })
-                .eq('user_id', userId);
-            } catch (_syncError) {
-              // Cache already holds the durable activation state.
-            }
-          })();
-        }
+      if (
+        JSON.stringify(nextOnboardingData || {}) !== JSON.stringify(serverOnboardingData || {}) ||
+        Boolean(profileData.onboarding_completed) !== resolution.hasCompletedOnboarding ||
+        targetResolution.repairedActiveTargets
+      ) {
+        onboardingDataRef.current = nextOnboardingData;
+        void (async () => {
+          try {
+            await supabase
+              .from('profiles')
+              .update({
+                onboarding_completed: resolution.hasCompletedOnboarding,
+                onboarding_data: nextOnboardingData,
+              })
+              .eq('user_id', userId);
+          } catch {
+            // Cache already holds the durable state.
+          }
+        })();
       }
     } catch (error: any) {
       if (__DEV__) {
         console.error('Failed to load profile:', error.message);
       }
     } finally {
-      setIsLoading(false);
-      setIsHydrated(true);
+      if (isCurrentRequest()) {
+        setIsLoading(false);
+        setIsHydrated(true);
+        isHydratedRef.current = true;
+      }
     }
   }, [applyResolvedState, persistProfileCache, readCachedProfile, userId]);
 
@@ -815,25 +915,38 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     let nextActiveTargets = activeTargets;
     let nextPendingTargets = pendingTargets;
     let targetAction: ProfileUpdateResult['targetAction'] = 'preserved';
-    const committedTargets = options.commitTargets || null;
+    const committedTargets = sanitizeMacroSet(options.commitTargets);
+    const shouldUpdateTargets = shouldRegenerateTargets(updates as Record<string, unknown>);
+    const generatedTargets = shouldUpdateTargets ? deriveTargetsFromProfile(nextProfile) : null;
+    const hasExplicitActivation =
+      hasCompletedOnboarding ||
+      Boolean(options.onboardingCompleted) ||
+      hasExplicitActivationMarker(onboardingDataRef.current) ||
+      hasExplicitActivationMarker(options.onboardingData);
+    const sameTargets = (left: MacroSet | null, right: MacroSet | null): boolean =>
+      JSON.stringify(left || null) === JSON.stringify(right || null);
 
     if (committedTargets) {
       nextActiveTargets = committedTargets;
       nextPendingTargets = null;
       targetAction = 'committed';
     } else if (options.targetBehavior === 'commit_generated') {
-      nextActiveTargets = deriveTargetsFromProfile(nextProfile);
-      nextPendingTargets = null;
-      targetAction = 'committed';
-    } else if (shouldRegenerateTargets(updates as Record<string, unknown>)) {
-      nextPendingTargets = deriveTargetsFromProfile(nextProfile);
-      targetAction = 'pending';
-    } else if (!nextActiveTargets) {
-      nextActiveTargets = deriveTargetsFromProfile(nextProfile);
+      if (generatedTargets) {
+        nextActiveTargets = generatedTargets;
+        nextPendingTargets = null;
+        targetAction = 'committed';
+      }
+    } else if (shouldUpdateTargets && hasExplicitActivation && generatedTargets) {
+      if (sameTargets(generatedTargets, nextActiveTargets)) {
+        nextPendingTargets = null;
+      } else {
+        nextPendingTargets = generatedTargets;
+        targetAction = 'pending';
+      }
     }
 
     const nextResolution = resolveProfileHydration({
-      cachedActivation: hasCompletedOnboarding || Boolean(options.onboardingCompleted),
+      cachedActivation: hasExplicitActivation,
       serverActivation: Boolean(options.onboardingCompleted),
       profile: nextProfile,
       hasAnyPersistedProfileData: true,
@@ -845,43 +958,39 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setPendingTargets(nextPendingTargets);
     setHasCompletedOnboarding(nextResolution.hasCompletedOnboarding);
     setProfileHydrationState(nextResolution.hydrationState);
+    profileRef.current = nextProfile;
+    weightHistoryRef.current = nextWeightHistory;
+    activeTargetsRef.current = nextActiveTargets;
+    pendingTargetsRef.current = nextPendingTargets;
+    hasCompletedOnboardingRef.current = nextResolution.hasCompletedOnboarding;
 
-    const nextOnboardingData = {
-      ...(onboardingDataRef.current || {}),
-      ...(options.onboardingData || {}),
-      ...(nextActiveTargets ? { activeTargets: nextActiveTargets } : {}),
-    };
+    const nextOnboardingData = buildOnboardingStatePayload({
+      existingData: {
+        ...(onboardingDataRef.current || {}),
+        ...(options.onboardingData || {}),
+      },
+      activeTargets: nextActiveTargets,
+      draftTargets: nextPendingTargets,
+      onboardingCompleted: nextResolution.hasCompletedOnboarding,
+    });
     onboardingDataRef.current = nextOnboardingData;
 
+    await persistProfileCache({
+      profile: nextProfile,
+      weightHistory: nextWeightHistory,
+      activeTargets: nextActiveTargets,
+      pendingTargets: nextPendingTargets,
+      hasCompletedOnboarding: nextResolution.hasCompletedOnboarding,
+    });
+
     try {
-      const supabaseUpdates: Record<string, unknown> = {};
-
-      if (updates.weight !== undefined) supabaseUpdates.weight = updates.weight;
-      if (updates.height !== undefined) supabaseUpdates.height = updates.height;
-      if (updates.age !== undefined) supabaseUpdates.age = updates.age;
-      if (updates.gender !== undefined) supabaseUpdates.gender = updates.gender;
-      if (updates.activityLevel !== undefined) supabaseUpdates.activity_level = updates.activityLevel;
-      if (updates.goalWeight !== undefined) supabaseUpdates.goal_weight = updates.goalWeight;
-      if (updates.weeklyGoal !== undefined) supabaseUpdates.weekly_goal = updates.weeklyGoal;
-      if (updates.macroPreset !== undefined) supabaseUpdates.macro_preset = updates.macroPreset;
-      if (updates.customMacros !== undefined) supabaseUpdates.custom_macros = updates.customMacros;
-      if (updates.weightUnit !== undefined) supabaseUpdates.weight_unit = updates.weightUnit;
-      if (updates.injuries !== undefined) supabaseUpdates.injuries = updates.injuries;
-      if (updates.equipment !== undefined) supabaseUpdates.equipment = updates.equipment;
-      if (updates.dietaryRestrictions !== undefined) supabaseUpdates.dietary_restrictions = updates.dietaryRestrictions;
-      if (updates.weight !== undefined) {
-        supabaseUpdates.weight_history = nextWeightHistory;
-      }
-
-      if (options.onboardingCompleted || hasCompletedOnboarding) {
-        supabaseUpdates.onboarding_completed = true;
-      }
-
-      if (Object.keys(nextOnboardingData).length > 0) {
-        supabaseUpdates.onboarding_data = nextOnboardingData;
-      }
-
-      supabaseUpdates.updated_at = new Date().toISOString();
+      const supabaseUpdates = buildProfileSupabaseUpdates({
+        updates: updates as Record<string, unknown>,
+        nextWeightHistory: nextWeightHistory as unknown as Record<string, unknown>[],
+        hasCompletedOnboarding: nextResolution.hasCompletedOnboarding,
+        onboardingCompleted: options.onboardingCompleted,
+        onboardingData: nextOnboardingData,
+      });
 
       const { error } = await supabase
         .from('profiles')
@@ -897,14 +1006,6 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         console.error('Failed to save profile to Supabase:', error.message);
       }
     }
-
-    await persistProfileCache({
-      profile: nextProfile,
-      weightHistory: nextWeightHistory,
-      activeTargets: nextActiveTargets,
-      pendingTargets: nextPendingTargets,
-      hasCompletedOnboarding: nextResolution.hasCompletedOnboarding,
-    });
 
     await hapticSuccess();
 
@@ -930,10 +1031,15 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     setActiveTargets(pendingTargets);
     setPendingTargets(null);
-    onboardingDataRef.current = {
-      ...(onboardingDataRef.current || {}),
+    activeTargetsRef.current = pendingTargets;
+    pendingTargetsRef.current = null;
+    const nextOnboardingData = buildOnboardingStatePayload({
+      existingData: onboardingDataRef.current,
       activeTargets: pendingTargets,
-    };
+      draftTargets: null,
+      onboardingCompleted: hasCompletedOnboarding,
+    });
+    onboardingDataRef.current = nextOnboardingData;
 
     await persistProfileCache({
       profile,
@@ -948,18 +1054,26 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .update({
           onboarding_completed: hasCompletedOnboarding,
-          onboarding_data: onboardingDataRef.current,
+          onboarding_data: nextOnboardingData,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', userId)
         .select();
-    } catch (_applyError) {
+    } catch {
       // Local cache already reflects the applied targets.
     }
   }, [hasCompletedOnboarding, pendingTargets, persistProfileCache, profile, userId, weightHistory]);
 
   const discardPendingTargets = useCallback(async () => {
     setPendingTargets(null);
+    pendingTargetsRef.current = null;
+    const nextOnboardingData = buildOnboardingStatePayload({
+      existingData: onboardingDataRef.current,
+      activeTargets,
+      draftTargets: null,
+      onboardingCompleted: hasCompletedOnboarding,
+    });
+    onboardingDataRef.current = nextOnboardingData;
     await persistProfileCache({
       profile,
       weightHistory,
@@ -967,7 +1081,25 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       pendingTargets: null,
       hasCompletedOnboarding,
     });
-  }, [activeTargets, hasCompletedOnboarding, persistProfileCache, profile, weightHistory]);
+
+    if (!userId) {
+      return;
+    }
+
+    try {
+      await supabase
+        .from('profiles')
+        .update({
+          onboarding_completed: hasCompletedOnboarding,
+          onboarding_data: nextOnboardingData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .select();
+    } catch {
+      // Local cache already reflects the discarded draft.
+    }
+  }, [activeTargets, hasCompletedOnboarding, persistProfileCache, profile, userId, weightHistory]);
 
   // Quick switch goal type (Cut/Maintain/Bulk)
   const switchGoalType = useCallback(async (goalType: string) => {
@@ -985,21 +1117,24 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   // Get current goal type based on weeklyGoal
   const currentGoalType = useMemo<string>(() => {
-    const { weeklyGoal } = profile;
-    if (weeklyGoal.startsWith('lose')) return 'cut';
-    if (weeklyGoal.startsWith('gain')) return 'bulk';
+    if (profile.weeklyGoal.startsWith('lose')) return 'cut';
+    if (profile.weeklyGoal.startsWith('gain')) return 'bulk';
     return 'maintain';
   }, [profile.weeklyGoal]);
 
   // Computed values
   const calculatedGoals = useMemo<MacroSet>(() => {
-    return activeTargets || deriveTargetsFromProfile(profile) || {
+    const draftTargets = !hasCompletedOnboarding
+      ? pendingTargets || deriveTargetsFromProfile(profile)
+      : null;
+
+    return activeTargets || draftTargets || {
       calories: 2000,
       protein: 150,
       carbs: 200,
       fat: 65,
     };
-  }, [activeTargets, profile]);
+  }, [activeTargets, hasCompletedOnboarding, pendingTargets, profile]);
 
   // Get current macro split percentages
   const currentMacroSplit = useMemo<{ protein: number; carbs: number; fat: number; isBodyweightBased?: boolean }>(() => {

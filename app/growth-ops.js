@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import {
   ArrowLeft,
   BarChart3,
@@ -113,12 +113,6 @@ export default function GrowthOpsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (!__DEV__) {
-      router.replace('/(tabs)/stats');
-    }
-  }, [router]);
-
   const loadSnapshot = useCallback(async (days, refreshing = false) => {
     if (refreshing) {
       setIsRefreshing(true);
@@ -178,7 +172,7 @@ export default function GrowthOpsScreen() {
   }, [snapshot]);
 
   if (!__DEV__) {
-    return null;
+    return <Redirect href="/(tabs)/stats" />;
   }
 
   if (isLoading && !snapshot) {

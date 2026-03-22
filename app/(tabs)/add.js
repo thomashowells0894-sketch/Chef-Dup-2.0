@@ -16,7 +16,7 @@ import {
 import { Image } from 'expo-image';
 import OptimizedFlatList from '../../components/OptimizedFlatList';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { format, isToday, isYesterday, parseISO, subDays } from 'date-fns';
 import {
   Coffee,
@@ -41,6 +41,7 @@ import {
   RotateCcw,
   AlertTriangle,
   TrendingUp,
+  Link as LinkIcon,
 } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -61,8 +62,11 @@ import VoiceResultsSheet from '../../components/VoiceResultsSheet';
 import { useFrequentFoods } from '../../hooks/useFrequentFoods';
 import { productToFood } from '../../services/openFoodFacts';
 import {
+  buildSearchResultIdentityKey,
   getRecentSearches,
+  groupSearchResultsForDisplay,
   getTrendingTerms,
+  normalizeBarcodeQuery,
   searchAllSources,
 } from '../../services/foodSearch';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -71,8 +75,11 @@ import { useIsPremium } from '../../context/SubscriptionContext';
 import { hapticLight, hapticSuccess } from '../../lib/haptics';
 import {
   recordAddOpened,
+  recordBarcodeCorrected,
+  recordSearchAddSucceeded,
   recordSearchCompleted,
   recordQuickAddUsed,
+  recordSearchReformulated,
   recordRepeatLogUsed,
   recordSearchResultSelected,
   recordSearchStarted,
@@ -82,6 +89,9 @@ import UndoToast from '../../components/UndoToast';
 import { useRecentMealSnapshots } from '../../lib/recentMeals';
 import MyFitnessPalImportCard from '../../components/MyFitnessPalImportCard';
 import { searchLocalFoodDatabase } from '../../lib/localFoodSearch';
+import { scheduleTabScreenReady } from '../../lib/tabSwitchTrace';
+import { recordFirstSearchFromStartup } from '../../lib/startupTrace';
+import { rememberBarcodeCorrection } from '../../services/barcodeService';
 
 const mealTypes = [
   { id: 'breakfast', label: 'Breakfast', icon: Coffee },
@@ -98,6 +108,15 @@ const STARTER_FOOD_IDS_BY_MEAL = {
   dinner: ['salmon', 'chicken-breast', 'brown-rice', 'avocado', 'apple', 'whole-wheat-bread'],
   snacks: ['greek-yogurt', 'protein-shake', 'banana', 'apple', 'peanut-butter', 'rice-cakes'],
 };
+
+const EMPTY_SEARCH_SOURCES = Object.freeze({
+  local: 0,
+  restaurant: 0,
+  openFoodFacts: 0,
+  usda: 0,
+  fatSecret: 0,
+  nutritionix: 0,
+});
 
 function getQualityBadgeTheme(tag) {
   switch (tag) {
@@ -171,24 +190,248 @@ function normalizeSearchText(value) {
     .trim();
 }
 
-function matchesSearchText(query, ...values) {
-  const normalizedQuery = normalizeSearchText(query);
-  if (!normalizedQuery) {
-    return false;
+function getFoodIdentityKey(item) {
+  return buildSearchResultIdentityKey(item) || normalizeSearchText(item?.canonicalId || item?.barcode || item?.id || item?.name);
+}
+
+function formatServingLabel(item) {
+  const explicitServing = typeof item?.serving === 'string' ? item.serving.trim() : '';
+  if (explicitServing) {
+    return explicitServing;
   }
 
-  const tokens = normalizedQuery.split(' ').filter(Boolean);
-  return values.some((value) => {
-    const normalizedValue = normalizeSearchText(value);
-    if (!normalizedValue) {
-      return false;
+  const servingSize = Number(item?.servingSize);
+  const servingUnit = String(item?.servingUnit || 'serving').trim();
+  if (Number.isFinite(servingSize) && servingSize > 0) {
+    if (!servingUnit || servingUnit === 'serving') {
+      return `${servingSize} serving${servingSize === 1 ? '' : 's'}`;
     }
+    return `${servingSize}${servingUnit === 'g' || servingUnit === 'ml' ? servingUnit : ` ${servingUnit}`}`;
+  }
 
-    return (
-      normalizedValue.includes(normalizedQuery) ||
-      tokens.every((token) => normalizedValue.includes(token))
-    );
-  });
+  return '1 serving';
+}
+
+function formatMacroValue(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return '0g';
+  }
+
+  const roundedValue = Math.round(numericValue * 10) / 10;
+  return `${Number.isInteger(roundedValue) ? roundedValue : roundedValue.toFixed(1)}g`;
+}
+
+function toBarcodeCorrectionPayload(food) {
+  if (!food?.name) {
+    return null;
+  }
+
+  if (food.resultKind === 'saved_meal' || food.resultKind === 'quick_add') {
+    return null;
+  }
+
+  return {
+    name: food.name,
+    brand: food.brand || '',
+    calories: Number(food.calories) || 0,
+    protein: Number(food.protein) || 0,
+    carbs: Number(food.carbs) || 0,
+    fat: Number(food.fat) || 0,
+    serving: food.serving || formatServingLabel(food),
+    image: food.image || null,
+    canonicalId: food.canonicalId || null,
+    sourceLabel: food.sourceLabel || food.qualityLabel || 'Saved correction',
+  };
+}
+
+function buildLogSuccessMessage(entries, mealLabel) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return `${mealLabel} updated`;
+  }
+
+  const normalizedMealLabel = String(mealLabel || 'meal').toLowerCase();
+  if (entries.length === 1) {
+    return `${entries[0].name} added to ${normalizedMealLabel}`;
+  }
+
+  if (entries.length <= 3) {
+    return `${entries.length} items added to ${normalizedMealLabel}`;
+  }
+
+  return `${entries.length} items locked into ${normalizedMealLabel}`;
+}
+
+function getSearchObjectLabel(item) {
+  switch (item?.resultKind) {
+    case 'canonical':
+      return 'Common food';
+    case 'branded':
+      return 'Packaged food';
+    case 'custom':
+      return 'Custom food';
+    case 'saved_meal':
+      return 'Saved meal';
+    case 'recent':
+      return 'Recent food';
+    case 'quick_add':
+      return 'Quick add';
+    case 'restaurant':
+      return 'Restaurant item';
+    default:
+      return item?.brand ? 'Food match' : 'Food';
+  }
+}
+
+function getSearchSubtitle(item) {
+  const subtitleParts = [getSearchObjectLabel(item)];
+  const secondaryLabel =
+    item?.brand ||
+    (item?.resultKind === 'saved_meal' ? 'Saved by you' : item?.sourceLabel);
+  const servingLabel = formatServingLabel(item);
+
+  if (servingLabel) {
+    subtitleParts.push(servingLabel);
+  }
+
+  if (secondaryLabel) {
+    subtitleParts.push(secondaryLabel);
+  }
+
+  return subtitleParts.join(' · ');
+}
+
+function toSearchHistoryResult(food, options = {}) {
+  if (!food?.name) {
+    return null;
+  }
+
+  const resultKind =
+    options.resultKind ||
+    food.resultKind ||
+    (food.source === 'custom' || food.sourceLabel === 'Custom' ? 'custom' : 'recent');
+  const usageCount = Number(food.count || 0);
+  const qualityLabel =
+    options.qualityLabel ||
+    food.qualityLabel ||
+    (resultKind === 'custom'
+      ? 'Custom'
+      : resultKind === 'saved_meal'
+        ? 'Saved'
+        : usageCount >= 3
+          ? 'Frequent'
+          : 'Recent');
+  const confidenceReason =
+    options.confidenceReason ||
+    food.confidenceReason ||
+    (resultKind === 'custom'
+      ? 'Saved by you'
+      : resultKind === 'saved_meal'
+        ? 'Recipe you saved'
+        : usageCount >= 3
+          ? `Logged ${usageCount} times`
+          : 'Logged by you recently');
+
+  return {
+    barcode:
+      food.barcode ||
+      `history-${normalizeSearchText(food.canonicalId || food.id || food.name)}`,
+    canonicalId:
+      food.canonicalId ||
+      (resultKind === 'saved_meal' && food.id ? `recipe:${food.id}` : null),
+    name: food.name,
+    brand: food.brand || null,
+    image: food.image || null,
+    calories: Number(food.calories) || 0,
+    protein: Number(food.protein) || 0,
+    carbs: Number(food.carbs) || 0,
+    fat: Number(food.fat) || 0,
+    serving: food.serving || formatServingLabel(food),
+    servingSize: Number(food.servingSize) || 1,
+    servingUnit: food.servingUnit || 'serving',
+    source: options.source || food.source || (resultKind === 'saved_meal' ? 'recipe' : 'history'),
+    sourceLabel:
+      options.sourceLabel ||
+      food.sourceLabel ||
+      (resultKind === 'saved_meal'
+        ? 'Saved meal'
+        : resultKind === 'custom'
+          ? 'Custom'
+          : 'Recent'),
+    qualityTag:
+      food.qualityTag ||
+      (resultKind === 'custom' || resultKind === 'saved_meal' ? 'curated' : 'verified'),
+    qualityLabel,
+    trustScore: Number(food.trustScore) || (resultKind === 'custom' ? 92 : 90),
+    confidenceScore: Number(food.confidenceScore) || 92,
+    confidenceLevel: food.confidenceLevel || 'high',
+    confidenceReason,
+    qualityIssues: Array.isArray(food.qualityIssues) ? food.qualityIssues : [],
+    reportable: false,
+    resultKind,
+    emoji: food.emoji,
+    count: usageCount,
+    lastUsed: food.lastUsed || null,
+    recipe: options.recipe || null,
+  };
+}
+
+function toRecipeSearchResult(recipe) {
+  return toSearchHistoryResult(
+    {
+      ...recipe,
+      serving: recipe.serving || `1/${recipe.servings || 1} recipe`,
+      servingSize: recipe.servingSize || 1,
+      servingUnit: recipe.servingUnit || 'serving',
+    },
+    {
+      resultKind: 'saved_meal',
+      source: 'recipe',
+      sourceLabel: 'Saved meal',
+      qualityLabel: 'Saved',
+      confidenceReason: 'Recipe you saved',
+      recipe,
+    }
+  );
+}
+
+function getHistoryMatchScore(item, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  const normalizedName = normalizeSearchText(item?.name);
+  const normalizedBrand = normalizeSearchText(item?.brand);
+  if (!normalizedQuery || !normalizedName) {
+    return -1;
+  }
+
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+  const allTokensMatched =
+    queryTokens.length > 0 &&
+    queryTokens.every((token) => normalizedName.includes(token) || normalizedBrand.includes(token));
+
+  let score = 0;
+  if (normalizedName === normalizedQuery) {
+    score += 140;
+  } else if (normalizedName.startsWith(normalizedQuery)) {
+    score += 105;
+  } else if (normalizedName.includes(normalizedQuery)) {
+    score += 72;
+  } else if (allTokensMatched) {
+    score += 56;
+  } else {
+    return -1;
+  }
+
+  if (item?.resultKind === 'saved_meal') {
+    score += 18;
+  }
+  if (item?.resultKind === 'custom') {
+    score += 16;
+  }
+  if (Number.isFinite(Number(item?.count))) {
+    score += Math.min(Number(item.count) * 4, 24);
+  }
+
+  return score;
 }
 
 // API search result cache — avoids repeat network calls for common queries
@@ -431,6 +674,8 @@ const FastCapturePanel = memo(function FastCapturePanel({
   onOpenBarcodeLookup,
   onOpenQuickCal,
   onOpenCustomFood,
+  onOpenGoToMeals,
+  onOpenRecipeImport,
   onOpenFoodLens,
   onOpenVoice,
   isRecording,
@@ -467,10 +712,16 @@ const FastCapturePanel = memo(function FastCapturePanel({
           onPress={onOpenQuickCal}
         />
         <FastCaptureAction
-          icon={Plus}
-          label="Custom Food"
-          hint="Add your own item"
-          onPress={onOpenCustomFood}
+          icon={BookOpen}
+          label="Go-To Meals"
+          hint="Repeat a saved meal"
+          onPress={onOpenGoToMeals}
+        />
+        <FastCaptureAction
+          icon={LinkIcon}
+          label="Import Recipe"
+          hint="Paste a recipe URL"
+          onPress={onOpenRecipeImport}
         />
       </View>
 
@@ -500,6 +751,10 @@ const FastCapturePanel = memo(function FastCapturePanel({
           >
             {isRecording ? 'Recording' : 'Voice'}
           </Text>
+        </Pressable>
+        <Pressable style={styles.fastCaptureSecondaryButton} onPress={onOpenCustomFood}>
+          <Plus size={16} color={Colors.textSecondary} />
+          <Text style={styles.fastCaptureSecondaryText}>Custom Food</Text>
         </Pressable>
       </View>
     </View>
@@ -547,6 +802,7 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
   const hasCalories = item.calories !== null && item.calories !== undefined;
   const canQuickAdd = hasCalories && item.calories > 0;
   const badgeTheme = getQualityBadgeTheme(item.qualityTag);
+  const subtitle = getSearchSubtitle(item);
   const trustNote =
     item.confidenceLevel === 'review' && item.qualityIssues?.length
       ? item.qualityIssues[0]
@@ -560,7 +816,7 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
       ) : (
         <View style={[styles.resultImage, styles.resultImagePlaceholder]}>
           <Text style={styles.resultImagePlaceholderText}>
-            {item.name?.charAt(0) || '?'}
+            {item.emoji || item.name?.charAt(0) || '?'}
           </Text>
         </View>
       )}
@@ -568,9 +824,9 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
         <Text style={styles.resultName} numberOfLines={1}>
           {item.name}
         </Text>
-        {item.brand && (
-          <Text style={styles.resultBrand} numberOfLines={1}>
-            {item.brand}
+        {subtitle && (
+          <Text style={styles.resultSubtitle} numberOfLines={1}>
+            {subtitle}
           </Text>
         )}
         {(item.qualityLabel || trustNote) && (
@@ -605,18 +861,15 @@ const SearchResultItem = memo(function SearchResultItem({ item, onPress, onQuick
         )}
         <View style={styles.resultMacros}>
           <Text style={styles.resultMacroText}>
-            <Text style={{ color: Colors.protein }}>P</Text>{' '}
-            {item.protein ?? 'N/A'}
+            <Text style={{ color: Colors.protein }}>P</Text> {formatMacroValue(item.protein)}
           </Text>
           <Text style={styles.resultMacroDot}>·</Text>
           <Text style={styles.resultMacroText}>
-            <Text style={{ color: Colors.carbs }}>C</Text>{' '}
-            {item.carbs ?? 'N/A'}
+            <Text style={{ color: Colors.carbs }}>C</Text> {formatMacroValue(item.carbs)}
           </Text>
           <Text style={styles.resultMacroDot}>·</Text>
           <Text style={styles.resultMacroText}>
-            <Text style={{ color: Colors.fat }}>F</Text>{' '}
-            {item.fat ?? 'N/A'}
+            <Text style={{ color: Colors.fat }}>F</Text> {formatMacroValue(item.fat)}
           </Text>
         </View>
       </View>
@@ -662,6 +915,51 @@ const SearchSectionHeader = memo(function SearchSectionHeader({ title, subtitle 
     <View style={styles.searchSectionHeader}>
       <Text style={styles.searchSectionTitle}>{title}</Text>
       {subtitle ? <Text style={styles.searchSectionSubtitle}>{subtitle}</Text> : null}
+    </View>
+  );
+});
+
+const InlineStatusBanner = memo(function InlineStatusBanner({
+  title,
+  message,
+  actionLabel,
+  onAction,
+  busy = false,
+  tone = 'info',
+}) {
+  const toneStyles = tone === 'warning'
+    ? {
+        container: styles.statusBannerWarning,
+        icon: Colors.warning,
+        title: Colors.text,
+      }
+    : {
+        container: styles.statusBannerInfo,
+        icon: Colors.primary,
+        title: Colors.text,
+      };
+
+  return (
+    <View style={[styles.statusBanner, toneStyles.container]}>
+      <View style={styles.statusBannerRow}>
+        <View style={[styles.statusBannerIconWrap, { borderColor: toneStyles.icon + '33' }]}>
+          {busy ? (
+            <ActivityIndicator size="small" color={toneStyles.icon} />
+          ) : (
+            <AlertTriangle size={14} color={toneStyles.icon} />
+          )}
+        </View>
+        <View style={styles.statusBannerCopy}>
+          <Text style={[styles.statusBannerTitle, { color: toneStyles.title }]}>{title}</Text>
+          {message ? <Text style={styles.statusBannerMessage}>{message}</Text> : null}
+        </View>
+        {actionLabel && onAction ? (
+          <Pressable style={styles.statusBannerAction} onPress={onAction} hitSlop={8}>
+            <RotateCcw size={14} color={Colors.primary} />
+            <Text style={styles.statusBannerActionText}>{actionLabel}</Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 });
@@ -805,7 +1103,7 @@ const RecentMealCard = memo(function RecentMealCard({ snapshot, selectedMeal, on
             <Text style={styles.recentMealTitle}>{mealLabel}</Text>
           </View>
           <View style={styles.recentMealBadge}>
-            <Text style={styles.recentMealBadgeText}>Log to {targetMealLabel}</Text>
+            <Text style={styles.recentMealBadgeText}>Repeat to {targetMealLabel}</Text>
           </View>
         </View>
         <Text style={styles.recentMealPreview} numberOfLines={2}>
@@ -853,11 +1151,18 @@ const RepeatYesterdayChip = memo(function RepeatYesterdayChip({
 function AddScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  useFocusEffect(
+    useCallback(() => {
+      scheduleTabScreenReady('add');
+    }, [])
+  );
   const mealParam = normalizeMealParam(params.meal);
   const queryParam = getParamValue(params.query);
   const focusParam = getParamValue(params.focus);
   const sourceParam = getParamValue(params.source);
+  const barcodeParam = normalizeBarcodeQuery(getParamValue(params.barcode) || '');
   const isOnboardingHandoff = sourceParam === 'onboarding_complete';
+  const isBarcodeCorrectionFlow = Boolean(barcodeParam);
   const {
     addFood,
     addExercise,
@@ -870,6 +1175,7 @@ function AddScreenInner() {
     recipes,
     recentFoods,
     recentFoodsLoading,
+    recentFoodsError,
     fetchRecentFoods,
   } = useFood();
   const { profile } = useProfile();
@@ -908,18 +1214,18 @@ function AddScreenInner() {
   const [isSearching, setIsSearching] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [searchError, setSearchError] = useState(null);
-  const [searchSources, setSearchSources] = useState({
-    local: 0,
-    restaurant: 0,
-    openFoodFacts: 0,
-    usda: 0,
-    fatSecret: 0,
-    nutritionix: 0,
-  });
+  const [searchSources, setSearchSources] = useState(EMPTY_SEARCH_SOURCES);
+  const [searchRetryNonce, setSearchRetryNonce] = useState(0);
   const [recentSearches, setRecentSearches] = useState([]);
   const [trendingTerms, setTrendingTerms] = useState([]);
   const debouncedQuery = useDebounce(searchQuery, 80);
   const lastTrackedSearchRef = useRef('');
+  const lastCompletedSearchRef = useRef({
+    query: '',
+    resultCount: 0,
+    selected: false,
+  });
+  const selectedSearchContextRef = useRef(null);
 
   // Tab state: 'recent' or 'browse'
   const [activeTab, setActiveTab] = useState('recent');
@@ -962,6 +1268,46 @@ function AddScreenInner() {
       }
     }
   }, []);
+
+  const markSearchQuerySelected = useCallback(() => {
+    if (lastCompletedSearchRef.current.query) {
+      lastCompletedSearchRef.current.selected = true;
+    }
+  }, []);
+
+  const stagePendingSearchAdd = useCallback((item, quickAdd = false) => {
+    markSearchQuerySelected();
+    selectedSearchContextRef.current = {
+      query: searchQuery.trim(),
+      meal: selectedMeal,
+      sourceLabel: item?.sourceLabel || item?.brand || 'unknown',
+      confidenceLevel: item?.confidenceLevel || 'high',
+      quickAdd,
+    };
+  }, [markSearchQuerySelected, searchQuery, selectedMeal]);
+
+  const clearPendingSearchAdd = useCallback(() => {
+    selectedSearchContextRef.current = null;
+  }, []);
+
+  const rememberCorrectedBarcodeMatch = useCallback(async (food, correctionSource = 'search') => {
+    if (!barcodeParam) {
+      return;
+    }
+
+    const correctionPayload = toBarcodeCorrectionPayload(food);
+    if (!correctionPayload) {
+      return;
+    }
+
+    await rememberBarcodeCorrection(barcodeParam, correctionPayload);
+    recordBarcodeCorrected({
+      meal: selectedMeal,
+      barcode: barcodeParam,
+      source: correctionPayload.sourceLabel || correctionSource,
+      correctedName: correctionPayload.name,
+    });
+  }, [barcodeParam, selectedMeal]);
 
   // Cleanup recording on unmount to prevent resource leaks
   useEffect(() => {
@@ -1135,11 +1481,7 @@ function AddScreenInner() {
     const mealLabel = mealTypes.find((meal) => meal.id === mealType)?.label || 'meal';
     setUndoToast({
       visible: true,
-      message: message || (
-        entries.length === 1
-          ? `${entries[0].name} logged`
-          : `${entries.length} items logged to ${mealLabel.toLowerCase()}`
-      ),
+      message: message || buildLogSuccessMessage(entries, mealLabel),
       mealType,
       entryIds: entries.map((entry) => entry.clientRequestId || entry.id),
     });
@@ -1232,27 +1574,28 @@ function AddScreenInner() {
       serving: `1 serving (1/${recipe.servings} recipe)`,
       servingSize: 1,
       servingUnit: 'serving',
-    }, selectedMeal);
-  }, [logFoodInstant, selectedMeal]);
+    }, selectedMeal, `${recipe.name} added to ${selectedMealLabel.toLowerCase()}`);
+  }, [logFoodInstant, selectedMeal, selectedMealLabel]);
 
   // Frequent foods for horizontal quick-add strip
-  const topFrequentFoods = useMemo(() => getTopFoods(5), [frequentFoods, getTopFoods]);
+  const topFrequentFoods = useMemo(() => getTopFoods(5), [getTopFoods]);
   const lastTwentyFoods = useMemo(() => {
     const localRecentFoods = getRecentFoods(20);
-    const seenNames = new Set(localRecentFoods.map((food) => food.name?.toLowerCase().trim()));
+    const seenKeys = new Set(localRecentFoods.map((food) => getFoodIdentityKey(food)));
     const fallbackFoods = (recentFoods || [])
       .filter((food) => {
-        const normalizedName = food.name?.toLowerCase().trim();
-        return normalizedName && !seenNames.has(normalizedName);
+        const identityKey = getFoodIdentityKey(food);
+        return identityKey && !seenKeys.has(identityKey);
       })
       .slice(0, 20);
 
     return [...localRecentFoods, ...fallbackFoods].slice(0, 20);
-  }, [frequentFoods, getRecentFoods, recentFoods]);
+  }, [getRecentFoods, recentFoods]);
   const recentMealSnapshots = useMemo(
     () => recentMeals.filter((snapshot) => snapshot.items?.length > 0).slice(0, 7),
     [recentMeals]
   );
+  const topGoToMeals = useMemo(() => (recipes || []).slice(0, 4), [recipes]);
   const starterFoods = useMemo(() => {
     const ids = STARTER_FOOD_IDS_BY_MEAL[selectedMeal] || STARTER_FOOD_IDS_BY_MEAL.snacks;
     return ids
@@ -1377,6 +1720,7 @@ function AddScreenInner() {
       if (!debouncedQuery || debouncedQuery.length < 2) {
         setSearchResults([]);
         setSearchError(null);
+        setSearchSources(EMPTY_SEARCH_SOURCES);
         setIsTyping(false);
         lastTrackedSearchRef.current = '';
         return;
@@ -1387,7 +1731,24 @@ function AddScreenInner() {
       const startedAt = Date.now();
       const normalizedQuery = debouncedQuery.trim().toLowerCase();
       if (lastTrackedSearchRef.current !== normalizedQuery) {
+        const previousSearch = lastCompletedSearchRef.current;
+        if (
+          previousSearch.query &&
+          previousSearch.query !== normalizedQuery &&
+          !previousSearch.selected
+        ) {
+          recordSearchReformulated({
+            fromQuery: previousSearch.query,
+            toQuery: normalizedQuery,
+            meal: selectedMeal,
+            previousResultCount: previousSearch.resultCount,
+          }).catch(() => {});
+        }
         lastTrackedSearchRef.current = normalizedQuery;
+        recordFirstSearchFromStartup({
+          meal: selectedMeal,
+          queryLength: normalizedQuery.length,
+        });
         recordSearchStarted({
           query: debouncedQuery,
           meal: selectedMeal,
@@ -1400,6 +1761,13 @@ function AddScreenInner() {
       // Render local results immediately -- user sees results in <50ms
       if (localMatches.length > 0) {
         setSearchResults(localMatches);
+        setSearchSources({
+          ...EMPTY_SEARCH_SOURCES,
+          local: localMatches.length,
+        });
+      } else {
+        setSearchResults([]);
+        setSearchSources(EMPTY_SEARCH_SOURCES);
       }
 
       // Phase 2: Check cache first, then fetch API results
@@ -1408,6 +1776,11 @@ function AddScreenInner() {
         if (cancelled) return;
         setSearchResults(cached.products);
         setSearchSources(cached.sources);
+        lastCompletedSearchRef.current = {
+          query: normalizedQuery,
+          resultCount: cached.products.length,
+          selected: false,
+        };
         recordSearchCompleted({
           query: debouncedQuery,
           meal: selectedMeal,
@@ -1428,6 +1801,11 @@ function AddScreenInner() {
           setSearchResults(results.products);
           setSearchSources(results.sources);
           setCachedSearch(debouncedQuery, results.products, results.sources);
+          lastCompletedSearchRef.current = {
+            query: normalizedQuery,
+            resultCount: results.products.length,
+            selected: false,
+          };
         }
         recordSearchCompleted({
           query: debouncedQuery,
@@ -1438,9 +1816,20 @@ function AddScreenInner() {
         loadSearchMetadata();
       } catch {
         if (cancelled) return;
-        if (localMatches.length === 0) {
-          setSearchError('Could not reach food databases. Showing local foods only.');
-        }
+        setSearchError(
+          localMatches.length > 0
+            ? 'Live food databases are slow right now. Showing trusted local matches first.'
+            : 'Could not reach food databases. Try Scan, Quick Add, or retry.'
+        );
+        setSearchSources({
+          ...EMPTY_SEARCH_SOURCES,
+          local: localMatches.length,
+        });
+        lastCompletedSearchRef.current = {
+          query: normalizedQuery,
+          resultCount: localMatches.length,
+          selected: false,
+        };
         recordSearchCompleted({
           query: debouncedQuery,
           meal: selectedMeal,
@@ -1460,7 +1849,7 @@ function AddScreenInner() {
     }
 
     return () => { cancelled = true; };
-  }, [debouncedQuery, isPremium, loadSearchMetadata, mode, selectedMeal]);
+  }, [debouncedQuery, isPremium, loadSearchMetadata, mode, searchRetryNonce, selectedMeal]);
 
   // Filter local foods based on search (for quick-add section when not searching API)
   const filteredLocalFoods = useMemo(() => {
@@ -1477,16 +1866,90 @@ function AddScreenInner() {
     );
   }, [recipes, searchQuery]);
 
-  const queryMatchedRecentFoods = useMemo(() => {
+  const commonFoodFallbackResults = useMemo(() => {
     if (searchQuery.trim().length < 2) {
       return [];
     }
 
+    return searchLocalFoodDatabase(searchQuery, 8).map((food) => ({
+      ...food,
+      barcode: food.barcode || `local-${normalizeSearchText(food.id || food.name)}`,
+      canonicalId: food.canonicalId || food.id || normalizeSearchText(food.name),
+      source: food.source || 'local',
+      sourceLabel: food.sourceLabel || 'FuelIQ',
+      qualityTag: food.qualityTag || 'curated',
+      qualityLabel: food.qualityLabel || 'Curated',
+      confidenceLevel: food.confidenceLevel || 'high',
+      confidenceReason: food.confidenceReason || 'Curated nutrition data',
+      resultKind: food.resultKind || 'canonical',
+      reportable: food.reportable ?? true,
+    }));
+  }, [searchQuery]);
+
+  const searchDisplaySections = useMemo(() => {
+    return groupSearchResultsForDisplay(searchResults, {
+      fallbackProducts: commonFoodFallbackResults,
+      bestMatchLimit: 4,
+    }).filter((section) => section.items.length > 0);
+  }, [commonFoodFallbackResults, searchResults]);
+
+  const searchSectionIdentityKeys = useMemo(() => {
+    const keys = new Set();
+    searchDisplaySections.forEach((section) => {
+      section.items.forEach((item) => {
+        const key = getFoodIdentityKey(item);
+        if (key) {
+          keys.add(key);
+        }
+      });
+    });
+    return keys;
+  }, [searchDisplaySections]);
+
+  const matchedHistorySearchItems = useMemo(() => {
+    if (searchQuery.trim().length < 2) {
+      return { recentFrequent: [], custom: [] };
+    }
+
+    const rankedMatches = [
+      ...topFrequentFoods.map((food) => toSearchHistoryResult(food)),
+      ...lastTwentyFoods.map((food) => toSearchHistoryResult(food)),
+      ...filteredRecipes.map((recipe) => toRecipeSearchResult(recipe)),
+    ]
+      .filter(Boolean)
+      .map((item) => ({
+        item,
+        score: getHistoryMatchScore(item, searchQuery),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score);
+
     const seen = new Set();
-    return [...topFrequentFoods, ...lastTwentyFoods]
-      .filter((food) => matchesSearchText(searchQuery, food.name, food.brand))
-      .filter((food) => {
-        const key = normalizeSearchText(food.canonicalId || food.id || food.name);
+    const recentFrequent = [];
+    const custom = [];
+
+    rankedMatches.forEach(({ item }) => {
+      const key = getFoodIdentityKey(item);
+      if (!key || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+
+      if (item.resultKind === 'custom') {
+        custom.push(item);
+      } else {
+        recentFrequent.push(item);
+      }
+    });
+
+    return { recentFrequent, custom };
+  }, [filteredRecipes, lastTwentyFoods, searchQuery, topFrequentFoods]);
+
+  const recentFrequentMatches = useMemo(() => {
+    const seen = new Set(searchSectionIdentityKeys);
+    return matchedHistorySearchItems.recentFrequent
+      .filter((item) => {
+        const key = getFoodIdentityKey(item);
         if (!key || seen.has(key)) {
           return false;
         }
@@ -1494,10 +1957,28 @@ function AddScreenInner() {
         return true;
       })
       .slice(0, 4);
-  }, [lastTwentyFoods, searchQuery, topFrequentFoods]);
+  }, [matchedHistorySearchItems, searchSectionIdentityKeys]);
 
-  const bestSearchMatches = useMemo(() => searchResults.slice(0, 8), [searchResults]);
-  const additionalSearchMatches = useMemo(() => searchResults.slice(8, 20), [searchResults]);
+  const customSearchMatches = useMemo(() => {
+    const seen = new Set(searchSectionIdentityKeys);
+    recentFrequentMatches.forEach((item) => {
+      const key = getFoodIdentityKey(item);
+      if (key) {
+        seen.add(key);
+      }
+    });
+
+    return matchedHistorySearchItems.custom
+      .filter((item) => {
+        const key = getFoodIdentityKey(item);
+        if (!key || seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 3);
+  }, [matchedHistorySearchItems, recentFrequentMatches, searchSectionIdentityKeys]);
 
   const searchMatchSourcesLabel = useMemo(() => {
     const labels = [
@@ -1516,6 +1997,7 @@ function AddScreenInner() {
   const handleSelectResult = useCallback((product) => {
     hapticLight();
     Keyboard.dismiss();
+    stagePendingSearchAdd(product);
     recordSearchResultSelected({
       meal: selectedMeal,
       name: product.name,
@@ -1543,7 +2025,7 @@ function AddScreenInner() {
       reportable: product.reportable,
     });
     setFoodDetailModalVisible(true);
-  }, [selectedMeal]);
+  }, [selectedMeal, stagePendingSearchAdd]);
 
   const handleSearchSuggestionPress = useCallback((query) => {
     hapticLight();
@@ -1571,25 +2053,34 @@ function AddScreenInner() {
   }, []);
 
   // Handle confirming food from FoodDetailModal
-  const handleConfirmFoodDetail = useCallback((food, mealType) => {
-    logFoodInstant(food, mealType);
+  const handleConfirmFoodDetail = useCallback(async (food, mealType) => {
+    const mealLabel = mealTypes.find((meal) => meal.id === mealType)?.label?.toLowerCase() || 'meal';
+    const pendingSearchContext = selectedSearchContextRef.current;
+    await rememberCorrectedBarcodeMatch(food, 'detail_confirmed');
+    await logFoodInstant(food, mealType, `${food.name} added to ${mealLabel}`);
+    if (pendingSearchContext) {
+      await recordSearchAddSucceeded({
+        ...pendingSearchContext,
+        meal: mealType,
+      });
+      clearPendingSearchAdd();
+    }
     setFoodDetailModalVisible(false);
     setSelectedFood(null);
-    setSearchQuery('');
-    setActiveTab('recent');
-  }, [logFoodInstant]);
+  }, [clearPendingSearchAdd, logFoodInstant, rememberCorrectedBarcodeMatch]);
 
   // Close food detail modal
   const handleCloseFoodDetail = useCallback(() => {
     setFoodDetailModalVisible(false);
     setSelectedFood(null);
+    clearPendingSearchAdd();
 
     // If we were adding an ingredient, go back to recipe builder
     if (isAddingIngredient) {
       setIsAddingIngredient(false);
       setRecipeBuilderVisible(true);
     }
-  }, [isAddingIngredient]);
+  }, [clearPendingSearchAdd, isAddingIngredient]);
 
   // Handle selecting a recipe - open FoodDetailModal with recipe as food
   const handleSelectRecipe = useCallback((recipe) => {
@@ -1605,14 +2096,42 @@ function AddScreenInner() {
     setFoodDetailModalVisible(true);
   }, []);
 
+  const handleSelectMatchedSearchItem = useCallback((item) => {
+    stagePendingSearchAdd(item);
+    recordSearchResultSelected({
+      meal: selectedMeal,
+      name: item.name,
+      sourceLabel: item.sourceLabel,
+      confidenceLevel: item.confidenceLevel,
+      quickAdd: false,
+    });
+
+    if (item.resultKind === 'saved_meal' && item.recipe) {
+      handleSelectRecipe({
+        ...item.recipe,
+        source: item.source,
+        sourceLabel: item.sourceLabel,
+        qualityTag: item.qualityTag,
+        qualityLabel: item.qualityLabel,
+        confidenceLevel: item.confidenceLevel,
+        confidenceReason: item.confidenceReason,
+        resultKind: item.resultKind,
+      });
+      return;
+    }
+
+    handleSelectLocalFood(item);
+  }, [handleSelectLocalFood, handleSelectRecipe, selectedMeal, stagePendingSearchAdd]);
+
   // Handle confirming food as ingredient for recipe
   const handleConfirmAsIngredient = useCallback((food) => {
+    clearPendingSearchAdd();
     setPendingIngredient(food);
     setFoodDetailModalVisible(false);
     setSelectedFood(null);
     setIsAddingIngredient(false);
     setRecipeBuilderVisible(true);
-  }, []);
+  }, [clearPendingSearchAdd]);
 
   // Handle adding ingredient from recipe builder
   const handleAddIngredientFromBuilder = useCallback(() => {
@@ -1626,6 +2145,25 @@ function AddScreenInner() {
     Keyboard.dismiss();
     router.push('/create-recipe');
   };
+
+  const handleOpenRecipeImport = useCallback(async (source = 'add_fast_capture') => {
+    await hapticLight();
+    Keyboard.dismiss();
+    router.push({
+      pathname: '/recipe-import',
+      params: {
+        meal: selectedMeal,
+        source,
+      },
+    });
+  }, [router, selectedMeal]);
+
+  const handleOpenGoToMeals = useCallback(async () => {
+    await hapticLight();
+    Keyboard.dismiss();
+    setSearchQuery('');
+    setActiveTab('recent');
+  }, []);
 
   // Exercise handlers
   const handleSelectExercise = useCallback((exercise) => {
@@ -1686,6 +2224,7 @@ function AddScreenInner() {
 
   const handleReportFood = useCallback((food) => {
     Keyboard.dismiss();
+    clearPendingSearchAdd();
     setFoodDetailModalVisible(false);
     setSelectedFood(null);
     const normalizedName = food.brand
@@ -1709,7 +2248,7 @@ function AddScreenInner() {
         servingUnit: food.servingUnit || 'serving',
       },
     });
-  }, [router]);
+  }, [clearPendingSearchAdd, router]);
 
   // Barcode lookup screen (Open Food Facts + manual fallback)
   const handleOpenBarcodeLookup = () => {
@@ -1776,6 +2315,7 @@ function AddScreenInner() {
   // 1-tap quick add: log food with 1 serving, skip FoodDetailModal
   const handleQuickAddResult = useCallback(async (product) => {
     Keyboard.dismiss();
+    stagePendingSearchAdd(product, true);
     recordSearchResultSelected({
       meal: selectedMeal,
       name: product.name,
@@ -1787,9 +2327,78 @@ function AddScreenInner() {
       source: 'search_result',
       mealType: selectedMeal,
     });
+    await rememberCorrectedBarcodeMatch(product, 'search_quick_add');
     const food = productToFood(product);
-    await logFoodInstant(food, selectedMeal);
-  }, [logFoodInstant, selectedMeal]);
+    await logFoodInstant(
+      food,
+      selectedMeal,
+      `${product.name} added to ${selectedMealLabel.toLowerCase()}`
+    );
+    await recordSearchAddSucceeded({
+      query: searchQuery,
+      meal: selectedMeal,
+      sourceLabel: product.sourceLabel,
+      confidenceLevel: product.confidenceLevel,
+      quickAdd: true,
+    });
+    clearPendingSearchAdd();
+  }, [clearPendingSearchAdd, logFoodInstant, rememberCorrectedBarcodeMatch, searchQuery, selectedMeal, selectedMealLabel, stagePendingSearchAdd]);
+
+  const handleQuickAddMatchedSearchItem = useCallback(async (item) => {
+    Keyboard.dismiss();
+    stagePendingSearchAdd(item, true);
+    recordSearchResultSelected({
+      meal: selectedMeal,
+      name: item.name,
+      sourceLabel: item.sourceLabel,
+      confidenceLevel: item.confidenceLevel,
+      quickAdd: true,
+    });
+    recordQuickAddUsed({
+      source: item.resultKind === 'saved_meal' ? 'saved_meal' : 'search_recent',
+      mealType: selectedMeal,
+    });
+    await rememberCorrectedBarcodeMatch(item, 'search_recent');
+
+    if (item.resultKind === 'saved_meal' && item.recipe) {
+      await logFoodInstant(
+        {
+          ...item.recipe,
+          serving: `1 serving (1/${item.recipe.servings} recipe)`,
+          servingSize: 1,
+          servingUnit: 'serving',
+          source: item.source,
+          sourceLabel: item.sourceLabel,
+          qualityTag: item.qualityTag,
+          qualityLabel: item.qualityLabel,
+          confidenceLevel: item.confidenceLevel,
+          confidenceReason: item.confidenceReason,
+          resultKind: item.resultKind,
+        },
+        selectedMeal,
+        `${item.name} added to ${selectedMealLabel.toLowerCase()}`
+      );
+    } else {
+      await logFoodInstant(
+        {
+          ...item,
+          source: item.source,
+          sourceLabel: item.sourceLabel,
+        },
+        selectedMeal,
+        `${item.name} added to ${selectedMealLabel.toLowerCase()}`
+      );
+    }
+
+    await recordSearchAddSucceeded({
+      query: searchQuery,
+      meal: selectedMeal,
+      sourceLabel: item.sourceLabel,
+      confidenceLevel: item.confidenceLevel,
+      quickAdd: true,
+    });
+    clearPendingSearchAdd();
+  }, [clearPendingSearchAdd, logFoodInstant, rememberCorrectedBarcodeMatch, searchQuery, selectedMeal, selectedMealLabel, stagePendingSearchAdd]);
 
   // Stable renderItem and keyExtractor callbacks for FlatList optimization
   const renderRecentFood = useCallback(({ item, index }) => (
@@ -1815,7 +2424,7 @@ function AddScreenInner() {
   ), [handleSelectExercise]);
 
   const searchKeyExtractor = useCallback(
-    (item) => item.barcode || item.canonicalId || item.id || item.name,
+    (item) => buildSearchResultIdentityKey(item) || item.id || item.name,
     []
   );
   const idKeyExtractor = useCallback((item) => String(item.id || item.name), []);
@@ -1841,11 +2450,26 @@ function AddScreenInner() {
     !isOnboardingHandoff
   );
   const showStarterPicks = showFirstLogPrompt && starterFoods.length > 0;
+  const hasVisibleSearchContent = (
+    searchDisplaySections.length > 0 ||
+    recentFrequentMatches.length > 0 ||
+    customSearchMatches.length > 0
+  );
   const searchPlaceholder = mode === 'food'
     ? isOnboardingHandoff
       ? `Search your first ${selectedMealLabel.toLowerCase()}...`
       : 'Search foods...'
     : 'Search exercises...';
+  const showBlockingSearchLoader = isTyping || (isSearching && !hasVisibleSearchContent);
+  const showSearchStatusBanner = !showBlockingSearchLoader && (isSearching || Boolean(searchError));
+
+  const handleRetrySearch = useCallback(() => {
+    if (searchQuery.trim().length < 2) {
+      return;
+    }
+    setSearchError(null);
+    setSearchRetryNonce((current) => current + 1);
+  }, [searchQuery]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="add-screen">
@@ -1891,6 +2515,20 @@ function AddScreenInner() {
         <>
           <MealTypeSelector selected={selectedMeal} onSelect={setSelectedMeal} />
 
+          {isBarcodeCorrectionFlow && (
+            <View style={styles.barcodeCorrectionBanner}>
+              <View style={styles.barcodeCorrectionBannerIcon}>
+                <ScanBarcode size={16} color={Colors.primary} strokeWidth={2.3} />
+              </View>
+              <View style={styles.barcodeCorrectionBannerCopy}>
+                <Text style={styles.barcodeCorrectionBannerTitle}>Fix this barcode once</Text>
+                <Text style={styles.barcodeCorrectionBannerBody}>
+                  Pick the right food and we will remember barcode {barcodeParam.slice(-6)} next time.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {showFirstLogPrompt && (
             <View style={styles.firstLogPrompt}>
               <View style={styles.firstLogPromptIcon}>
@@ -1911,8 +2549,8 @@ function AddScreenInner() {
           {showImportSwitcherCard && (
             <MyFitnessPalImportCard
               eyebrow={isOnboardingHandoff ? 'Switch Instead' : 'Have History Elsewhere?'}
-              title="Already logged meals in MyFitnessPal?"
-              body="Import your diary first, then use repeat meals and quick add from day one."
+              title="Bring your history over first"
+              body="Import your diary now, then let repeat meals and quick add do the heavy lifting."
               buttonLabel="Import MyFitnessPal diary"
               onPress={handleOpenImportSwitcher}
               style={styles.importSwitcherCard}
@@ -1924,6 +2562,8 @@ function AddScreenInner() {
             onOpenBarcodeLookup={handleOpenBarcodeLookup}
             onOpenQuickCal={() => setQuickCalVisible(true)}
             onOpenCustomFood={() => router.push({ pathname: '/create-food', params: { meal: selectedMeal } })}
+            onOpenGoToMeals={handleOpenGoToMeals}
+            onOpenRecipeImport={handleOpenRecipeImport}
             onOpenFoodLens={handleOpenFoodLens}
             onOpenVoice={isRecording ? handleStopRecording : handleStartRecording}
             isRecording={isRecording}
@@ -1994,23 +2634,29 @@ function AddScreenInner() {
           {isShowingSearchResults ? (
             // Search Results
             <View style={styles.resultsContainer}>
-              {(isTyping || isSearching) ? (
+              {showBlockingSearchLoader ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color={Colors.primary} />
                   <Text style={styles.loadingText}>
-                    {isTyping ? 'Typing...' : 'Searching...'}
+                    {isTyping ? 'Updating results...' : 'Checking more food databases...'}
                   </Text>
                 </View>
-              ) : searchError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{searchError}</Text>
-                </View>
-              ) : searchResults.length === 0 ? (
+              ) : !hasVisibleSearchContent ? (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No strong matches yet</Text>
-                  <Text style={styles.emptySubtext}>
-                    Try steak, eggs, toast, or use Scan / Quick Cal below.
+                  <Text style={styles.emptyText}>
+                    {searchError ? 'Search is offline right now' : 'No strong matches yet'}
                   </Text>
+                  <Text style={styles.emptySubtext}>
+                    {searchError
+                      ? 'There are no saved matches for this query yet. Retry, scan a package, or quick-add it manually.'
+                      : 'Try steak, eggs, toast, or use Scan / Quick Cal below.'}
+                  </Text>
+                  {searchError ? (
+                    <Pressable style={styles.emptyRetryButton} onPress={handleRetrySearch}>
+                      <RotateCcw size={15} color={Colors.primary} />
+                      <Text style={styles.emptyRetryButtonText}>Retry search</Text>
+                    </Pressable>
+                  ) : null}
                   <View style={styles.searchFallbackActions}>
                     <FastCaptureAction
                       icon={ScanBarcode}
@@ -2024,6 +2670,12 @@ function AddScreenInner() {
                       hint="Log calories and macros manually"
                       onPress={() => setQuickCalVisible(true)}
                     />
+                    <FastCaptureAction
+                      icon={LinkIcon}
+                      label="Import Recipe"
+                      hint="Turn a recipe URL into a go-to meal"
+                      onPress={() => handleOpenRecipeImport('search_empty_state')}
+                    />
                   </View>
                 </View>
               ) : (
@@ -2032,48 +2684,74 @@ function AddScreenInner() {
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
                 >
-                  <SearchSectionHeader
-                    title={`Best Matches (${bestSearchMatches.length})`}
-                    subtitle={searchMatchSourcesLabel ? `Trusted from ${searchMatchSourcesLabel}` : 'Trusted picks for this search'}
-                  />
-                  {bestSearchMatches.map((item, index) => (
-                    <SearchResultItem
-                      key={searchKeyExtractor(item)}
-                      item={item}
-                      index={index}
-                      onPress={handleSelectResult}
-                      onQuickAdd={handleQuickAddResult}
-                      onReport={handleReportFood}
+                  {showSearchStatusBanner ? (
+                    <InlineStatusBanner
+                      title={isSearching ? 'Showing fast matches first' : 'Using trusted fallback results'}
+                      message={
+                        isSearching
+                          ? 'Local matches and your saved foods are ready now. We are checking more databases in the background.'
+                          : searchError
+                      }
+                      busy={isSearching}
+                      tone={searchError ? 'warning' : 'info'}
+                      actionLabel={searchError ? 'Retry' : null}
+                      onAction={searchError ? handleRetrySearch : null}
                     />
-                  ))}
+                  ) : null}
+                  {searchDisplaySections
+                    .filter((section) => section.key === 'best_matches')
+                    .map((section) => (
+                      <React.Fragment key={section.key}>
+                        <SearchSectionHeader
+                          title={section.title}
+                          subtitle={
+                            searchMatchSourcesLabel
+                              ? `${section.subtitle} · ${searchMatchSourcesLabel}`
+                              : section.subtitle
+                          }
+                        />
+                        {section.items.map((item, index) => (
+                          <SearchResultItem
+                            key={`${section.key}-${searchKeyExtractor(item)}`}
+                            item={item}
+                            index={index}
+                            onPress={handleSelectResult}
+                            onQuickAdd={handleQuickAddResult}
+                            onReport={handleReportFood}
+                          />
+                        ))}
+                      </React.Fragment>
+                    ))}
 
-                  {queryMatchedRecentFoods.length > 0 && (
+                  {recentFrequentMatches.length > 0 && (
                     <>
                       <SearchSectionHeader
-                        title="Recent for this search"
-                        subtitle={`Foods you've already used for ${selectedMealLabel.toLowerCase()}`}
+                        title="Recent / Frequent"
+                        subtitle={`Foods and saved meals you've already logged for faster ${selectedMealLabel.toLowerCase()} repeats`}
                       />
-                      {queryMatchedRecentFoods.map((item, index) => (
-                        <RecentFoodItem
-                          key={`recent-${item.id || item.name}`}
+                      {recentFrequentMatches.map((item, index) => (
+                        <SearchResultItem
+                          key={`recent-frequent-${searchKeyExtractor(item)}`}
                           item={item}
                           index={index}
-                          onPress={handleSelectLocalFood}
-                          onQuickAdd={handleQuickAddLocalFood}
+                          onPress={handleSelectMatchedSearchItem}
+                          onQuickAdd={handleQuickAddMatchedSearchItem}
                         />
                       ))}
                     </>
                   )}
 
-                  {additionalSearchMatches.length > 0 && (
-                    <>
+                  {searchDisplaySections
+                    .filter((section) => section.key === 'more_results')
+                    .map((section) => (
+                    <React.Fragment key={section.key}>
                       <SearchSectionHeader
-                        title="More Results"
-                        subtitle="Branded and secondary matches"
+                        title={section.title}
+                        subtitle={section.subtitle}
                       />
-                      {additionalSearchMatches.map((item, index) => (
+                      {section.items.map((item, index) => (
                         <SearchResultItem
-                          key={`${searchKeyExtractor(item)}-more`}
+                          key={`${section.key}-${searchKeyExtractor(item)}`}
                           item={item}
                           index={index}
                           onPress={handleSelectResult}
@@ -2081,13 +2759,22 @@ function AddScreenInner() {
                           onReport={handleReportFood}
                         />
                       ))}
-                    </>
-                  )}
+                    </React.Fragment>
+                  ))}
 
                   <SearchSectionHeader
-                    title="Fast fallback"
-                    subtitle="Stay in the logging flow if search is not the fastest option"
+                    title="Quick Add / Custom"
+                    subtitle="Manual entry and your saved custom foods when search is not the fastest path"
                   />
+                  {customSearchMatches.length > 0 && customSearchMatches.map((item, index) => (
+                    <SearchResultItem
+                      key={`custom-${searchKeyExtractor(item)}`}
+                      item={item}
+                      index={index}
+                      onPress={handleSelectMatchedSearchItem}
+                      onQuickAdd={handleQuickAddMatchedSearchItem}
+                    />
+                  ))}
                   <View style={styles.searchFallbackActions}>
                     <FastCaptureAction
                       icon={Plus}
@@ -2135,11 +2822,66 @@ function AddScreenInner() {
                   removeClippedSubviews={true}
                   ListHeaderComponent={
                     <>
+                      {recentFoodsError ? (
+                        <InlineStatusBanner
+                          title="Showing saved recent foods"
+                          message={recentFoodsError}
+                          tone="warning"
+                          actionLabel="Retry"
+                          onAction={fetchRecentFoods}
+                        />
+                      ) : null}
+                      <View style={styles.focusSection}>
+                        <View style={styles.focusSectionHeader}>
+                          <BookOpen size={16} color={Colors.primary} />
+                          <Text style={styles.focusSectionLabel}>Go-To Meals</Text>
+                        </View>
+                        <Text style={styles.focusSectionBody}>
+                          Saved meals with stable portions, ready for one-tap logging.
+                        </Text>
+                        {topGoToMeals.length === 0 ? (
+                          <View style={styles.focusEmptyCard}>
+                            <Text style={styles.focusEmptyTitle}>No go-to meals yet</Text>
+                            <Text style={styles.focusEmptyHint}>
+                              Save one meal you repeat often and it becomes the fastest trusted log in the app.
+                            </Text>
+                            <View style={styles.focusEmptyActions}>
+                              <Pressable style={styles.focusEmptyAction} onPress={handleOpenRecipeBuilder}>
+                                <Text style={styles.focusEmptyActionText}>Create go-to meal</Text>
+                              </Pressable>
+                              <Pressable style={styles.focusEmptyAction} onPress={() => handleOpenRecipeImport('go_to_meals_empty_state')}>
+                                <Text style={styles.focusEmptyActionText}>Import recipe</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ) : (
+                          topGoToMeals.map((recipe) => (
+                            <RecipeItem
+                              key={`go-to-${recipe.id}`}
+                              recipe={recipe}
+                              onPress={handleSelectRecipe}
+                              onQuickAdd={handleQuickAddRecipe}
+                            />
+                          ))
+                        )}
+                        <View style={styles.focusEmptyActions}>
+                          <Pressable style={styles.focusEmptyAction} onPress={() => handleOpenRecipeImport('go_to_meals_recent_tab')}>
+                            <Text style={styles.focusEmptyActionText}>Import recipe</Text>
+                          </Pressable>
+                          <Pressable style={styles.focusEmptyAction} onPress={handleOpenRecipeBuilder}>
+                            <Text style={styles.focusEmptyActionText}>Create another</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+
                       <View style={styles.focusSection}>
                         <View style={styles.focusSectionHeader}>
                           <RotateCcw size={16} color={Colors.primary} />
-                          <Text style={styles.focusSectionLabel}>Repeat Yesterday</Text>
+                          <Text style={styles.focusSectionLabel}>Carry Yesterday Forward</Text>
                         </View>
+                        <Text style={styles.focusSectionBody}>
+                          Use yesterday when today will likely look similar.
+                        </Text>
                         <View style={styles.repeatChipRow}>
                           {repeatYesterdayOptions.map((meal) => (
                             <RepeatYesterdayChip
@@ -2162,13 +2904,16 @@ function AddScreenInner() {
                       <View style={styles.focusSection}>
                         <View style={styles.focusSectionHeader}>
                           <Clock size={16} color={Colors.primary} />
-                          <Text style={styles.focusSectionLabel}>Last 7 Meals</Text>
+                          <Text style={styles.focusSectionLabel}>Meal History</Text>
                         </View>
+                        <Text style={styles.focusSectionBody}>
+                          Full meals you actually logged, ready to repeat into {selectedMealLabel.toLowerCase()}.
+                        </Text>
                         {recentMealSnapshots.length === 0 ? (
                           <View style={styles.focusEmptyCard}>
-                            <Text style={styles.focusEmptyTitle}>No recent meals yet</Text>
+                            <Text style={styles.focusEmptyTitle}>Your meal history will build fast</Text>
                             <Text style={styles.focusEmptyHint}>
-                              Full meals you log will appear here for 1-tap repeats
+                              Full meals you log will appear here for one-tap repeats
                             </Text>
                           </View>
                         ) : (
@@ -2195,7 +2940,7 @@ function AddScreenInner() {
                             <Heart size={32} color={Colors.textTertiary} />
                             <Text style={styles.favoritesEmptyTitle}>No favorites yet</Text>
                             <Text style={styles.favoritesEmptyHint}>
-                              Heart foods in your diary to see them here
+                              Favorite foods you trust will show up here for even faster repeats
                             </Text>
                           </View>
                         ) : (
@@ -2219,9 +2964,9 @@ function AddScreenInner() {
                       {lastTwentyFoods.length === 0 && (
                         <View style={styles.favoritesEmptyCard}>
                           <Clock size={32} color={Colors.textTertiary} />
-                          <Text style={styles.favoritesEmptyTitle}>No recent foods yet</Text>
+                          <Text style={styles.favoritesEmptyTitle}>Your fastest foods start here</Text>
                           <Text style={styles.favoritesEmptyHint}>
-                            Foods you log will appear here for quick access
+                            Foods you log today will turn into quick repeats tomorrow
                           </Text>
                         </View>
                       )}
@@ -2248,18 +2993,32 @@ function AddScreenInner() {
                 <>
                   {/* Create Recipe Button */}
                   {!isAddingIngredient && (
-                    <Pressable style={styles.createRecipeButton} onPress={handleOpenRecipeBuilder}>
-                      <View style={styles.createRecipeIcon}>
-                        <ChefHat size={20} color={Colors.primary} />
-                      </View>
-                      <View style={styles.createRecipeContent}>
-                        <Text style={styles.createRecipeTitle}>Create Recipe</Text>
-                        <Text style={styles.createRecipeSubtitle}>
-                          Build custom meals with multiple ingredients
-                        </Text>
-                      </View>
-                      <Plus size={20} color={Colors.primary} />
-                    </Pressable>
+                    <>
+                      <Pressable style={styles.createRecipeButton} onPress={handleOpenRecipeBuilder}>
+                        <View style={styles.createRecipeIcon}>
+                          <ChefHat size={20} color={Colors.primary} />
+                        </View>
+                        <View style={styles.createRecipeContent}>
+                          <Text style={styles.createRecipeTitle}>Create Go-To Meal</Text>
+                          <Text style={styles.createRecipeSubtitle}>
+                            Save a repeatable meal with stable portions and one-tap logging
+                          </Text>
+                        </View>
+                        <Plus size={20} color={Colors.primary} />
+                      </Pressable>
+                      <Pressable style={styles.createRecipeButton} onPress={() => handleOpenRecipeImport('browse_go_to_meals')}>
+                        <View style={styles.createRecipeIcon}>
+                          <LinkIcon size={20} color={Colors.primary} />
+                        </View>
+                        <View style={styles.createRecipeContent}>
+                          <Text style={styles.createRecipeTitle}>Import Recipe URL</Text>
+                          <Text style={styles.createRecipeSubtitle}>
+                            Pull a recipe site into a trusted go-to meal with stable portions
+                          </Text>
+                        </View>
+                        <Plus size={20} color={Colors.primary} />
+                      </Pressable>
+                    </>
                   )}
 
                   {/* My Recipes Section */}
@@ -2267,7 +3026,7 @@ function AddScreenInner() {
                     <View style={styles.recipesSection}>
                       <View style={styles.recipesSectionHeader}>
                         <BookOpen size={16} color={Colors.primary} />
-                        <Text style={styles.sectionLabel}>My Recipes</Text>
+                        <Text style={styles.sectionLabel}>Go-To Meals</Text>
                       </View>
                       {filteredRecipes.slice(0, 5).map((recipe) => (
                         <RecipeItem
@@ -2279,7 +3038,7 @@ function AddScreenInner() {
                       ))}
                       {recipes.length > 5 && searchQuery.length === 0 && (
                         <Text style={styles.moreRecipesHint}>
-                          Search to find more recipes...
+                          Search to find more go-to meals...
                         </Text>
                       )}
                     </View>
@@ -2543,6 +3302,40 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,
   },
+  barcodeCorrectionBanner: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.primary + '2a',
+    backgroundColor: Colors.primary + '10',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'flex-start',
+  },
+  barcodeCorrectionBannerIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  barcodeCorrectionBannerCopy: {
+    flex: 1,
+  },
+  barcodeCorrectionBannerTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  barcodeCorrectionBannerBody: {
+    marginTop: 2,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
   searchInputContainer: {
     flex: 1,
     flexDirection: 'row',
@@ -2603,10 +3396,12 @@ const styles = StyleSheet.create({
   },
   fastCaptureGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
   },
   fastCaptureAction: {
-    flex: 1,
+    flexBasis: '48%',
+    flexGrow: 1,
     minHeight: 92,
     padding: Spacing.sm,
     borderRadius: BorderRadius.lg,
@@ -2861,6 +3656,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
   },
+  focusSectionBody: {
+    marginTop: 6,
+    marginBottom: Spacing.sm,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
   focusSectionLabel: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.semibold,
@@ -2927,6 +3729,26 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
     lineHeight: 20,
+  },
+  focusEmptyAction: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary + '18',
+    borderWidth: 1,
+    borderColor: Colors.primary + '34',
+  },
+  focusEmptyActionText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
+  focusEmptyActions: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
   },
   recentMealCard: {
     backgroundColor: Colors.surface,
@@ -3029,6 +3851,23 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
+  emptyRetryButton: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    backgroundColor: Colors.primary + '12',
+  },
+  emptyRetryButtonText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
   searchFallbackActions: {
     width: '100%',
     gap: Spacing.sm,
@@ -3037,6 +3876,65 @@ const styles = StyleSheet.create({
   resultsList: {
     paddingHorizontal: Spacing.md,
     paddingBottom: 120,
+  },
+  statusBanner: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  statusBannerInfo: {
+    backgroundColor: Colors.primary + '10',
+    borderColor: Colors.primary + '22',
+  },
+  statusBannerWarning: {
+    backgroundColor: Colors.warning + '10',
+    borderColor: Colors.warning + '24',
+  },
+  statusBannerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  statusBannerIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  statusBannerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  statusBannerTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+  },
+  statusBannerMessage: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  statusBannerAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  statusBannerActionText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
   },
   searchSectionHeader: {
     marginBottom: Spacing.sm,
@@ -3090,10 +3988,10 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.text,
   },
-  resultBrand: {
+  resultSubtitle: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
   },
   resultTrustRow: {
     flexDirection: 'row',

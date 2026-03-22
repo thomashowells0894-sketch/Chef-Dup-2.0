@@ -22,6 +22,8 @@ export interface ActivationState {
   searchStartCount: number;
   searchCompletedCount: number;
   searchResultSelectionCount: number;
+  searchAddSuccessCount: number;
+  searchReformulationCount: number;
   searchesWithResultsCount: number;
   searchesWithNoResultsCount: number;
   searchCacheHitCount: number;
@@ -29,6 +31,7 @@ export interface ActivationState {
   barcodeStartCount: number;
   barcodeFoundCount: number;
   barcodeNotFoundCount: number;
+  barcodeCorrectionCount: number;
   totalBarcodeLookupLatencyMs: number;
   paywallViewCount: number;
   paywallConversionCount: number;
@@ -43,6 +46,7 @@ export interface CoreLoopMetrics {
   cacheHitRate: number | null;
   avgSearchLatencyMs: number | null;
   barcodeSuccessRate: number | null;
+  barcodeCorrectionRate: number | null;
   avgBarcodeLookupLatencyMs: number | null;
   paywallConversionRate: number | null;
 }
@@ -60,6 +64,13 @@ interface SearchResultInput {
   quickAdd?: boolean;
 }
 
+interface SearchReformulationInput {
+  fromQuery: string;
+  toQuery: string;
+  meal?: string | null;
+  previousResultCount?: number;
+}
+
 interface SearchCompleteInput {
   query: string;
   meal?: string | null;
@@ -67,6 +78,14 @@ interface SearchCompleteInput {
   latencyMs?: number | null;
   fromCache?: boolean;
   degraded?: boolean;
+}
+
+interface SearchAddSuccessInput {
+  query?: string | null;
+  meal?: string | null;
+  sourceLabel?: string | null;
+  confidenceLevel?: string | null;
+  quickAdd?: boolean;
 }
 
 interface FoodLogInput {
@@ -114,6 +133,8 @@ const INITIAL_STATE: ActivationState = {
   searchStartCount: 0,
   searchCompletedCount: 0,
   searchResultSelectionCount: 0,
+  searchAddSuccessCount: 0,
+  searchReformulationCount: 0,
   searchesWithResultsCount: 0,
   searchesWithNoResultsCount: 0,
   searchCacheHitCount: 0,
@@ -121,6 +142,7 @@ const INITIAL_STATE: ActivationState = {
   barcodeStartCount: 0,
   barcodeFoundCount: 0,
   barcodeNotFoundCount: 0,
+  barcodeCorrectionCount: 0,
   totalBarcodeLookupLatencyMs: 0,
   paywallViewCount: 0,
   paywallConversionCount: 0,
@@ -130,6 +152,9 @@ let cachedState: ActivationState | null = null;
 let loadPromise: Promise<ActivationState> | null = null;
 let stateUpdateChain: Promise<void> = Promise.resolve();
 const listeners = new Set<(state: ActivationState) => void>();
+let currentStorageKey = STORAGE_KEY;
+let currentScopeToken = 0;
+const scopedStateCache = new Map<string, ActivationState>();
 
 function cloneState(state: ActivationState): ActivationState {
   return { ...state };
@@ -151,28 +176,81 @@ function notifyListeners() {
   listeners.forEach((listener) => listener(snapshot));
 }
 
-async function persistState(state: ActivationState): Promise<void> {
+async function persistState(
+  state: ActivationState,
+  storageKey: string,
+  scopeToken: number
+): Promise<void> {
+  if (scopeToken !== currentScopeToken || storageKey !== currentStorageKey) {
+    return;
+  }
+
   cachedState = state;
+  scopedStateCache.set(storageKey, cloneState(state));
   notifyListeners();
 
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(state));
   } catch (error) {
     Sentry.captureException(error);
   }
+}
+
+async function readPersistedState(storageKey: string): Promise<ActivationState> {
+  const cachedScopeState = scopedStateCache.get(storageKey);
+  if (cachedScopeState) {
+    return cloneState(cachedScopeState);
+  }
+
+  try {
+    const saved = await AsyncStorage.getItem(storageKey);
+    const parsed = saved ? sanitizeState(JSON.parse(saved)) : cloneState(INITIAL_STATE);
+    scopedStateCache.set(storageKey, cloneState(parsed));
+    return parsed;
+  } catch (error) {
+    Sentry.captureException(error);
+    return cloneState(INITIAL_STATE);
+  }
+}
+
+async function ensureStateLoaded(
+  storageKey: string,
+  scopeToken: number
+): Promise<ActivationState> {
+  if (
+    scopeToken === currentScopeToken &&
+    storageKey === currentStorageKey &&
+    cachedState
+  ) {
+    return cloneState(cachedState);
+  }
+
+  const loaded = await readPersistedState(storageKey);
+
+  if (scopeToken === currentScopeToken && storageKey === currentStorageKey) {
+    cachedState = cloneState(loaded);
+  }
+
+  return cloneState(loaded);
 }
 
 async function updateState(
   updater: (state: ActivationState) => ActivationState
 ): Promise<ActivationState> {
   let nextState = cloneState(cachedState || INITIAL_STATE);
+  const storageKey = currentStorageKey;
+  const scopeToken = currentScopeToken;
 
   stateUpdateChain = stateUpdateChain
     .catch(() => {})
     .then(async () => {
-      const current = await loadActivationState();
+      const current = await ensureStateLoaded(storageKey, scopeToken);
+      if (scopeToken !== currentScopeToken || storageKey !== currentStorageKey) {
+        return;
+      }
+
       nextState = sanitizeState(updater(cloneState(current)));
-      await persistState(nextState);
+      await persistState(nextState, storageKey, scopeToken);
     });
 
   await stateUpdateChain;
@@ -197,28 +275,49 @@ export function getActivationStateSnapshot(): ActivationState {
   return cloneState(cachedState || INITIAL_STATE);
 }
 
+export async function configureActivationTrackerScope(
+  userId: string | null | undefined
+): Promise<ActivationState> {
+  const nextStorageKey = userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
+
+  if (nextStorageKey === currentStorageKey && cachedState) {
+    return cloneState(cachedState);
+  }
+
+  currentStorageKey = nextStorageKey;
+  currentScopeToken += 1;
+  loadPromise = null;
+  cachedState = null;
+  notifyListeners();
+
+  return loadActivationState();
+}
+
 export async function loadActivationState(): Promise<ActivationState> {
   if (cachedState) {
     return cloneState(cachedState);
   }
 
+  const storageKey = currentStorageKey;
+  const scopeToken = currentScopeToken;
   if (!loadPromise) {
     loadPromise = (async () => {
-      try {
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        cachedState = saved ? sanitizeState(JSON.parse(saved)) : cloneState(INITIAL_STATE);
-      } catch (error) {
-        Sentry.captureException(error);
-        cachedState = cloneState(INITIAL_STATE);
+      const loaded = await readPersistedState(storageKey);
+
+      if (scopeToken === currentScopeToken && storageKey === currentStorageKey) {
+        cachedState = cloneState(loaded);
       }
 
-      return cloneState(cachedState);
+      return cloneState(loaded);
     })();
   }
 
   const state = await loadPromise;
-  loadPromise = null;
-  notifyListeners();
+  if (scopeToken === currentScopeToken && storageKey === currentStorageKey) {
+    loadPromise = null;
+    notifyListeners();
+  }
+
   return state;
 }
 
@@ -290,6 +389,10 @@ export function getCoreLoopMetrics(state: ActivationState): CoreLoopMetrics {
         ? Math.round(state.totalSearchLatencyMs / state.searchCompletedCount)
         : null,
     barcodeSuccessRate: toRate(state.barcodeFoundCount, state.barcodeStartCount),
+    barcodeCorrectionRate: toRate(
+      state.barcodeCorrectionCount,
+      state.barcodeFoundCount + state.barcodeNotFoundCount
+    ),
     avgBarcodeLookupLatencyMs:
       state.barcodeFoundCount + state.barcodeNotFoundCount > 0
         ? Math.round(
@@ -306,9 +409,10 @@ export async function resetActivationState(): Promise<void> {
   stateUpdateChain = Promise.resolve();
   loadPromise = null;
   cachedState = cloneState(INITIAL_STATE);
+  scopedStateCache.delete(currentStorageKey);
   notifyListeners();
   try {
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.removeItem(currentStorageKey);
   } catch (error) {
     Sentry.captureException(error);
   }
@@ -385,6 +489,35 @@ export function recordSearchStarted({ query, meal }: SearchStartInput): void {
   });
 }
 
+export async function recordSearchReformulated({
+  fromQuery,
+  toQuery,
+  meal,
+  previousResultCount = 0,
+}: SearchReformulationInput): Promise<void> {
+  const normalizedFromQuery = normalizeSearchQuery(fromQuery);
+  const normalizedToQuery = normalizeSearchQuery(toQuery);
+  if (!normalizedFromQuery || !normalizedToQuery || normalizedFromQuery === normalizedToQuery) {
+    return;
+  }
+
+  await updateState((current) => ({
+    ...current,
+    searchReformulationCount: current.searchReformulationCount + 1,
+  }));
+
+  trackEvent('engagement', 'search_query_reformulated', {
+    metadata: {
+      mealType: meal || 'unknown',
+      fromQuery: normalizedFromQuery,
+      toQuery: normalizedToQuery,
+      previousResultCount: Math.max(Math.round(previousResultCount || 0), 0),
+      fromQueryLength: normalizedFromQuery.length,
+      toQueryLength: normalizedToQuery.length,
+    },
+  });
+}
+
 export function recordSearchCompleted({
   query,
   meal,
@@ -442,6 +575,32 @@ export function recordSearchResultSelected({
     metadata: {
       mealType: meal || 'unknown',
       name: name || 'unknown',
+      sourceLabel: sourceLabel || 'unknown',
+      confidenceLevel: confidenceLevel || 'unknown',
+      quickAdd,
+    },
+  });
+}
+
+export async function recordSearchAddSucceeded({
+  query,
+  meal,
+  sourceLabel,
+  confidenceLevel,
+  quickAdd = false,
+}: SearchAddSuccessInput): Promise<void> {
+  const normalizedQuery = normalizeSearchQuery(query || '');
+
+  await updateState((current) => ({
+    ...current,
+    searchAddSuccessCount: current.searchAddSuccessCount + 1,
+  }));
+
+  trackEvent('conversion', 'search_add_succeeded', {
+    metadata: {
+      mealType: meal || 'unknown',
+      query: normalizedQuery || 'unknown',
+      queryLength: normalizedQuery.length,
       sourceLabel: sourceLabel || 'unknown',
       confidenceLevel: confidenceLevel || 'unknown',
       quickAdd,
@@ -615,6 +774,32 @@ export function recordBarcodeNotFound({
       barcodeLength: barcode ? barcode.length : 0,
       barcode: normalizedBarcode,
       durationMs: normalizedLatency,
+    },
+  });
+}
+
+export function recordBarcodeCorrected({
+  meal,
+  barcode,
+  source,
+  correctedName,
+}: BarcodeInput & { correctedName?: string | null }): void {
+  const normalizedBarcode = normalizeBarcodeValue(barcode || '');
+
+  fireAndForget(
+    updateState((current) => ({
+      ...current,
+      barcodeCorrectionCount: current.barcodeCorrectionCount + 1,
+    }))
+  );
+
+  trackEvent('engagement', 'barcode_corrected', {
+    metadata: {
+      mealType: meal || 'unknown',
+      barcodeLength: barcode ? barcode.length : 0,
+      barcode: normalizedBarcode,
+      source: source || 'unknown',
+      correctedName: correctedName || '',
     },
   });
 }

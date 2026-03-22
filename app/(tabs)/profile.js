@@ -21,7 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { hapticImpact, hapticHeavy, hapticLight } from '../../lib/haptics';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import {
   User,
   Scale,
@@ -68,7 +68,7 @@ import {
 } from 'lucide-react-native';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
 import ScreenWrapper from '../../components/ScreenWrapper';
-import { Colors, Gradients, Spacing, FontSize, FontWeight, BorderRadius, Shadows, Glass } from '../../constants/theme';
+import { Colors, Gradients, Spacing, FontSize, FontWeight, BorderRadius } from '../../constants/theme';
 import { useProfile, ACTIVITY_LEVELS, MACRO_PRESETS } from '../../context/ProfileContext';
 import { useGamification } from '../../context/GamificationContext';
 import { useDashboardLayout } from '../../context/DashboardLayoutContext';
@@ -76,6 +76,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import useAchievements from '../../hooks/useAchievements';
 import { ProfileSkeleton } from '../../components/SkeletonLoader';
+import { buildProfileEditorDraft } from '../../lib/profileState';
+import { scheduleTabScreenReady } from '../../lib/tabSwitchTrace';
 
 const LOCAL_ACCOUNT_STORAGE_KEYS = [
   '@fueliq_gamification',
@@ -637,6 +639,12 @@ const EditLayoutModal = memo(function EditLayoutModal({ visible, onClose }) {
 });
 
 function ProfileScreenInner() {
+  useFocusEffect(
+    useCallback(() => {
+      scheduleTabScreenReady('profile');
+    }, [])
+  );
+
   const {
     profile,
     isLoading,
@@ -664,35 +672,53 @@ function ProfileScreenInner() {
   const [hasChanges, setHasChanges] = useState(false);
   const [showLayoutModal, setShowLayoutModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const lastHydratedDraftKeyRef = useRef(null);
+  const profileDraft = useMemo(() => buildProfileEditorDraft(profile), [profile]);
 
-  // Initialize form with saved profile
+  // Only refresh local form fields when the authenticated user changes or there are no unsaved edits.
   useEffect(() => {
-    if (!isLoading && profile) {
-      setName(profile.name || '');
-      setWeight(profile.weight ? String(profile.weight) : '');
-      setHeight(profile.height ? String(profile.height) : '');
-      setAge(profile.age ? String(profile.age) : '');
-      setGender(profile.gender || 'male');
-      setActivityLevel(profile.activityLevel || 'moderate');
-      setWeeklyGoal(profile.weeklyGoal || 'maintain');
-      setMacroPreset(profile.macroPreset || 'balanced');
+    if (isLoading) {
+      return;
     }
-  }, [isLoading, profile]);
+
+    const currentUserId = user?.id || 'anonymous';
+    const nextDraftKey = `${currentUserId}:${JSON.stringify(profileDraft)}`;
+    const hasHydratedCurrentUser = lastHydratedDraftKeyRef.current?.startsWith(`${currentUserId}:`);
+
+    if (hasHydratedCurrentUser && hasChanges) {
+      return;
+    }
+
+    if (lastHydratedDraftKeyRef.current === nextDraftKey) {
+      return;
+    }
+
+    setName(profileDraft.name);
+    setWeight(profileDraft.weight);
+    setHeight(profileDraft.height);
+    setAge(profileDraft.age);
+    setGender(profileDraft.gender);
+    setActivityLevel(profileDraft.activityLevel);
+    setWeeklyGoal(profileDraft.weeklyGoal);
+    setMacroPreset(profileDraft.macroPreset);
+    setHasChanges(false);
+    lastHydratedDraftKeyRef.current = nextDraftKey;
+  }, [hasChanges, isLoading, profileDraft, user?.id]);
 
   // Track changes
   useEffect(() => {
     if (isLoading) return;
     const hasChanged =
-      name !== (profile.name || '') ||
-      weight !== (profile.weight ? String(profile.weight) : '') ||
-      height !== (profile.height ? String(profile.height) : '') ||
-      age !== (profile.age ? String(profile.age) : '') ||
-      gender !== (profile.gender || 'male') ||
-      activityLevel !== (profile.activityLevel || 'moderate') ||
-      weeklyGoal !== (profile.weeklyGoal || 'maintain') ||
-      macroPreset !== (profile.macroPreset || 'balanced');
+      name !== profileDraft.name ||
+      weight !== profileDraft.weight ||
+      height !== profileDraft.height ||
+      age !== profileDraft.age ||
+      gender !== profileDraft.gender ||
+      activityLevel !== profileDraft.activityLevel ||
+      weeklyGoal !== profileDraft.weeklyGoal ||
+      macroPreset !== profileDraft.macroPreset;
     setHasChanges(hasChanged);
-  }, [name, weight, height, age, gender, activityLevel, weeklyGoal, macroPreset, profile, isLoading]);
+  }, [activityLevel, age, gender, height, isLoading, macroPreset, name, profileDraft, weight, weeklyGoal]);
 
   const handleSave = async () => {
     await hapticLight();
@@ -716,7 +742,7 @@ function ProfileScreenInner() {
           'Your current daily targets are still live. Review the suggested targets below and apply them only if you want to switch.'
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Save Failed', 'Could not save your profile. Please try again.');
     } finally {
       setIsSaving(false);
@@ -731,7 +757,7 @@ function ProfileScreenInner() {
   const handleNavigate = useCallback(async (route) => {
     await hapticLight();
     router.push(route);
-  }, [router]);
+  }, []);
 
   // Handle account deletion - Apple App Store compliance requirement
   const handleDeleteAccount = async () => {

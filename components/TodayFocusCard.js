@@ -40,6 +40,7 @@ function getActiveMealType(selectedDate, meals) {
 }
 
 function buildFocusState({
+  priorityAction,
   selectedDate,
   meals,
   goals,
@@ -56,11 +57,16 @@ function buildFocusState({
   const hydrationPercent = Math.round(waterProgress?.percentage || 0);
   const caloriesRemaining = Math.max((goals?.calories || 0) - (totals?.calories || 0), 0);
 
+  if (priorityAction) {
+    return priorityAction;
+  }
+
   if (!selectedDate || !isToday(selectedDate)) {
     return {
-      badge: 'Plan the day',
-      title: `Build ${activeMealLabel.toLowerCase()} before you need it`,
-      description: 'Draft the day up front so calories and protein stop drifting later.',
+      badge: 'Plan ahead',
+      title: `Set up ${activeMealLabel.toLowerCase()} before the day gets noisy`,
+      description: 'One deliberate meal now makes calories and protein easier to trust later.',
+      supportText: 'Fastest path: add a real meal, then reuse it tomorrow.',
       primaryLabel: `Add ${activeMealLabel}`,
       primaryIcon: Target,
       primaryAction: () => onLogMeal(activeMealType),
@@ -70,9 +76,10 @@ function buildFocusState({
 
   if (activeMealCount === 0) {
     return {
-      badge: 'Next best action',
-      title: `Log ${activeMealLabel.toLowerCase()} while the day is still in control`,
-      description: `${caloriesRemaining.toLocaleString()} kcal remain and you still have room to land the day cleanly.`,
+      badge: 'Next best move',
+      title: `Win today with ${activeMealLabel.toLowerCase()}`,
+      description: `${caloriesRemaining.toLocaleString()} kcal remain. One clean log now gives the coach real signal for the rest of the day.`,
+      supportText: 'After the first log, recent foods and repeats get much faster.',
       primaryLabel: `Log ${activeMealLabel}`,
       primaryIcon: Target,
       primaryAction: () => onLogMeal(activeMealType),
@@ -82,9 +89,10 @@ function buildFocusState({
 
   if (proteinRemaining >= 25) {
     return {
-      badge: 'Protein gap',
+      badge: 'High-leverage fix',
       title: `Close the last ${proteinRemaining}g of protein`,
-      description: 'One deliberate add now is better than chasing the target with random snacks later.',
+      description: 'A deliberate protein add now beats chasing the target with random snacks tonight.',
+      supportText: 'Think yogurt, chicken, eggs, or a shake.',
       primaryLabel: 'Add protein',
       primaryIcon: Sparkles,
       primaryAction: () => onLogMeal('snacks'),
@@ -95,8 +103,9 @@ function buildFocusState({
   if (hydrationPercent < 60) {
     return {
       badge: 'Hydration',
-      title: 'Catch up on water before energy drops',
-      description: `You are only at ${hydrationPercent}% of target. A quick 250 ml log restores momentum.`,
+      title: 'Take the easiest win: 250 ml water',
+      description: `You are at ${hydrationPercent}% of target. One quick log keeps energy and appetite steadier.`,
+      supportText: 'Small logs compound when the day gets busy.',
       primaryLabel: 'Log 250 ml',
       primaryIcon: Droplets,
       primaryAction: onLogWater,
@@ -105,9 +114,10 @@ function buildFocusState({
   }
 
   return {
-    badge: 'Locked in',
-    title: 'The day is stable, keep it simple',
-    description: 'Use scan for anything unlogged or let the coach tune the last 10% for you.',
+    badge: 'On pace',
+    title: 'You are in control. Keep repeats simple',
+    description: 'Your core targets are stable today. Scan anything new and repeat what already works.',
+    supportText: 'You do not need a perfect day, just another clean one.',
     primaryLabel: 'Open coach',
     primaryIcon: CheckCircle2,
     primaryAction: onOpenCoach,
@@ -139,6 +149,7 @@ function TodayFocusCard({
   totals,
   waterProgress,
   selectedDate,
+  priorityAction,
   onLogMeal,
   onOpenScanner,
   onLogWater,
@@ -153,6 +164,7 @@ function TodayFocusCard({
 
   const focus = useMemo(
     () => buildFocusState({
+      priorityAction,
       selectedDate,
       meals,
       goals,
@@ -162,7 +174,7 @@ function TodayFocusCard({
       onLogWater,
       onOpenCoach,
     }),
-    [selectedDate, meals, goals, totals, waterProgress, onLogMeal, onLogWater, onOpenCoach]
+    [priorityAction, selectedDate, meals, goals, totals, waterProgress, onLogMeal, onLogWater, onOpenCoach]
   );
 
   const PrimaryIcon = focus.primaryIcon;
@@ -178,6 +190,12 @@ function TodayFocusCard({
 
       <Text style={styles.title}>{focus.title}</Text>
       <Text style={styles.description}>{focus.description}</Text>
+      {focus.supportText ? (
+        <View style={styles.supportPill}>
+          <Sparkles size={14} color={Colors.primary} strokeWidth={2.2} />
+          <Text style={styles.supportText}>{focus.supportText}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.metricsRow}>
         <MetricPill label="Meals logged" value={`${completedMeals}/4`} />
@@ -254,6 +272,24 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 22,
     marginBottom: Spacing.lg,
+  },
+  supportPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: Spacing.lg,
+  },
+  supportText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 18,
   },
   metricsRow: {
     flexDirection: 'row',

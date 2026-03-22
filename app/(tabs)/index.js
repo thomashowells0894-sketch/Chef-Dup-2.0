@@ -21,7 +21,7 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import ReAnimated, {
   FadeInDown,
   FadeInUp,
@@ -39,6 +39,8 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import {
   Flame,
   Zap,
+  Bookmark,
+  Link,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -104,6 +106,7 @@ import { useMood } from '../../context/MoodContext';
 import { usePreload } from '../../hooks/usePreload';
 import { useIsPremium } from '../../context/SubscriptionContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useRecipes } from '../../context/RecipeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   recordQuickAddUsed,
@@ -120,7 +123,13 @@ import {
   useRecentMealSnapshots,
 } from '../../lib/recentMeals';
 import { trackEvent } from '../../lib/analytics';
-import { recordAppInteractive } from '../../lib/startupTrace';
+import { recordAppInteractive, recordHomeUsable } from '../../lib/startupTrace';
+import { scheduleTabScreenReady } from '../../lib/tabSwitchTrace';
+import {
+  buildMealTemplateName,
+  getMealTemplateEmoji,
+  summarizeMealTemplateItems,
+} from '../../lib/mealTemplates';
 
 // Premium accent colors
 const ACCENT = Colors.primary; // Electric Blue
@@ -223,6 +232,15 @@ function getRepeatMealPreview(snapshot) {
   return preview;
 }
 
+function getGoToMealPreview(recipe) {
+  const ingredientPreview = summarizeMealTemplateItems(recipe.ingredients || [], 2);
+  if (ingredientPreview !== 'Saved meal') {
+    return ingredientPreview;
+  }
+
+  return recipe.serving || `${Math.max(recipe.servings || 1, 1)} serving meal`;
+}
+
 const RepeatMealCard = memo(function RepeatMealCard({
   suggestion,
   isLoading,
@@ -269,6 +287,44 @@ const RepeatMealCard = memo(function RepeatMealCard({
               <ChevronRight size={16} color={Colors.primary} strokeWidth={2.4} />
             </>
           )}
+        </View>
+      </View>
+    </GlassCard>
+  );
+});
+
+const GoToMealCard = memo(function GoToMealCard({
+  recipe,
+  targetMealLabel,
+  onPress,
+}) {
+  const preview = getGoToMealPreview(recipe);
+
+  return (
+    <GlassCard onPress={() => onPress(recipe)} style={styles.goToMealCard} glow>
+      <View style={styles.goToMealTop}>
+        <View style={styles.goToMealBadge}>
+          <Bookmark size={13} color={Colors.primary} strokeWidth={2.4} />
+          <Text style={styles.goToMealBadgeText}>Saved meal</Text>
+        </View>
+        <Text style={styles.goToMealTarget}>Add to {targetMealLabel}</Text>
+      </View>
+
+      <View style={styles.goToMealMain}>
+        <Text style={styles.goToMealEmoji}>{recipe.emoji || '🍽️'}</Text>
+        <View style={styles.goToMealCopy}>
+          <Text style={styles.goToMealTitle} numberOfLines={1}>{recipe.name}</Text>
+          <Text style={styles.goToMealPreview} numberOfLines={2}>{preview}</Text>
+        </View>
+      </View>
+
+      <View style={styles.goToMealFooter}>
+        <Text style={styles.goToMealMeta}>
+          {Math.round(recipe.protein || 0)}g protein · {Math.round(recipe.calories || 0)} kcal
+        </Text>
+        <View style={styles.goToMealAction}>
+          <Text style={styles.goToMealActionText}>Log</Text>
+          <ChevronRight size={16} color={Colors.primary} strokeWidth={2.4} />
         </View>
       </View>
     </GlassCard>
@@ -566,6 +622,7 @@ function DashboardScreenInner() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
   const startupRecordedRef = useRef(false);
+  const homeUsableRecordedRef = useRef(false);
   const {
     state: activationState,
     stage: activationStage,
@@ -573,6 +630,12 @@ function DashboardScreenInner() {
     isLoading: activationLoading,
     showValuePaywall,
   } = useActivationTrackerHook();
+
+  useFocusEffect(
+    useCallback(() => {
+      scheduleTabScreenReady('index');
+    }, [])
+  );
   const { hasSeen, markSeen, isLoading: tourLoading } = useTour();
   const {
     totals,
@@ -583,17 +646,18 @@ function DashboardScreenInner() {
     mealCalories,
     removeFood,
     addFood,
-    isLoading,
     isFetchingDay,
     selectedDate,
     isPlanningMode,
     getDateLabel,
     waterProgress,
     addWater,
+    copyMealFromYesterday,
     copyMeal,
     getDefaultMealType,
   } = useMeals();
   const { profile } = useProfile();
+  const { recipes, saveRecipe } = useRecipes();
   const { currentStreak, streakTier } = useGamification();
   const { recordMealLogged, isFasting } = useFasting();
   const {
@@ -662,29 +726,6 @@ function DashboardScreenInner() {
       scheduleStreakWarning(currentStreak, profile?.name);
     }
   }, [currentStreak, profile?.name, scheduleStreakWarning]);
-
-  useEffect(() => {
-    if (activationLoading) return;
-
-    const hasStartedActivation =
-      activationState.onboardingCompletedAt ||
-      activationState.firstFoodLoggedAt ||
-      activationState.firstBarcodeFoundAt;
-
-    if (!hasStartedActivation) {
-      return;
-    }
-
-    syncActivationReminder(activationStage, profile?.name);
-  }, [
-    activationLoading,
-    activationStage,
-    activationState.firstBarcodeFoundAt,
-    activationState.firstFoodLoggedAt,
-    activationState.onboardingCompletedAt,
-    profile?.name,
-    syncActivationReminder,
-  ]);
 
   // Auto-show share card at streak milestones (7, 30, 100, 365 days)
   useEffect(() => {
@@ -898,6 +939,97 @@ function DashboardScreenInner() {
     await addWater(250);
   }, [addWater]);
 
+  const handleRepeatYesterdayMeal = useCallback(async (mealType) => {
+    try {
+      const copiedCount = await copyMealFromYesterday(mealType);
+      if (copiedCount <= 0) {
+        return;
+      }
+
+      recordQuickAddUsed({
+        source: 'repeat_yesterday_home',
+        mealType,
+        itemCount: copiedCount,
+      });
+      await recordRepeatLogUsed({
+        source: 'repeat_yesterday_home',
+        mealType,
+        itemCount: copiedCount,
+      });
+      if (!isPlanningMode) {
+        recordMealLogged(mealType);
+      }
+    } catch (error) {
+      Sentry.captureException(error);
+      Alert.alert('Could Not Repeat Meal', 'Please try again.');
+    }
+  }, [copyMealFromYesterday, isPlanningMode, recordMealLogged]);
+
+  const handleQuickAddGoToMeal = useCallback(async (recipe) => {
+    const mealType = getDefaultMealType();
+    await addFood({
+      ...recipe,
+      id: undefined,
+      clientRequestId: undefined,
+      serving: `1 serving (1/${Math.max(recipe.servings || 1, 1)} recipe)`,
+      servingSize: 1,
+      servingUnit: 'serving',
+    }, mealType);
+
+    await hapticSuccess();
+    recordQuickAddUsed({
+      source: 'saved_meal',
+      mealType,
+    });
+    await recordRepeatLogUsed({
+      source: 'saved_meal',
+      mealType,
+    }).catch(() => {});
+    if (!isPlanningMode) {
+      recordMealLogged(mealType);
+    }
+  }, [addFood, getDefaultMealType, isPlanningMode, recordMealLogged]);
+
+  const handleSaveMealAsTemplate = useCallback(async (mealType) => {
+    const items = meals?.[mealType] || [];
+    if (items.length === 0) {
+      return;
+    }
+
+    const templateName = buildMealTemplateName({
+      mealType,
+      items,
+      existingNames: recipes.map((recipe) => recipe.name),
+    });
+
+    try {
+      await saveRecipe(
+        templateName,
+        items.map((item) => ({
+          name: item.name,
+          emoji: item.emoji,
+          calories: item.calories,
+          protein: item.protein,
+          carbs: item.carbs,
+          fat: item.fat,
+          serving: item.serving,
+          servingSize: item.servingSize,
+          servingUnit: item.servingUnit,
+          image: item.image || null,
+          brand: item.brand || '',
+          barcode: item.barcode || '',
+        })),
+        1,
+        getMealTemplateEmoji(mealType)
+      );
+      await hapticSuccess();
+      Alert.alert('Saved to Go-To Meals', `${templateName} is ready for one-tap repeats.`);
+    } catch (error) {
+      Sentry.captureException(error);
+      Alert.alert('Could Not Save Meal', 'Please try again.');
+    }
+  }, [meals, recipes, saveRecipe]);
+
   const handleAIChatPress = useCallback(async () => {
     await hapticImpact();
     router.push('/chat');
@@ -917,6 +1049,22 @@ function DashboardScreenInner() {
       },
     });
   }, [router]);
+
+  const handleOpenRecipeBuilder = useCallback(async () => {
+    await hapticLight();
+    router.push('/create-recipe');
+  }, [router]);
+
+  const handleOpenRecipeImport = useCallback(async () => {
+    await hapticLight();
+    router.push({
+      pathname: '/recipe-import',
+      params: {
+        meal: getDefaultMealType(),
+        source: 'dashboard_go_to_meals',
+      },
+    });
+  }, [getDefaultMealType, router]);
 
   const handleLogAgainSuggestion = useCallback(async (suggestion) => {
     const actionId = `${suggestion.snapshot.id}:${suggestion.targetMealType}`;
@@ -1034,7 +1182,6 @@ function DashboardScreenInner() {
     () => Object.values(meals || {}).some((mealItems) => Array.isArray(mealItems) && mealItems.length > 0),
     [meals]
   );
-  const showImportSwitcherCard = !activationLoading && activationStage === 'first_meal' && !hasLoggedMealsToday;
 
   const { digest: weeklyDigest } = useWeeklyDigest();
   const { recentMeals: recentMealSnapshots } = useRecentMealSnapshots(20);
@@ -1073,25 +1220,95 @@ function DashboardScreenInner() {
     }),
     [getDefaultMealType, meals, recentMealSnapshots, selectedDateKey]
   );
+  const primaryRepeatSuggestion = repeatSuggestions[0] || null;
+  const topGoToMeals = useMemo(() => (recipes || []).slice(0, 3), [recipes]);
+  const hasReturningUserSignals = (
+    currentStreak > 1 ||
+    recentMealSnapshots.length >= 2 ||
+    repeatSuggestions.length > 0 ||
+    activationState.foodLogCount >= 3
+  );
+  const showActivationCard = (
+    !activationLoading &&
+    activationStage !== 'complete' &&
+    !hasReturningUserSignals
+  );
+  const showImportSwitcherCard = (
+    !activationLoading &&
+    activationStage === 'first_meal' &&
+    !hasLoggedMealsToday &&
+    !hasReturningUserSignals
+  );
+  const focusPriorityAction = useMemo(() => {
+    if (!isSelectedDateToday || !primaryRepeatSuggestion) {
+      return null;
+    }
+
+    const mealLabel = MEAL_LABELS[primaryRepeatSuggestion.targetMealType] || 'Meal';
+    const preview = getRepeatMealPreview(primaryRepeatSuggestion.snapshot);
+
+    return {
+      badge: 'Fastest log',
+      title: primaryRepeatSuggestion.alreadyLoggedToday
+        ? `Fastest win: add ${mealLabel.toLowerCase()} again`
+        : `Fastest win: repeat ${mealLabel.toLowerCase()}`,
+      description: `${preview}. Same meal, same context, no search required.`,
+      supportText: 'Trust comes from logging what you actually repeat.',
+      primaryLabel: primaryRepeatSuggestion.alreadyLoggedToday
+        ? `Add ${mealLabel} Again`
+        : `Repeat ${mealLabel}`,
+      primaryIcon: RotateCcw,
+      primaryAction: () => handleLogAgainSuggestion(primaryRepeatSuggestion),
+      primaryGradient: [Colors.primary, '#59C3FF'],
+    };
+  }, [handleLogAgainSuggestion, isSelectedDateToday, primaryRepeatSuggestion]);
+
+  useEffect(() => {
+    if (activationLoading || hasReturningUserSignals) return;
+
+    const hasStartedActivation =
+      activationState.onboardingCompletedAt ||
+      activationState.firstFoodLoggedAt ||
+      activationState.firstBarcodeFoundAt;
+
+    if (!hasStartedActivation) {
+      return;
+    }
+
+    syncActivationReminder(activationStage, profile?.name);
+  }, [
+    activationLoading,
+    activationStage,
+    activationState.firstBarcodeFoundAt,
+    activationState.firstFoodLoggedAt,
+    activationState.foodLogCount,
+    activationState.onboardingCompletedAt,
+    hasReturningUserSignals,
+    profile?.name,
+    syncActivationReminder,
+  ]);
 
   const primarySections = useMemo(() => {
     const sections = [
       { key: 'header' },
       { key: 'focus' },
+      { key: 'quickLog' },
     ];
 
-    if (!activationLoading && activationStage !== 'complete') {
+    if (repeatSuggestions.length > 0) {
+      sections.push({ key: 'logAgain' });
+    }
+
+    if (topGoToMeals.length > 0) {
+      sections.push({ key: 'goToMeals' });
+    }
+
+    if (showActivationCard) {
       sections.push({ key: 'activation' });
     }
 
     if (showImportSwitcherCard) {
       sections.push({ key: 'importSwitcher' });
-    }
-
-    sections.push({ key: 'quickLog' });
-
-    if (repeatSuggestions.length > 0) {
-      sections.push({ key: 'logAgain' });
     }
 
     sections.push(
@@ -1107,10 +1324,10 @@ function DashboardScreenInner() {
     sections.push({ key: 'insightsToggle' });
     return sections;
   }, [
-    activationLoading,
-    activationStage,
     isPremium,
     repeatSuggestions.length,
+    topGoToMeals.length,
+    showActivationCard,
     showImportSwitcherCard,
     showValuePaywall,
   ]);
@@ -1162,7 +1379,7 @@ function DashboardScreenInner() {
 
   useEffect(() => {
     if (startupRecordedRef.current) return;
-    if (isLoading) return;
+    if (!selectedDateKey || dashboardSections.length === 0) return;
 
     startupRecordedRef.current = true;
     recordAppInteractive({
@@ -1171,7 +1388,29 @@ function DashboardScreenInner() {
       hasLoggedMealsToday,
       selectedDateKey,
     });
-  }, [activationStage, hasLoggedMealsToday, isLoading, selectedDateKey]);
+  }, [activationStage, dashboardSections.length, hasLoggedMealsToday, selectedDateKey]);
+
+  useEffect(() => {
+    if (homeUsableRecordedRef.current) return;
+    if (activationLoading) return;
+    if (!selectedDateKey || primarySections.length === 0) return;
+
+    homeUsableRecordedRef.current = true;
+    recordHomeUsable({
+      screen: 'dashboard',
+      activationStage,
+      selectedDateKey,
+      hasLoggedMealsToday,
+      repeatSuggestions: repeatSuggestions.length,
+    });
+  }, [
+    activationLoading,
+    activationStage,
+    hasLoggedMealsToday,
+    primarySections.length,
+    repeatSuggestions.length,
+    selectedDateKey,
+  ]);
 
   const sectionKeyExtractor = useCallback((item) => item.key, []);
 
@@ -1229,6 +1468,7 @@ function DashboardScreenInner() {
               totals={totals}
               waterProgress={waterProgress}
               selectedDate={selectedDate}
+              priorityAction={focusPriorityAction}
               onLogMeal={handleAddFood}
               onOpenScanner={handleScannerPress}
               onLogWater={handleQuickWaterLog}
@@ -1251,8 +1491,8 @@ function DashboardScreenInner() {
           <ReAnimated.View entering={entering}>
             <MyFitnessPalImportCard
               eyebrow="Switch Faster"
-              title="Already logging in MyFitnessPal?"
-              body="Import your diary before you build today from scratch."
+              title="Bring your history over first"
+              body="Import your real meals now so repeat logging feels instant instead of rebuilt."
               buttonLabel="Import MyFitnessPal diary"
               onPress={handleOpenImportSwitcher}
               style={styles.importSwitcherCard}
@@ -1291,6 +1531,66 @@ function DashboardScreenInner() {
             </View>
           </ReAnimated.View>
         );
+      case 'goToMeals': {
+        const targetMealLabel = MEAL_LABELS[getDefaultMealType()] || 'Meal';
+        return (
+          <ReAnimated.View entering={entering}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.repeatShelfHeaderRow}>
+                <View style={styles.repeatShelfIconWrap}>
+                  <Bookmark size={16} color={Colors.primary} strokeWidth={2.5} />
+                </View>
+                <Text style={styles.sectionTitle}>Go-To Meals</Text>
+              </View>
+              <Text style={styles.repeatShelfSubtitle}>
+                Saved meals you can drop into {targetMealLabel.toLowerCase()} with one tap.
+              </Text>
+            </View>
+
+            {topGoToMeals.length === 0 ? (
+              <GlassCard style={styles.goToMealEmptyCard}>
+                <Text style={styles.goToMealEmptyTitle}>No go-to meals yet</Text>
+                <Text style={styles.goToMealEmptyBody}>
+                  Save or import one meal you actually repeat and this becomes your fastest trusted log.
+                </Text>
+                <View style={styles.goToMealActionRow}>
+                  <Pressable style={styles.goToMealActionButton} onPress={handleOpenRecipeBuilder}>
+                    <ChefHat size={16} color={Colors.primary} strokeWidth={2.3} />
+                    <Text style={styles.goToMealShortcutActionText}>Create meal</Text>
+                  </Pressable>
+                  <Pressable style={styles.goToMealActionButton} onPress={handleOpenRecipeImport}>
+                    <Link size={16} color={Colors.primary} strokeWidth={2.3} />
+                    <Text style={styles.goToMealShortcutActionText}>Import recipe</Text>
+                  </Pressable>
+                </View>
+              </GlassCard>
+            ) : (
+              <>
+                <View style={styles.goToMealList}>
+                  {topGoToMeals.map((recipe) => (
+                    <GoToMealCard
+                      key={recipe.id}
+                      recipe={recipe}
+                      targetMealLabel={targetMealLabel}
+                      onPress={handleQuickAddGoToMeal}
+                    />
+                  ))}
+                </View>
+                <View style={styles.goToMealActionRow}>
+                  <Pressable style={styles.goToMealActionButton} onPress={handleOpenRecipeImport}>
+                    <Link size={16} color={Colors.primary} strokeWidth={2.3} />
+                    <Text style={styles.goToMealShortcutActionText}>Import recipe</Text>
+                  </Pressable>
+                  <Pressable style={styles.goToMealActionButton} onPress={handleOpenRecipeBuilder}>
+                    <ChefHat size={16} color={Colors.primary} strokeWidth={2.3} />
+                    <Text style={styles.goToMealShortcutActionText}>Create another</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </ReAnimated.View>
+        );
+      }
       case 'wellnessScore': {
         const wsColor = wellnessResult.score >= 70 ? Colors.success : wellnessResult.score >= 40 ? Colors.warning : Colors.error;
         return (
@@ -1376,7 +1676,11 @@ function DashboardScreenInner() {
           </ReAnimated.View>
         );
       case 'quickLog':
-        return <ReAnimated.View entering={entering}><QuickLog /></ReAnimated.View>;
+        return (
+          <ReAnimated.View entering={entering}>
+            <QuickLog mealType={getDefaultMealType()} />
+          </ReAnimated.View>
+        );
       case 'streakRepair':
         return <ReAnimated.View entering={entering}><StreakRepairCard /></ReAnimated.View>;
       case 'contextual':
@@ -1406,10 +1710,10 @@ function DashboardScreenInner() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{getDateLabel(selectedDate)}'s Meals</Text>
             </View>
-            <MealSection mealType="breakfast" items={meals.breakfast} calories={mealCalories.breakfast} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} />
-            <MealSection mealType="lunch" items={meals.lunch} calories={mealCalories.lunch} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} />
-            <MealSection mealType="dinner" items={meals.dinner} calories={mealCalories.dinner} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} />
-            <MealSection mealType="snacks" items={meals.snacks} calories={mealCalories.snacks} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} />
+            <MealSection mealType="breakfast" items={meals.breakfast} calories={mealCalories.breakfast} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} onRepeatYesterday={isSelectedDateToday ? handleRepeatYesterdayMeal : undefined} onSaveMeal={handleSaveMealAsTemplate} />
+            <MealSection mealType="lunch" items={meals.lunch} calories={mealCalories.lunch} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} onRepeatYesterday={isSelectedDateToday ? handleRepeatYesterdayMeal : undefined} onSaveMeal={handleSaveMealAsTemplate} />
+            <MealSection mealType="dinner" items={meals.dinner} calories={mealCalories.dinner} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} onRepeatYesterday={isSelectedDateToday ? handleRepeatYesterdayMeal : undefined} onSaveMeal={handleSaveMealAsTemplate} />
+            <MealSection mealType="snacks" items={meals.snacks} calories={mealCalories.snacks} onAddPress={handleAddFood} onRemoveFood={handleRemoveFood} onRepeatYesterday={isSelectedDateToday ? handleRepeatYesterdayMeal : undefined} onSaveMeal={handleSaveMealAsTemplate} />
           </ReAnimated.View>
         );
       case 'activity':
@@ -1518,8 +1822,9 @@ function DashboardScreenInner() {
     handleAddFood, handleRemoveFood, handleWaterCardPress, handleScannerPress,
     handleQuickWaterLog, handleSmartCoachPress, handleToggleAdvancedInsights, showAdvancedInsights, handleMovementPress,
     activationStage, activationProgress, handleActivationPress, handleOpenImportSwitcher, handleValuePaywallPress,
-    handleLogAgainSuggestion, activeRepeatSuggestionId,
-    isSelectedDateToday, repeatSuggestions, waterProgress,
+    handleLogAgainSuggestion, activeRepeatSuggestionId, focusPriorityAction,
+    getDefaultMealType, handleOpenRecipeBuilder, handleOpenRecipeImport, handleQuickAddGoToMeal, handleRepeatYesterdayMeal, handleSaveMealAsTemplate,
+    isSelectedDateToday, repeatSuggestions, topGoToMeals, waterProgress,
   ]);
 
   return (
@@ -1531,11 +1836,11 @@ function DashboardScreenInner() {
         <DateNavigator />
 
         {/* Fetching Day Data Indicator */}
-        {(isLoading || isFetchingDay) && (
+        {isFetchingDay && (
           <View style={styles.fetchingIndicator}>
             <ActivityIndicator size="small" color={ACCENT} />
             <Text style={styles.fetchingText}>
-              {isLoading ? 'Getting today ready' : 'Refreshing today'}
+              {isSelectedDateToday ? 'Updating today in the background' : 'Refreshing this day'}
             </Text>
           </View>
         )}
@@ -1955,6 +2260,47 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
   },
+  goToMealList: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  goToMealEmptyCard: {
+    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  goToMealEmptyTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  goToMealEmptyBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  goToMealActionRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  goToMealActionButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary + '28',
+    backgroundColor: Colors.primary + '10',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+  },
+  goToMealShortcutActionText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
   repeatMealCard: {
     paddingVertical: Spacing.md,
   },
@@ -2018,6 +2364,87 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   repeatMealActionText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
+  goToMealCard: {
+    paddingVertical: Spacing.md,
+  },
+  goToMealTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+  },
+  goToMealBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceGlass,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  goToMealBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  goToMealTarget: {
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+  },
+  goToMealMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  goToMealEmoji: {
+    fontSize: 30,
+  },
+  goToMealCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  goToMealTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  goToMealPreview: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  goToMealFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  goToMealMeta: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.textTertiary,
+    fontWeight: FontWeight.medium,
+  },
+  goToMealAction: {
+    minWidth: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  goToMealActionText: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
     color: Colors.primary,

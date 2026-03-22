@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { configureActivationTrackerScope } from '../lib/activationTracker';
 import { recordActivity, isSessionExpired } from '../lib/security';
 import type { AuthContextValue } from '../types';
 
@@ -19,19 +20,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Auth Listener
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: any } }) => {
+      await configureActivationTrackerScope(session?.user?.id ?? null);
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-    }).catch(() => {
+    }).catch(async () => {
       // Network unavailable — keep existing session from SecureStore.
       // Supabase's persistSession:true handles offline gracefully.
+      await configureActivationTrackerScope(null);
       setLoading(false);
     });
 
     // Listen for auth changes (login, logout, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: string, session: any) => {
+      async (_event: string, session: any) => {
+        await configureActivationTrackerScope(session?.user?.id ?? null);
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);

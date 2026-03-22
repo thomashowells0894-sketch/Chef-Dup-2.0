@@ -1,10 +1,12 @@
 import {
+  configureActivationTrackerScope,
   getCoreLoopMetrics,
   getActivationStage,
   getActivationStateSnapshot,
   recordBarcodeFound,
   recordBarcodeNotFound,
   recordBarcodeStarted,
+  recordBarcodeCorrected,
   recordFoodLogged,
   recordOnboardingCompleted,
   recordOnboardingStarted,
@@ -12,6 +14,8 @@ import {
   recordPaywallViewed,
   recordRepeatLogUsed,
   recordSearchCompleted,
+  recordSearchAddSucceeded,
+  recordSearchReformulated,
   recordSearchResultSelected,
   recordSearchStarted,
   resetActivationState,
@@ -35,7 +39,13 @@ describe('activationTracker', () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-03-12T09:00:00Z'));
+    await configureActivationTrackerScope(null);
     await resetActivationState();
+    await configureActivationTrackerScope('user-a');
+    await resetActivationState();
+    await configureActivationTrackerScope('user-b');
+    await resetActivationState();
+    await configureActivationTrackerScope(null);
   });
 
   afterEach(() => {
@@ -128,6 +138,12 @@ describe('activationTracker', () => {
       barcode: '4012345678901',
       latencyMs: 1220,
     });
+    recordBarcodeCorrected({
+      meal: 'lunch',
+      barcode: '501234567890',
+      source: 'USDA',
+      correctedName: 'Greek Yogurt',
+    });
 
     await recordPaywallViewed({ source: 'after_value', trigger: 'after_value' });
     recordPaywallConverted({ source: 'after_value', trigger: 'after_value', plan: 'annual' });
@@ -145,6 +161,7 @@ describe('activationTracker', () => {
     expect(state.barcodeStartCount).toBe(2);
     expect(state.barcodeFoundCount).toBe(1);
     expect(state.barcodeNotFoundCount).toBe(1);
+    expect(state.barcodeCorrectionCount).toBe(1);
     expect(state.paywallViewCount).toBe(1);
     expect(state.paywallConversionCount).toBe(1);
 
@@ -154,7 +171,110 @@ describe('activationTracker', () => {
     expect(metrics.cacheHitRate).toBe(100);
     expect(metrics.avgSearchLatencyMs).toBe(320);
     expect(metrics.barcodeSuccessRate).toBe(50);
+    expect(metrics.barcodeCorrectionRate).toBe(50);
     expect(metrics.avgBarcodeLookupLatencyMs).toBe(1000);
     expect(metrics.paywallConversionRate).toBe(100);
+
+    expect(mockTrackEvent).toHaveBeenCalledWith(
+      'engagement',
+      'barcode_corrected',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          correctedName: 'Greek Yogurt',
+          source: 'USDA',
+        }),
+      })
+    );
+  });
+
+  it('tracks search reformulations and successful search adds', async () => {
+    recordSearchStarted({ query: 'banana snack', meal: 'breakfast' });
+    recordSearchCompleted({
+      query: 'banana snack',
+      meal: 'breakfast',
+      resultCount: 1,
+      latencyMs: 260,
+    });
+
+    await recordSearchReformulated({
+      fromQuery: 'banana snack',
+      toQuery: 'banana',
+      meal: 'breakfast',
+      previousResultCount: 1,
+    });
+    recordSearchStarted({ query: 'banana', meal: 'breakfast' });
+    recordSearchCompleted({
+      query: 'banana',
+      meal: 'breakfast',
+      resultCount: 4,
+      latencyMs: 180,
+    });
+    recordSearchResultSelected({
+      meal: 'breakfast',
+      name: 'Banana',
+      sourceLabel: 'FuelIQ',
+      confidenceLevel: 'high',
+      quickAdd: true,
+    });
+    await recordSearchAddSucceeded({
+      query: 'banana',
+      meal: 'breakfast',
+      sourceLabel: 'FuelIQ',
+      confidenceLevel: 'high',
+      quickAdd: true,
+    });
+
+    await flushTrackerUpdates();
+
+    const state = getActivationStateSnapshot();
+    expect(state.searchReformulationCount).toBe(1);
+    expect(state.searchAddSuccessCount).toBe(1);
+
+    expect(mockTrackEvent).toHaveBeenCalledWith(
+      'engagement',
+      'search_query_reformulated',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          fromQuery: 'banana snack',
+          toQuery: 'banana',
+          previousResultCount: 1,
+        }),
+      })
+    );
+
+    expect(mockTrackEvent).toHaveBeenCalledWith(
+      'conversion',
+      'search_add_succeeded',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          query: 'banana',
+          sourceLabel: 'FuelIQ',
+          quickAdd: true,
+        }),
+      })
+    );
+  });
+
+  it('keeps activation state isolated per authenticated user scope', async () => {
+    await configureActivationTrackerScope('user-a');
+    await recordFoodLogged({ mealType: 'breakfast', calories: 420, source: 'search_result' });
+
+    let state = getActivationStateSnapshot();
+    expect(state.foodLogCount).toBe(1);
+    expect(state.firstFoodLoggedAt).not.toBeNull();
+
+    await configureActivationTrackerScope('user-b');
+    state = getActivationStateSnapshot();
+    expect(state.foodLogCount).toBe(0);
+    expect(state.firstFoodLoggedAt).toBeNull();
+
+    await recordFoodLogged({ mealType: 'lunch', calories: 610, source: 'barcode' });
+    state = getActivationStateSnapshot();
+    expect(state.foodLogCount).toBe(1);
+
+    await configureActivationTrackerScope('user-a');
+    state = getActivationStateSnapshot();
+    expect(state.foodLogCount).toBe(1);
+    expect(state.firstFoodLoggedAt).not.toBeNull();
   });
 });

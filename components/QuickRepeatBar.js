@@ -23,7 +23,7 @@ export function recordMealForRepeat(food) {
         protein: food.protein,
         carbs: food.carbs,
         fat: food.fat,
-        serving: food.serving || food.servingSize ? `${food.servingSize} ${food.servingUnit}` : '1 serving',
+        serving: food.serving || (food.servingSize ? `${food.servingSize} ${food.servingUnit || 'serving'}` : '1 serving'),
         emoji: food.emoji || '',
         timestamp: Date.now(),
       });

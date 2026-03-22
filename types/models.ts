@@ -3,6 +3,7 @@ import type { DateKey, MacroSet, MealType, FoodCategory, ExerciseCategory, MealT
 /** Food item from the database or scanned */
 export interface FoodItem extends MacroSet {
   id: string | number;
+  canonicalId?: string | null;
   name: string;
   serving: string;
   category?: FoodCategory;
@@ -25,6 +26,7 @@ export interface FoodItem extends MacroSet {
   confidenceReason?: string;
   qualityIssues?: string[];
   reportable?: boolean;
+  resultKind?: 'canonical' | 'branded' | 'custom' | 'saved_meal' | 'recent' | 'quick_add' | 'restaurant';
 }
 
 /** Food item as logged in a meal */

@@ -10,8 +10,8 @@ import {
 } from '../constants/theme';
 
 export default function MyFitnessPalImportCard({
-  title = 'Switching from MyFitnessPal?',
-  body = 'Import your diary instead of rebuilding meals from scratch.',
+  title = 'Bring your history over first',
+  body = 'Repeat logging only feels instant when your real meals are already here.',
   buttonLabel = 'Import your diary',
   eyebrow = 'Switcher Path',
   onPress,

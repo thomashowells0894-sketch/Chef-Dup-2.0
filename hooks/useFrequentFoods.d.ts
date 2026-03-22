@@ -1,5 +1,6 @@
 export interface FrequentFoodItem {
   id: string;
+  canonicalId?: string | null;
   name: string;
   emoji?: string;
   calories?: number;
@@ -7,7 +8,16 @@ export interface FrequentFoodItem {
   carbs?: number;
   fat?: number;
   serving?: string;
+  servingSize?: number;
   servingUnit?: string;
+  brand?: string | null;
+  barcode?: string;
+  image?: string | null;
+  source?: string;
+  sourceLabel?: string;
+  qualityTag?: 'verified' | 'curated' | 'partner' | 'restaurant' | 'community';
+  qualityLabel?: string;
+  resultKind?: 'canonical' | 'branded' | 'custom' | 'saved_meal' | 'recent' | 'quick_add' | 'restaurant';
   count?: number;
   lastUsed?: string;
   pinned?: boolean;

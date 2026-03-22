@@ -89,6 +89,13 @@ export interface SearchTrustAssessment {
   exactBarcodeMatch: boolean;
 }
 
+export interface SearchDisplaySection {
+  key: 'best_matches' | 'more_results';
+  title: string;
+  subtitle: string;
+  items: ProductResult[];
+}
+
 const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   g: 1,
   gram: 1,
@@ -312,6 +319,14 @@ function normalizeBrand(brand: string | null | undefined): string {
 }
 
 function isDuplicateProduct(a: ProductResult, b: ProductResult): boolean {
+  if (a.canonicalId && b.canonicalId && a.canonicalId === b.canonicalId) {
+    return true;
+  }
+
+  if (a.barcode && b.barcode && normalizeBarcodeQuery(a.barcode) === normalizeBarcodeQuery(b.barcode)) {
+    return true;
+  }
+
   if (!isDuplicate(a.name, b.name)) {
     return false;
   }
@@ -323,6 +338,27 @@ function isDuplicateProduct(a: ProductResult, b: ProductResult): boolean {
   }
 
   return true;
+}
+
+export function buildSearchResultIdentityKey(product: Partial<ProductResult> | null | undefined): string {
+  if (!product) {
+    return '';
+  }
+
+  const canonicalId = normalizeForSearch(product.canonicalId);
+  if (canonicalId) {
+    return `canonical:${canonicalId}`;
+  }
+
+  const barcode = normalizeBarcodeQuery(product.barcode || '');
+  if (barcode) {
+    return `barcode:${barcode}`;
+  }
+
+  const resultKind = normalizeForSearch(product.resultKind || 'food');
+  const brand = normalizeForSearch(product.brand);
+  const name = normalizeForSearch(product.name);
+  return `${resultKind}:${brand}:${name}`;
 }
 
 export function normalizeBarcodeQuery(query: string): string {
@@ -439,6 +475,14 @@ function stripBrandFromQuery(query: string, normalizedBrand: string): string {
     .replace(new RegExp(`\\b${escapeRegex(normalizedBrand)}\\b`, 'g'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function getCanonicalQueryProfileId(query: string): string | null {
+  return getCuratedSearchAdjustment(query, {
+    name: query,
+    source: 'local',
+    barcode: `query:${normalizeForSearch(query)}`,
+  }).profileId;
 }
 
 function getComparableProductName(product: ProductResult): string {
@@ -623,6 +667,16 @@ function calculateRelevanceScore(
   const queryForNameMatch = stripBrandFromQuery(normalizedQuery, normalizedBrand) || normalizedQuery;
   const fuzzyScore = bigramSimilarity(comparableName, queryForNameMatch);
   const queryTerms = queryForNameMatch.split(' ').filter(Boolean);
+  const isSimpleFoodQuery = queryTerms.length <= 2;
+  const queryProfileId = getCanonicalQueryProfileId(queryForNameMatch || normalizedQuery);
+  const matchedCanonicalProfile =
+    Boolean(curation.profileId) &&
+    Boolean(product.canonicalId) &&
+    product.canonicalId === curation.profileId;
+  const exactCanonicalIntentMatch =
+    Boolean(queryProfileId) &&
+    Boolean(product.canonicalId) &&
+    product.canonicalId === queryProfileId;
 
   let score = trust.confidenceScore + (completeness * 12) + ((product.trustScore || 0) * 0.1);
   score += curation.rankingBoost;
@@ -630,6 +684,42 @@ function calculateRelevanceScore(
   if (trust.exactBarcodeMatch) score += 220;
   if (trust.exactNameMatch) score += 90;
   if (trust.exactBrandMatch) score += 35;
+  if (product.resultKind === 'canonical' && trust.confidenceLevel !== 'review') score += 28;
+  if (product.resultKind === 'restaurant' && trust.confidenceLevel !== 'review') score += 10;
+  if (matchedCanonicalProfile) score += 22;
+  if (matchedCanonicalProfile && isSimpleFoodQuery) score += 18;
+  if (matchedCanonicalProfile && product.source === 'local') score += 12;
+  if (matchedCanonicalProfile && product.source === 'usda') score += 10;
+  if (exactCanonicalIntentMatch) score += 26;
+  if (exactCanonicalIntentMatch && product.resultKind === 'canonical') score += 20;
+  if (exactCanonicalIntentMatch && !product.brand) score += 12;
+  if (exactCanonicalIntentMatch && product.source === 'local') score += 18;
+  if (exactCanonicalIntentMatch && product.source === 'usda') score += 16;
+  if (
+    product.resultKind === 'branded' &&
+    isSimpleFoodQuery &&
+    !trust.exactBrandMatch &&
+    !trust.exactBarcodeMatch
+  ) {
+    score -= 10;
+  }
+  if (
+    queryProfileId &&
+    product.resultKind === 'branded' &&
+    !trust.exactBrandMatch &&
+    !trust.exactBarcodeMatch
+  ) {
+    score -= exactCanonicalIntentMatch ? 12 : 20;
+  }
+  if (
+    product.resultKind === 'restaurant' &&
+    isSimpleFoodQuery &&
+    !trust.exactBrandMatch &&
+    !trust.exactBarcodeMatch
+  ) {
+    score -= 14;
+  }
+  if (trust.confidenceLevel === 'review') score -= 24;
   if (fuzzyScore >= 0.88) score += 14;
   if (product.image) score += 3;
 
@@ -690,11 +780,95 @@ function rankProducts(products: ProductResult[], query: string): ProductResult[]
     .map((item) => item.product);
 }
 
+export function groupSearchResultsForDisplay(
+  products: ProductResult[],
+  options: {
+    fallbackProducts?: ProductResult[];
+    bestMatchLimit?: number;
+  } = {},
+): SearchDisplaySection[] {
+  const fallbackProducts = options.fallbackProducts || [];
+  const bestMatchLimit = options.bestMatchLimit || 4;
+  const strongProducts = products.filter((product) => product.confidenceLevel !== 'review');
+  const canonicalStrongProducts = strongProducts.filter((product) => product.resultKind === 'canonical');
+  const nonCanonicalStrongProducts = strongProducts.filter((product) => product.resultKind !== 'canonical');
+  const bestMatches: ProductResult[] = [];
+  const usedKeys = new Set<string>();
+
+  const pushUnique = (candidate: ProductResult | null | undefined) => {
+    if (!candidate) {
+      return;
+    }
+
+    const key = buildSearchResultIdentityKey(candidate);
+    if (!key || usedKeys.has(key)) {
+      return;
+    }
+
+    bestMatches.push(candidate);
+    usedKeys.add(key);
+  };
+
+  const candidateGroups =
+    strongProducts.length > 0
+      ? [canonicalStrongProducts, fallbackProducts, nonCanonicalStrongProducts, products]
+      : [fallbackProducts, products];
+
+  candidateGroups.forEach((group) => {
+    group.forEach((candidate) => {
+      if (bestMatches.length < bestMatchLimit) {
+        pushUnique(candidate);
+      }
+    });
+  });
+
+  const moreResults = products.filter((product) => !usedKeys.has(buildSearchResultIdentityKey(product)));
+
+  return [
+    bestMatches.length > 0
+      ? {
+          key: 'best_matches',
+          title: 'Best Matches',
+          subtitle: 'Most likely foods to log first',
+          items: bestMatches,
+        }
+      : null,
+    moreResults.length > 0
+      ? {
+          key: 'more_results',
+          title: 'More Results',
+          subtitle: 'Additional matches, brands, and lower-confidence results',
+          items: moreResults,
+        }
+      : null,
+  ].filter(Boolean) as SearchDisplaySection[];
+}
+
 function shouldReplaceDuplicate(
   existing: ProductResult,
   candidate: ProductResult,
   query: string,
 ): boolean {
+  if (
+    existing.canonicalId &&
+    candidate.canonicalId &&
+    existing.canonicalId === candidate.canonicalId
+  ) {
+    const queryProfileId = getCanonicalQueryProfileId(query);
+    const existingExactCanonical =
+      queryProfileId &&
+      existing.canonicalId === queryProfileId &&
+      existing.resultKind === 'canonical';
+    const candidateExactCanonical =
+      queryProfileId &&
+      candidate.canonicalId === queryProfileId &&
+      candidate.resultKind === 'canonical';
+
+    if (existingExactCanonical !== candidateExactCanonical) {
+      return Boolean(candidateExactCanonical);
+    }
+  }
+
   return calculateRelevanceScore(candidate, query) > calculateRelevanceScore(existing, query);
 }
 

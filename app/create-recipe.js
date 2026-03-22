@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   ScrollView,
-  FlatList,
   Modal,
   ActivityIndicator,
   Alert,
@@ -24,7 +23,6 @@ import {
   Search,
   X,
   Users,
-  Flame,
 } from 'lucide-react-native';
 import { hapticLight } from '../lib/haptics';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
@@ -152,7 +150,7 @@ function IngredientSearchModal({ visible, onClose, onSelectIngredient }) {
         // Use global search for US + UK + EU coverage
         const apiResults = await searchProductsGlobal(debouncedQuery, 20);
         setResults(apiResults.products || []);
-      } catch (error) {
+      } catch (_error) {
         // Silently fail - just show local results
         setResults([]);
       } finally {
@@ -351,7 +349,7 @@ export default function CreateRecipeScreen() {
 
       Alert.alert(
         'Success',
-        `"${recipeName}" has been saved! You can now log it from the Add Food screen.`,
+        `"${recipeName}" is saved as a go-to meal and ready for one-tap logging.`,
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
@@ -386,7 +384,7 @@ export default function CreateRecipeScreen() {
         </Pressable>
         <View style={styles.headerCenter}>
           <ChefHat size={20} color={Colors.primary} />
-          <Text style={styles.headerTitle}>Create Recipe</Text>
+          <Text style={styles.headerTitle}>Create Go-To Meal</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>

@@ -78,8 +78,9 @@ export default function QuickCalModal({ visible, onClose, onLog, initialMealType
       setCalories('');
       setName('');
       setLogged(false);
+      onClose?.();
     }, 800);
-  }, [calories, name, mealType, onLog]);
+  }, [calories, mealType, name, onClose, onLog]);
 
   const handleMealSelect = useCallback(async (id) => {
     await hapticLight();

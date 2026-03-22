@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { FadeInUp, FadeOutDown } from 'react-native-reanimated';
+import { CheckCircle2 } from 'lucide-react-native';
 import { Colors, Spacing, FontSize, FontWeight, BorderRadius } from '../constants/theme';
 
 const AUTO_DISMISS_MS = 3000;
@@ -29,9 +30,12 @@ export default function UndoToast({ visible, message, onUndo, onDismiss }) {
       exiting={FadeOutDown}
       style={styles.container}
     >
-      <Text style={styles.message} numberOfLines={1}>
-        {message}
-      </Text>
+      <View style={styles.messageRow}>
+        <CheckCircle2 size={18} color={Colors.success} strokeWidth={2.4} />
+        <Text style={styles.message} numberOfLines={2}>
+          {message}
+        </Text>
+      </View>
       <Pressable onPress={handleUndo} hitSlop={8}>
         <Text style={styles.undoText}>Undo</Text>
       </Pressable>
@@ -50,17 +54,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: Colors.surfaceGlass,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.success + '35',
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm + 4,
     paddingHorizontal: Spacing.md,
   },
-  message: {
+  messageRow: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginRight: Spacing.md,
+  },
+  message: {
     color: Colors.text,
     fontSize: FontSize.md,
     fontWeight: FontWeight.medium,
-    marginRight: Spacing.md,
+    flexShrink: 1,
   },
   undoText: {
     color: Colors.primary,

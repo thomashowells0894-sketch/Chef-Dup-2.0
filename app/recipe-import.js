@@ -6,7 +6,7 @@
  * add to diary.
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import {
   Platform,
   Keyboard,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import ReAnimated, { FadeInDown } from 'react-native-reanimated';
 import {
   ArrowLeft,
@@ -51,6 +51,14 @@ import { importRecipeFromURL } from '../services/ai';
 import { useRecipes } from '../context/RecipeContext';
 import { useMeals } from '../context/MealContext';
 import { Sentry } from '../lib/sentry';
+
+const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snacks']);
+const MEAL_LABELS = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+  snacks: 'Snack',
+};
 
 // ---------------------------------------------------------------------------
 // URL Validation
@@ -149,8 +157,13 @@ function MacroSummaryCard({ label, totals }) {
 
 function RecipeImportInner() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { saveRecipe } = useRecipes();
   const { addFood, getDefaultMealType } = useMeals();
+  const mealParam = Array.isArray(params.meal) ? params.meal[0] : params.meal;
+  const sourceParam = Array.isArray(params.source) ? params.source[0] : params.source;
+  const targetMealType = VALID_MEAL_TYPES.has(mealParam) ? mealParam : getDefaultMealType();
+  const targetMealLabel = MEAL_LABELS[targetMealType] || 'Meal';
 
   // Screen state: 'input' | 'loading' | 'review' | 'error'
   const [screenState, setScreenState] = useState('input');
@@ -234,22 +247,30 @@ function RecipeImportInner() {
 
   const handleManualEntry = useCallback(async () => {
     await hapticLight();
-    router.push('/create-food');
-  }, [router]);
+    router.push({
+      pathname: '/create-recipe',
+      params: {
+        meal: targetMealType,
+        source: sourceParam || 'recipe_import_manual',
+      },
+    });
+  }, [router, sourceParam, targetMealType]);
 
   const handleServingsChange = useCallback((delta) => {
     setEditableServings((prev) => Math.max(1, Math.min(50, prev + delta)));
   }, []);
 
   // Compute per-serving macros from the recipe totals and the editable servings
-  const perServing = recipe
-    ? {
-        calories: Math.round(recipe.totals.calories / editableServings),
-        protein: Math.round(recipe.totals.protein / editableServings),
-        carbs: Math.round(recipe.totals.carbs / editableServings),
-        fat: Math.round(recipe.totals.fat / editableServings),
-      }
-    : null;
+  const perServing = useMemo(() => (
+    recipe
+      ? {
+          calories: Math.round(recipe.totals.calories / editableServings),
+          protein: Math.round(recipe.totals.protein / editableServings),
+          carbs: Math.round(recipe.totals.carbs / editableServings),
+          fat: Math.round(recipe.totals.fat / editableServings),
+        }
+      : null
+  ), [editableServings, recipe]);
 
   const handleSaveRecipe = useCallback(async () => {
     if (!recipe || saving) return;
@@ -268,8 +289,8 @@ function RecipeImportInner() {
       await saveRecipe(editableName, ingredients, editableServings, recipe.emoji || '🍽️');
 
       Alert.alert(
-        'Recipe Saved!',
-        `${editableName} has been saved to your recipes.`,
+        'Saved to Go-To Meals',
+        `${editableName} is ready for one-tap repeats.`,
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -292,16 +313,15 @@ function RecipeImportInner() {
       serving: `1/${editableServings} recipe`,
     };
 
-    const mealType = getDefaultMealType();
-    addFood(foodItem, mealType);
+    await addFood(foodItem, targetMealType);
     await hapticSuccess();
 
     Alert.alert(
-      'Added to Diary!',
-      `1 serving of ${editableName} added to your ${mealType} diary.`,
+      `Added to ${targetMealLabel}`,
+      `1 serving of ${editableName} is now in ${targetMealLabel.toLowerCase()}.`,
       [{ text: 'OK', onPress: () => router.back() }]
     );
-  }, [recipe, editableName, editableServings, perServing, addFood, router]);
+  }, [recipe, editableName, editableServings, perServing, addFood, router, targetMealLabel, targetMealType]);
 
   // -- Render --
 
@@ -335,7 +355,7 @@ function RecipeImportInner() {
                   <View style={styles.inputTextBlock}>
                     <Text style={styles.inputTitle}>Paste a Recipe URL</Text>
                     <Text style={styles.inputSubtitle}>
-                      We'll use AI to extract the recipe, ingredients, and nutrition info.
+                      Turn a recipe site into a trusted go-to meal with stable portions and per-serving macros.
                     </Text>
                   </View>
                 </View>
@@ -367,6 +387,11 @@ function RecipeImportInner() {
                 >
                   <ChefHat size={20} color="#000" strokeWidth={2.5} />
                   <Text style={styles.importButtonText}>Import Recipe</Text>
+                </Pressable>
+
+                <Pressable onPress={handleManualEntry} style={styles.inputSecondaryAction}>
+                  <PenLine size={16} color={Colors.textSecondary} />
+                  <Text style={styles.inputSecondaryActionText}>Build a go-to meal manually</Text>
                 </Pressable>
               </GlassCard>
             </ReAnimated.View>
@@ -504,13 +529,13 @@ function RecipeImportInner() {
                   <Save size={20} color="#000" strokeWidth={2.5} />
                 )}
                 <Text style={styles.saveButtonText}>
-                  {saving ? 'Saving...' : 'Save Recipe'}
+                  {saving ? 'Saving...' : 'Save to Go-To Meals'}
                 </Text>
               </Pressable>
 
               <Pressable onPress={handleAddToDiary} style={styles.diaryButton}>
                 <Plus size={20} color={Colors.primary} strokeWidth={2.5} />
-                <Text style={styles.diaryButtonText}>Add to Diary</Text>
+                <Text style={styles.diaryButtonText}>Add to {targetMealLabel}</Text>
               </Pressable>
             </ReAnimated.View>
 
@@ -653,6 +678,18 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
     color: '#000',
+  },
+  inputSecondaryAction: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+  },
+  inputSecondaryActionText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
   },
 
   // Hint box

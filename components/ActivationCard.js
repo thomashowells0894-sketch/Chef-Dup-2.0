@@ -16,8 +16,8 @@ function getStageContent(stage) {
     case 'first_barcode':
       return {
         stepLabel: 'Step 2 of 3',
-        title: 'Scan one barcode to feel the speed',
-        body: 'One successful scan makes packaged foods and snack logging much faster for the rest of the week.',
+        title: 'Scan one packaged food to build trust fast',
+        body: 'One successful scan proves packaged logging is fast, accurate, and easier to repeat all week.',
         ctaLabel: 'Scan barcode',
         ctaIcon: ScanBarcode,
         ctaGradient: ['#64D2FF', Colors.primary],
@@ -25,8 +25,8 @@ function getStageContent(stage) {
     case 'repeat_log':
       return {
         stepLabel: 'Step 3 of 3',
-        title: 'Repeat something you already eat',
-        body: 'Open Log and use recent foods or yesterday to prove the repeat loop is faster than starting from scratch.',
+        title: 'Repeat something you actually eat',
+        body: 'Use recents or yesterday once, and the wedge becomes obvious: repeating beats typing from scratch.',
         ctaLabel: 'Open repeat log',
         ctaIcon: RotateCcw,
         ctaGradient: ['#34D399', '#10B981'],
@@ -35,8 +35,8 @@ function getStageContent(stage) {
     default:
       return {
         stepLabel: 'Step 1 of 3',
-        title: 'Log your first meal today',
-        body: 'The first real entry is the turning point. Once food is logged, the app can guide the rest of the day.',
+        title: 'Get one real meal in',
+        body: 'After the first honest log, the app stops guessing and starts helping with repeats, search, and daily guidance.',
         ctaLabel: 'Log first meal',
         ctaIcon: Sparkles,
         ctaGradient: [Colors.primary, Colors.primaryDim],

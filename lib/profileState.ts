@@ -9,6 +9,7 @@ export type ProfileHydrationState = 'missing' | 'incomplete' | 'complete';
 
 export interface StoredProfileMeta {
   hasCompletedOnboarding: boolean;
+  activationCompletedAt: number | null;
   activeTargets: MacroSet | null;
   pendingTargets: MacroSet | null;
   lastHydratedAt: number | null;
@@ -17,7 +18,7 @@ export interface StoredProfileMeta {
 export interface StoredProfileCache<TProfile = Record<string, unknown>> {
   version: number;
   profile: TProfile | null;
-  weightHistory: Array<Record<string, unknown>>;
+  weightHistory: Record<string, unknown>[];
   meta: StoredProfileMeta;
 }
 
@@ -44,6 +45,51 @@ interface ResolveProfileHydrationResult {
   hasCompletedOnboarding: boolean;
   hydrationState: ProfileHydrationState;
   shouldRouteToOnboarding: boolean;
+}
+
+interface OnboardingStateLike {
+  activationState?: unknown;
+  activationCompletedAt?: unknown;
+  activeTargets?: unknown;
+  draftTargets?: unknown;
+}
+
+interface ResolvePersistedTargetsInput {
+  cachedActiveTargets?: MacroSet | null;
+  cachedPendingTargets?: MacroSet | null;
+  onboardingData?: OnboardingStateLike | Record<string, unknown> | null;
+  hasCompletedOnboarding: boolean;
+  derivedTargets?: MacroSet | null;
+}
+
+interface ResolvePersistedTargetsResult {
+  activeTargets: MacroSet | null;
+  pendingTargets: MacroSet | null;
+  repairedActiveTargets: boolean;
+}
+
+interface BuildOnboardingStatePayloadInput {
+  existingData?: Record<string, unknown> | null;
+  activeTargets?: MacroSet | null;
+  draftTargets?: MacroSet | null;
+  onboardingCompleted?: boolean;
+}
+
+interface ProfileEditorLike extends ProfileLike {
+  name?: string | null;
+  weeklyGoal?: string | null;
+  macroPreset?: string | null;
+}
+
+export interface ProfileEditorDraft {
+  name: string;
+  weight: string;
+  height: string;
+  age: string;
+  gender: string;
+  activityLevel: string;
+  weeklyGoal: string;
+  macroPreset: string;
 }
 
 const ACTIVITY_MULTIPLIERS: Record<string, number> = {
@@ -93,6 +139,117 @@ export function getLegacyMealCacheKeys(dateKey: string): string[] {
   return [`${LEGACY_MEAL_DAY_CACHE_PREFIX}${dateKey}`];
 }
 
+interface BuildProfileSupabaseUpdatesInput {
+  updates: Record<string, unknown>;
+  nextWeightHistory: Record<string, unknown>[];
+  hasCompletedOnboarding: boolean;
+  onboardingCompleted?: boolean;
+  onboardingData?: Record<string, unknown> | null;
+  updatedAt?: string;
+}
+
+interface ManualProfileMeasurementsInput {
+  isImperial: boolean;
+  weightLbs?: string | number | null;
+  heightFeet?: string | number | null;
+  heightInches?: string | number | null;
+  weightKg?: string | number | null;
+  heightCm?: string | number | null;
+}
+
+function toRoundedNumber(value: string | number | null | undefined, decimals = 0): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const multiplier = 10 ** decimals;
+  return Math.round(parsed * multiplier) / multiplier;
+}
+
+export function buildProfileSupabaseUpdates({
+  updates,
+  nextWeightHistory,
+  hasCompletedOnboarding,
+  onboardingCompleted = false,
+  onboardingData = null,
+  updatedAt = new Date().toISOString(),
+}: BuildProfileSupabaseUpdatesInput): Record<string, unknown> {
+  const supabaseUpdates: Record<string, unknown> = {};
+
+  if (updates.name !== undefined) supabaseUpdates.name = String(updates.name ?? '').trim();
+  if (updates.weight !== undefined) supabaseUpdates.weight = updates.weight;
+  if (updates.height !== undefined) supabaseUpdates.height = updates.height;
+  if (updates.age !== undefined) supabaseUpdates.age = updates.age;
+  if (updates.gender !== undefined) supabaseUpdates.gender = updates.gender;
+  if (updates.activityLevel !== undefined) supabaseUpdates.activity_level = updates.activityLevel;
+  if (updates.goalWeight !== undefined) supabaseUpdates.goal_weight = updates.goalWeight;
+  if (updates.weeklyGoal !== undefined) supabaseUpdates.weekly_goal = updates.weeklyGoal;
+  if (updates.macroPreset !== undefined) supabaseUpdates.macro_preset = updates.macroPreset;
+  if (updates.customMacros !== undefined) supabaseUpdates.custom_macros = updates.customMacros;
+  if (updates.weightUnit !== undefined) supabaseUpdates.weight_unit = updates.weightUnit;
+  if (updates.injuries !== undefined) supabaseUpdates.injuries = updates.injuries;
+  if (updates.equipment !== undefined) supabaseUpdates.equipment = updates.equipment;
+  if (updates.dietaryRestrictions !== undefined) {
+    supabaseUpdates.dietary_restrictions = updates.dietaryRestrictions;
+  }
+  if (updates.weight !== undefined) {
+    supabaseUpdates.weight_history = nextWeightHistory;
+  }
+
+  if (onboardingCompleted || hasCompletedOnboarding) {
+    supabaseUpdates.onboarding_completed = true;
+  }
+
+  if (onboardingData && Object.keys(onboardingData).length > 0) {
+    supabaseUpdates.onboarding_data = onboardingData;
+  }
+
+  supabaseUpdates.updated_at = updatedAt;
+
+  return supabaseUpdates;
+}
+
+export function normalizeManualProfileMeasurements(
+  input: ManualProfileMeasurementsInput
+): { weightLbs: number | null; heightInches: number | null } {
+  if (input.isImperial) {
+    return {
+      weightLbs: toRoundedNumber(input.weightLbs, 1),
+      heightInches: toRoundedNumber((Number(input.heightFeet) * 12) + Number(input.heightInches || 0), 0),
+    };
+  }
+
+  const weightKg = toRoundedNumber(input.weightKg, 1);
+  const heightCm = toRoundedNumber(input.heightCm, 0);
+
+  return {
+    weightLbs: weightKg === null ? null : Math.round(weightKg * 2.20462 * 10) / 10,
+    heightInches: heightCm === null ? null : Math.round(heightCm / 2.54),
+  };
+}
+
+export function normalizeStoredProfileMeasurements<TProfile extends ProfileLike>(
+  profile: TProfile | null | undefined
+): TProfile | null | undefined {
+  if (!profile) {
+    return profile;
+  }
+
+  const rawHeight = Number(profile.height);
+  if (!Number.isFinite(rawHeight) || rawHeight <= 96) {
+    return profile;
+  }
+
+  const rawWeight = Number(profile.weight);
+
+  return {
+    ...profile,
+    weight: Number.isFinite(rawWeight) ? Math.round(rawWeight * 2.20462 * 10) / 10 : profile.weight,
+    height: Math.round(rawHeight / 2.54),
+  };
+}
+
 export function sanitizeMacroSet(raw: any): MacroSet | null {
   if (!raw || typeof raw !== 'object') {
     return null;
@@ -120,9 +277,23 @@ export function sanitizeMacroSet(raw: any): MacroSet | null {
   };
 }
 
+export function hasExplicitActivationMarker(onboardingData: unknown): boolean {
+  if (!onboardingData || typeof onboardingData !== 'object') {
+    return false;
+  }
+
+  const typedData = onboardingData as OnboardingStateLike;
+  return (
+    typedData.activationState === 'complete' ||
+    Number.isFinite(Number(typedData.activationCompletedAt)) ||
+    Boolean(sanitizeMacroSet(typedData.activeTargets))
+  );
+}
+
 export function createStoredProfileMeta(meta?: Partial<StoredProfileMeta> | null): StoredProfileMeta {
   return {
     hasCompletedOnboarding: Boolean(meta?.hasCompletedOnboarding),
+    activationCompletedAt: Number(meta?.activationCompletedAt) || null,
     activeTargets: sanitizeMacroSet(meta?.activeTargets),
     pendingTargets: sanitizeMacroSet(meta?.pendingTargets),
     lastHydratedAt: Number(meta?.lastHydratedAt) || null,
@@ -171,8 +342,7 @@ export function resolveProfileHydration(
   const essentialsComplete = isEssentialProfileComplete(input.profile);
   const hasCompletedOnboarding =
     Boolean(input.cachedActivation) ||
-    Boolean(input.serverActivation) ||
-    essentialsComplete;
+    Boolean(input.serverActivation);
 
   let hydrationState: ProfileHydrationState = 'missing';
   if (essentialsComplete) {
@@ -184,7 +354,97 @@ export function resolveProfileHydration(
   return {
     hasCompletedOnboarding,
     hydrationState,
-    shouldRouteToOnboarding: !hasCompletedOnboarding,
+    shouldRouteToOnboarding: !hasCompletedOnboarding && hydrationState !== 'complete',
+  };
+}
+
+export function shouldTrustHydratedProfileSnapshot(
+  result: ResolveProfileHydrationResult
+): boolean {
+  return result.hasCompletedOnboarding || result.hydrationState === 'complete';
+}
+
+export function resolvePersistedTargets({
+  cachedActiveTargets = null,
+  cachedPendingTargets = null,
+  onboardingData = null,
+  hasCompletedOnboarding,
+  derivedTargets = null,
+}: ResolvePersistedTargetsInput): ResolvePersistedTargetsResult {
+  const onboardingState = (onboardingData && typeof onboardingData === 'object')
+    ? onboardingData as OnboardingStateLike
+    : null;
+  const activeFromOnboarding = sanitizeMacroSet(onboardingState?.activeTargets);
+  const draftFromOnboarding = sanitizeMacroSet(onboardingState?.draftTargets);
+
+  let activeTargets = hasCompletedOnboarding
+    ? activeFromOnboarding || cachedActiveTargets || null
+    : null;
+  let pendingTargets = draftFromOnboarding || cachedPendingTargets || null;
+  let repairedActiveTargets = false;
+
+  if (hasCompletedOnboarding && !activeTargets && derivedTargets) {
+    activeTargets = derivedTargets;
+    repairedActiveTargets = true;
+  }
+
+  if (
+    activeTargets &&
+    pendingTargets &&
+    JSON.stringify(activeTargets) === JSON.stringify(pendingTargets)
+  ) {
+    pendingTargets = null;
+  }
+
+  return {
+    activeTargets,
+    pendingTargets,
+    repairedActiveTargets,
+  };
+}
+
+export function buildOnboardingStatePayload({
+  existingData = null,
+  activeTargets = null,
+  draftTargets = null,
+  onboardingCompleted = false,
+}: BuildOnboardingStatePayloadInput): Record<string, unknown> {
+  const nextState: Record<string, unknown> = {
+    ...(existingData || {}),
+  };
+
+  if (activeTargets) {
+    nextState.activeTargets = activeTargets;
+  } else {
+    delete nextState.activeTargets;
+  }
+
+  if (draftTargets) {
+    nextState.draftTargets = draftTargets;
+  } else {
+    delete nextState.draftTargets;
+  }
+
+  if (onboardingCompleted || hasExplicitActivationMarker(nextState)) {
+    nextState.activationState = 'complete';
+    if (!Number.isFinite(Number(nextState.activationCompletedAt))) {
+      nextState.activationCompletedAt = Date.now();
+    }
+  }
+
+  return nextState;
+}
+
+export function buildProfileEditorDraft(profile: ProfileEditorLike | null | undefined): ProfileEditorDraft {
+  return {
+    name: profile?.name || '',
+    weight: profile?.weight ? String(profile.weight) : '',
+    height: profile?.height ? String(profile.height) : '',
+    age: profile?.age ? String(profile.age) : '',
+    gender: profile?.gender || 'male',
+    activityLevel: profile?.activityLevel || 'moderate',
+    weeklyGoal: profile?.weeklyGoal || 'maintain',
+    macroPreset: profile?.macroPreset || 'balanced',
   };
 }
 

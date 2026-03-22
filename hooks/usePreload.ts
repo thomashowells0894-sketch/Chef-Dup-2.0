@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { queryCache } from '../lib/cache';
 import { Sentry } from '../lib/sentry';
 import { useAuth } from '../context/AuthContext';
 import { buildMealCacheKey, getLegacyMealCacheKeys } from '../lib/profileState';
+import { loadFrequentFoods } from '../lib/frequentFoodsStore';
+import { loadRecentMealSnapshots } from '../lib/recentMeals';
+import { loadRecentSearches, loadTrendingTerms } from '../services/foodSearch';
 
 /**
  * Predictive pre-loader: fetches data for likely-next screens
@@ -30,6 +34,7 @@ export function usePreload(currentScreen: string) {
         case 'index':
           // User likely navigates to diary or stats
           prefetchDiaryData(user?.id);
+          prefetchLoggingData(user?.id);
           break;
         case 'add':
           // User likely navigates back to diary
@@ -47,8 +52,6 @@ export function usePreload(currentScreen: string) {
 
 async function prefetchFoodSearch() {
   try {
-    // Warm the food search cache with recent/frequent foods
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     const cached = await AsyncStorage.getItem('@fueliq_recent_foods');
     if (cached) {
       queryCache.set('recent_foods', JSON.parse(cached));
@@ -58,7 +61,6 @@ async function prefetchFoodSearch() {
 
 async function prefetchDiaryData(userId?: string | null) {
   try {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     const today = new Date().toISOString().split('T')[0];
 
     for (const key of [buildMealCacheKey(userId, today), ...getLegacyMealCacheKeys(today)]) {
@@ -71,9 +73,31 @@ async function prefetchDiaryData(userId?: string | null) {
   } catch (e) { Sentry.captureException(e); }
 }
 
+async function prefetchLoggingData(userId?: string | null) {
+  try {
+    const recentFoodsKey = userId ? `@fueliq_recent_foods:${userId}` : null;
+
+    await Promise.all([
+      loadFrequentFoods(),
+      loadRecentMealSnapshots(),
+      loadRecentSearches(),
+      loadTrendingTerms(),
+      recentFoodsKey
+        ? AsyncStorage.getItem(recentFoodsKey).then((cached) => {
+            if (!cached) {
+              return;
+            }
+            queryCache.set(recentFoodsKey, JSON.parse(cached));
+          })
+        : Promise.resolve(),
+    ]);
+  } catch (e) {
+    Sentry.captureException(e);
+  }
+}
+
 async function prefetchSettings() {
   try {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     const settings = await AsyncStorage.getItem('@fueliq_notification_settings');
     if (settings) {
       queryCache.set('notification_settings', JSON.parse(settings));

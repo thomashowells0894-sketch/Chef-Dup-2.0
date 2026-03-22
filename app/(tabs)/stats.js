@@ -11,7 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { LineChart, BarChart } from 'react-native-gifted-charts';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   TrendingDown,
   TrendingUp,
@@ -54,9 +54,11 @@ import {
 import { generateInsights } from '../../lib/insightGenerator';
 import useWorkoutHistory from '../../hooks/useWorkoutHistory';
 import { useWeightHistory as useWeightHistoryHook } from '../../hooks/useWeightHistory';
+import { scheduleTabScreenReady } from '../../lib/tabSwitchTrace';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH = SCREEN_WIDTH - Spacing.md * 4;
+const LB_TO_KG = 0.45359237;
 
 const RANGE_OPTIONS = [
   { label: '7 Days', value: 7 },
@@ -64,16 +66,94 @@ const RANGE_OPTIONS = [
   { label: '90 Days', value: 90 },
 ];
 
-// Mock weight data for demo when no history exists
-const MOCK_WEIGHT_DATA = [
-  { value: 75.5, label: 'Mon' },
-  { value: 75.2, label: 'Tue' },
-  { value: 74.8, label: 'Wed' },
-  { value: 74.5, label: 'Thu' },
-  { value: 74.9, label: 'Fri' },
-  { value: 74.3, label: 'Sat' },
-  { value: 74.0, label: 'Sun' },
-];
+function getWeightUnitLabel(profile) {
+  return profile?.weightUnit === 'kg' ? 'kg' : 'lbs';
+}
+
+function toDisplayWeight(weight, weightUnitLabel) {
+  const numericWeight = Number(weight);
+  if (!Number.isFinite(numericWeight)) {
+    return null;
+  }
+
+  const converted = weightUnitLabel === 'kg'
+    ? numericWeight * LB_TO_KG
+    : numericWeight;
+
+  return Math.round(converted * 10) / 10;
+}
+
+function formatWeightValue(weight, weightUnitLabel) {
+  const displayWeight = toDisplayWeight(weight, weightUnitLabel);
+  if (displayWeight == null) {
+    return '--';
+  }
+
+  return displayWeight.toLocaleString(undefined, {
+    minimumFractionDigits: weightUnitLabel === 'kg' ? 1 : 0,
+    maximumFractionDigits: 1,
+  });
+}
+
+const StatsStarterCard = memo(function StatsStarterCard({
+  icon: Icon,
+  title,
+  body,
+  ctaLabel,
+  onPress,
+  color,
+}) {
+  return (
+    <Pressable style={styles.starterCard} onPress={onPress}>
+      <View style={[styles.starterIconWrap, { backgroundColor: color + '18' }]}>
+        <Icon size={18} color={color} />
+      </View>
+      <View style={styles.starterCopy}>
+        <Text style={styles.starterTitle}>{title}</Text>
+        <Text style={styles.starterBody}>{body}</Text>
+      </View>
+      <View style={styles.starterAction}>
+        <Text style={styles.starterActionLabel}>{ctaLabel}</Text>
+        <ChevronRight size={16} color={Colors.primary} strokeWidth={2.4} />
+      </View>
+    </Pressable>
+  );
+});
+
+const MomentumCoachCard = memo(function MomentumCoachCard({
+  badge,
+  icon: Icon,
+  title,
+  body,
+  ctaLabel,
+  onPress,
+  color,
+}) {
+  return (
+    <Pressable style={styles.momentumCoachCard} onPress={onPress}>
+      <LinearGradient
+        colors={[color + '20', 'rgba(255,255,255,0.02)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.momentumCoachGradient}
+      />
+      <View style={styles.momentumCoachHeader}>
+        <View style={styles.momentumCoachBadge}>
+          <Text style={styles.momentumCoachBadgeText}>{badge}</Text>
+        </View>
+        <View style={[styles.momentumCoachIconWrap, { backgroundColor: color + '16' }]}>
+          <Icon size={18} color={color} />
+        </View>
+      </View>
+      <Text style={styles.momentumCoachTitle}>{title}</Text>
+      <Text style={styles.momentumCoachBody}>{body}</Text>
+      <View style={styles.momentumCoachAction}>
+        <Text style={styles.momentumCoachActionLabel}>{ctaLabel}</Text>
+        <ChevronRight size={16} color={Colors.primary} strokeWidth={2.4} />
+      </View>
+    </Pressable>
+  );
+});
 
 const BigStatCard = memo(function BigStatCard({ icon: Icon, label, value, unit, trend, trendValue, color }) {
   const isPositiveTrend = trend === 'up';
@@ -421,9 +501,24 @@ function StatsScreenInner() {
   const { weeklyWeightData, profile } = useProfile();
   const { currentStreak, stats: gamificationStats } = useGamification();
   const { plateauStatus, todayNutritionScore, fitnessScore, weeklyInsights } = usePredictiveAnalyticsHook();
+  const weightUnitLabel = useMemo(() => getWeightUnitLabel(profile), [profile]);
 
   const [selectedRange, setSelectedRange] = useState(7);
   const [isExporting, setIsExporting] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      scheduleTabScreenReady('stats', { range: selectedRange });
+    }, [selectedRange])
+  );
+
+  const handleLogFoodPress = useCallback(() => {
+    router.push('/(tabs)/add');
+  }, [router]);
+
+  const handleUpdateWeightPress = useCallback(() => {
+    router.push('/profile');
+  }, [router]);
 
   const handleExportPress = useCallback(() => {
     Alert.alert(
@@ -500,23 +595,24 @@ function StatsScreenInner() {
   // Calculate weight chart data
   const weightChartData = useMemo(() => {
     const hasRealData = weeklyWeightData && weeklyWeightData.some(d => d.weight !== null);
+    const fallbackWeight = toDisplayWeight(profile?.weight, weightUnitLabel) || 0;
 
     if (hasRealData) {
       return {
         data: weeklyWeightData.map(d => ({
-          value: d.weight || profile?.weight || 70,
+          value: toDisplayWeight(d.weight || profile?.weight, weightUnitLabel) || fallbackWeight,
           label: d.day,
-          dataPointText: d.weight ? `${d.weight}` : '',
+          dataPointText: d.weight != null ? formatWeightValue(d.weight, weightUnitLabel) : '',
         })),
         isReal: true,
       };
     }
 
     return {
-      data: MOCK_WEIGHT_DATA,
+      data: [],
       isReal: false,
     };
-  }, [weeklyWeightData, profile?.weight]);
+  }, [weeklyWeightData, profile?.weight, weightUnitLabel]);
 
   // Calculate calorie bar chart data for selected range
   const calorieChartData = useMemo(() => {
@@ -550,6 +646,8 @@ function StatsScreenInner() {
       goal,
     };
   }, [rangeData, goals?.calories, selectedRange]);
+  const hasMomentumData = rangeStats.daysTracked >= 3;
+  const hasWeightTrendData = weightChartData.isReal && weightChartData.data.length >= 2;
 
   // Summary stats
   const summaryStats = useMemo(() => {
@@ -574,12 +672,82 @@ function StatsScreenInner() {
       weightChange: Math.abs(weightChange),
       weightTrend,
       weightChangeSign: weightChange <= 0 ? '-' : '+',
+      hasWeightTrend: weightChartData.isReal && weightChartData.data.length >= 2,
       bestStreak,
     };
   }, [rangeData, weightChartData, currentStreak, gamificationStats]);
 
+  const momentumCoach = useMemo(() => {
+    const proteinTarget = goals?.protein || 0;
+    const proteinDaysOnTrack = rangeData.filter(
+      (day) => !day.noData && day.protein > 0 && (proteinTarget === 0 || day.protein >= proteinTarget * 0.85)
+    ).length;
+
+    if (!hasMomentumData) {
+      return {
+        badge: 'First week',
+        icon: Target,
+        title: 'The first 3 logged days change everything',
+        body: 'You are not behind. Get a few real days in and this screen turns into a control panel instead of zeros.',
+        ctaLabel: 'Log today',
+        onPress: handleLogFoodPress,
+        color: Colors.primary,
+      };
+    }
+
+    if (!hasWeightTrendData) {
+      return {
+        badge: 'Momentum',
+        icon: Scale,
+        title: `${rangeStats.daysTracked} logged days already gives you signal`,
+        body: 'Keep the streak going and add one weigh-in to unlock trend direction without guesswork or demo data.',
+        ctaLabel: 'Update weight',
+        onPress: handleUpdateWeightPress,
+        color: Colors.success,
+      };
+    }
+
+    if (currentStreak >= 4) {
+      return {
+        badge: 'Streak',
+        icon: Award,
+        title: `${currentStreak}-day streak. Protect the floor`,
+        body: 'You are building repeatable nutrition, not chasing perfect days. Keep reusing your trusted meals.',
+        ctaLabel: 'Log food',
+        onPress: handleLogFoodPress,
+        color: Colors.primary,
+      };
+    }
+
+    return {
+      badge: 'Next move',
+      icon: TrendingUp,
+      title: 'Momentum is real. Keep the next few days boring',
+      body: `${proteinDaysOnTrack} of ${rangeStats.daysTracked} logged days were close on protein. Repeats will compound faster than novelty right now.`,
+      ctaLabel: 'Log food',
+      onPress: handleLogFoodPress,
+      color: Colors.warning,
+    };
+  }, [
+    currentStreak,
+    goals?.protein,
+    handleLogFoodPress,
+    handleUpdateWeightPress,
+    hasMomentumData,
+    hasWeightTrendData,
+    rangeData,
+    rangeStats.daysTracked,
+  ]);
+
   // Weight min/max for chart scaling
   const weightRange = useMemo(() => {
+    if (weightChartData.data.length === 0) {
+      return {
+        min: 0,
+        max: 10,
+      };
+    }
+
     const weights = weightChartData.data.map(d => d.value);
     const min = Math.min(...weights);
     const max = Math.max(...weights);
@@ -666,8 +834,11 @@ function StatsScreenInner() {
     if (entries.length < 5) return null;
 
     const sorted = [...entries].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const weights = sorted.map(e => e.weight);
+    const weights = sorted
+      .map((e) => toDisplayWeight(e.weight, weightUnitLabel))
+      .filter((value) => value != null);
     const dates = sorted.map(e => e.date);
+    if (weights.length < 5) return null;
     const ewma = calculateEWMA(weights, 7, 1.5);
 
     return {
@@ -679,7 +850,7 @@ function StatsScreenInner() {
         return `${dt.getMonth() + 1}/${dt.getDate()}`;
       }),
     };
-  }, [weightHistoryResult]);
+  }, [weightHistoryResult, weightUnitLabel]);
 
   // ─── Macro Consistency ───
   const macroConsistency = useMemo(() => {
@@ -895,7 +1066,7 @@ function StatsScreenInner() {
         {/* Header */}
         <ReAnimated.View entering={FadeInDown.delay(0).springify().mass(0.5).damping(10)} style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={styles.title}>Stats</Text>
+            <Text style={styles.title}>Progress</Text>
             <Pressable
               onPress={handleExportPress}
               disabled={isExporting}
@@ -908,7 +1079,7 @@ function StatsScreenInner() {
               )}
             </Pressable>
           </View>
-          <Text style={styles.subtitle}>Know if you're winning or losing</Text>
+          <Text style={styles.subtitle}>See what is stabilizing, what to repeat, and the next best move.</Text>
         </ReAnimated.View>
 
         {(isLoading || isFetchingDay) && (
@@ -925,70 +1096,91 @@ function StatsScreenInner() {
           <RangeSelector selectedRange={selectedRange} onSelect={setSelectedRange} />
         </ReAnimated.View>
 
-        {/* Empty State - shown when fewer than 3 days tracked */}
-        {rangeStats.daysTracked < 3 && (
-          <ReAnimated.View entering={FadeInDown.delay(120).springify().mass(0.5).damping(10)}>
-            <View style={{ alignItems: 'center', paddingVertical: Spacing.xl, paddingHorizontal: Spacing.lg }}>
-              <Text style={{ fontSize: FontSize.lg, color: Colors.textSecondary, fontWeight: FontWeight.semibold, marginBottom: Spacing.sm }}>
-                Building your insights...
+        <ReAnimated.View entering={FadeInDown.delay(110).springify().mass(0.5).damping(10)}>
+          <MomentumCoachCard {...momentumCoach} />
+        </ReAnimated.View>
+
+        {!hasMomentumData && (
+          <ReAnimated.View entering={FadeInDown.delay(140).springify().mass(0.5).damping(10)}>
+            <View style={styles.starterSection}>
+              <Text style={styles.starterSectionTitle}>Your baseline is building</Text>
+              <Text style={styles.starterSectionBody}>
+                The first week is about signal, not perfection. A few honest logs and one weigh-in is enough to make this screen useful.
               </Text>
-              <Text style={{ fontSize: FontSize.sm, color: Colors.textTertiary, textAlign: 'center' }}>
-                Log food for a few more days to unlock trend analysis and personalized insights.
-              </Text>
+              <StatsStarterCard
+                icon={Target}
+                title="Finish one honest day"
+                body="Log meals today so calorie and protein trends start from reality instead of guesswork."
+                ctaLabel="Log food"
+                onPress={handleLogFoodPress}
+                color={Colors.primary}
+              />
+              <StatsStarterCard
+                icon={Scale}
+                title="Add a weigh-in"
+                body="One weigh-in unlocks trend direction without fake progress or filler charts."
+                ctaLabel="Update weight"
+                onPress={handleUpdateWeightPress}
+                color={Colors.success}
+              />
             </View>
           </ReAnimated.View>
         )}
 
-        {/* Fitness & Nutrition Scores */}
-        <ReAnimated.View entering={FadeInDown.delay(140).springify().mass(0.5).damping(10)} style={styles.scoreRingRow}>
-          <View style={styles.scoreRingCard}>
-            <AnimatedProgressRing
-              progress={fitnessScore?.score || 0}
-              size={80}
-              strokeWidth={8}
-              color={fitnessScore?.score >= 70 ? Colors.success : fitnessScore?.score >= 40 ? Colors.warning : Colors.error}
-            />
-            <Text style={styles.scoreRingLabel}>Fitness Score</Text>
-            <Text style={styles.scoreRingValue}>{fitnessScore?.score || 0}/100</Text>
-          </View>
-          <View style={styles.scoreRingCard}>
-            <AnimatedProgressRing
-              progress={todayNutritionScore?.score || 0}
-              size={80}
-              strokeWidth={8}
-              color={todayNutritionScore?.score >= 70 ? Colors.success : todayNutritionScore?.score >= 40 ? Colors.warning : Colors.error}
-            />
-            <Text style={styles.scoreRingLabel}>Nutrition Score</Text>
-            <Text style={styles.scoreRingValue}>{todayNutritionScore?.score || 0}/100</Text>
-          </View>
-        </ReAnimated.View>
+        {hasMomentumData && (
+          <>
+            {/* Fitness & Nutrition Scores */}
+            <ReAnimated.View entering={FadeInDown.delay(140).springify().mass(0.5).damping(10)} style={styles.scoreRingRow}>
+              <View style={styles.scoreRingCard}>
+                <AnimatedProgressRing
+                  progress={fitnessScore?.score || 0}
+                  size={80}
+                  strokeWidth={8}
+                  color={fitnessScore?.score >= 70 ? Colors.success : fitnessScore?.score >= 40 ? Colors.warning : Colors.error}
+                />
+                <Text style={styles.scoreRingLabel}>Fitness Score</Text>
+                <Text style={styles.scoreRingValue}>{fitnessScore?.score || 0}/100</Text>
+              </View>
+              <View style={styles.scoreRingCard}>
+                <AnimatedProgressRing
+                  progress={todayNutritionScore?.score || 0}
+                  size={80}
+                  strokeWidth={8}
+                  color={todayNutritionScore?.score >= 70 ? Colors.success : todayNutritionScore?.score >= 40 ? Colors.warning : Colors.error}
+                />
+                <Text style={styles.scoreRingLabel}>Nutrition Score</Text>
+                <Text style={styles.scoreRingValue}>{todayNutritionScore?.score || 0}/100</Text>
+              </View>
+            </ReAnimated.View>
 
-        {/* Big Summary Stats */}
-        <ReAnimated.View entering={FadeInDown.delay(160).springify().mass(0.5).damping(10)} style={styles.summaryRow}>
-          <BigStatCard
-            icon={Flame}
-            label="Avg Calories"
-            value={summaryStats.avgCalories.toLocaleString()}
-            unit="kcal"
-            color={Colors.primary}
-          />
-          <BigStatCard
-            icon={Scale}
-            label="Weight Change"
-            value={`${summaryStats.weightChangeSign}${summaryStats.weightChange}`}
-            unit="kg"
-            trend={summaryStats.weightTrend}
-            trendValue={summaryStats.weightTrend === 'down' ? 'Losing' : 'Gaining'}
-            color={summaryStats.weightTrend === 'down' ? Colors.success : Colors.warning}
-          />
-          <BigStatCard
-            icon={Award}
-            label="Best Streak"
-            value={summaryStats.bestStreak}
-            unit="days"
-            color={Colors.warning}
-          />
-        </ReAnimated.View>
+            {/* Big Summary Stats */}
+            <ReAnimated.View entering={FadeInDown.delay(160).springify().mass(0.5).damping(10)} style={styles.summaryRow}>
+              <BigStatCard
+                icon={Flame}
+                label="Avg Calories"
+                value={summaryStats.avgCalories.toLocaleString()}
+                unit="kcal"
+                color={Colors.primary}
+              />
+              <BigStatCard
+                icon={Scale}
+                label="Weight Change"
+                value={summaryStats.hasWeightTrend ? `${summaryStats.weightChangeSign}${summaryStats.weightChange}` : '—'}
+                unit={summaryStats.hasWeightTrend ? weightUnitLabel : ''}
+                trend={summaryStats.weightTrend}
+                trendValue={summaryStats.hasWeightTrend ? (summaryStats.weightTrend === 'down' ? 'Trending down' : 'Trending up') : 'Add weigh-ins'}
+                color={summaryStats.weightTrend === 'down' ? Colors.success : Colors.warning}
+              />
+              <BigStatCard
+                icon={Award}
+                label="Best Streak"
+                value={summaryStats.bestStreak}
+                unit="days"
+                color={Colors.warning}
+              />
+            </ReAnimated.View>
+          </>
+        )}
 
         {/* Weight vs Calories Chart (MISSION 3 - dual-axis) */}
         {weightVsCaloriesData && (
@@ -1044,7 +1236,7 @@ function StatsScreenInner() {
             <View style={styles.legendRow}>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: Colors.success }]} />
-                <Text style={styles.legendText}>Weight (kg)</Text>
+                <Text style={styles.legendText}>Weight ({weightUnitLabel})</Text>
               </View>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: Colors.primary }]} />
@@ -1055,78 +1247,99 @@ function StatsScreenInner() {
         )}
 
         {/* Weight Trend Chart */}
-        <View style={styles.chartCard}>
-          <View style={styles.chartHeader}>
-            <View style={styles.chartTitleRow}>
-              <View style={[styles.chartIcon, { backgroundColor: Colors.success + '20' }]}>
-                <Scale size={18} color={Colors.success} />
-              </View>
-              <View>
-                <Text style={styles.chartTitle}>Weight Trend</Text>
-                <Text style={styles.chartSubtitle}>Last 7 entries</Text>
+        {hasWeightTrendData ? (
+          <View style={styles.chartCard}>
+            <View style={styles.chartHeader}>
+              <View style={styles.chartTitleRow}>
+                <View style={[styles.chartIcon, { backgroundColor: Colors.success + '20' }]}>
+                  <Scale size={18} color={Colors.success} />
+                </View>
+                <View>
+                  <Text style={styles.chartTitle}>Weight Trend</Text>
+                  <Text style={styles.chartSubtitle}>Last 7 entries</Text>
+                </View>
               </View>
             </View>
-            {!weightChartData.isReal && (
-              <View style={styles.demoBadge}>
-                <Text style={styles.demoBadgeText}>Demo</Text>
+
+            <View style={styles.chartContainer}>
+              <LineChart
+                data={weightChartData.data}
+                width={CHART_WIDTH}
+                height={180}
+                spacing={CHART_WIDTH / 8}
+                initialSpacing={20}
+                endSpacing={20}
+                thickness={3}
+                color={Colors.success}
+                dataPointsColor={Colors.success}
+                dataPointsRadius={5}
+                curved
+                curvature={0.2}
+                startFillColor={Colors.success}
+                endFillColor={Colors.surface}
+                startOpacity={0.3}
+                endOpacity={0.05}
+                areaChart
+                hideRules
+                yAxisColor="transparent"
+                xAxisColor={Colors.border}
+                yAxisTextStyle={styles.axisText}
+                xAxisLabelTextStyle={styles.axisText}
+                noOfSections={4}
+                maxValue={weightRange.max}
+                yAxisOffset={weightRange.min}
+                pointerConfig={{
+                  pointerStripUptoDataPoint: true,
+                  pointerStripColor: Colors.textTertiary,
+                  pointerStripWidth: 1,
+                  pointerColor: Colors.success,
+                  radius: 6,
+                  pointerLabelWidth: 90,
+                  pointerLabelHeight: 30,
+                  activatePointersOnLongPress: true,
+                  autoAdjustPointerLabelPosition: true,
+                  pointerLabelComponent: (items) => (
+                    <View style={styles.tooltipContainer}>
+                      <Text style={styles.tooltipText}>{items[0].value} {weightUnitLabel}</Text>
+                    </View>
+                  ),
+                }}
+              />
+            </View>
+
+            {profile?.weight && (
+              <View style={styles.chartFooter}>
+                <Text style={styles.currentWeightText}>
+                  Current: <Text style={styles.currentWeightValue}>{formatWeightValue(profile.weight, weightUnitLabel)} {weightUnitLabel}</Text>
+                </Text>
               </View>
             )}
           </View>
-
-          <View style={styles.chartContainer}>
-            <LineChart
-              data={weightChartData.data}
-              width={CHART_WIDTH}
-              height={180}
-              spacing={CHART_WIDTH / 8}
-              initialSpacing={20}
-              endSpacing={20}
-              thickness={3}
-              color={Colors.success}
-              dataPointsColor={Colors.success}
-              dataPointsRadius={5}
-              curved
-              curvature={0.2}
-              startFillColor={Colors.success}
-              endFillColor={Colors.surface}
-              startOpacity={0.3}
-              endOpacity={0.05}
-              areaChart
-              hideRules
-              yAxisColor="transparent"
-              xAxisColor={Colors.border}
-              yAxisTextStyle={styles.axisText}
-              xAxisLabelTextStyle={styles.axisText}
-              noOfSections={4}
-              maxValue={weightRange.max}
-              yAxisOffset={weightRange.min}
-              pointerConfig={{
-                pointerStripUptoDataPoint: true,
-                pointerStripColor: Colors.textTertiary,
-                pointerStripWidth: 1,
-                pointerColor: Colors.success,
-                radius: 6,
-                pointerLabelWidth: 80,
-                pointerLabelHeight: 30,
-                activatePointersOnLongPress: true,
-                autoAdjustPointerLabelPosition: true,
-                pointerLabelComponent: (items) => (
-                  <View style={styles.tooltipContainer}>
-                    <Text style={styles.tooltipText}>{items[0].value} kg</Text>
-                  </View>
-                ),
-              }}
-            />
-          </View>
-
-          {weightChartData.isReal && profile?.weight && (
-            <View style={styles.chartFooter}>
-              <Text style={styles.currentWeightText}>
-                Current: <Text style={styles.currentWeightValue}>{profile.weight} kg</Text>
-              </Text>
+        ) : (
+          <View style={styles.chartCard}>
+            <View style={styles.chartHeader}>
+              <View style={styles.chartTitleRow}>
+                <View style={[styles.chartIcon, { backgroundColor: Colors.success + '20' }]}>
+                  <Scale size={18} color={Colors.success} />
+                </View>
+                <View>
+                  <Text style={styles.chartTitle}>Weight Trend</Text>
+                  <Text style={styles.chartSubtitle}>Start a real trend instead of guessing</Text>
+                </View>
+              </View>
             </View>
-          )}
-        </View>
+            <View style={styles.chartEmptyState}>
+              <Text style={styles.chartEmptyTitle}>No weight trend yet</Text>
+              <Text style={styles.chartEmptyBody}>
+                Add a consistent weigh-in and this screen will switch from placeholders to actual trend direction.
+              </Text>
+              <Pressable style={styles.chartEmptyCta} onPress={handleUpdateWeightPress}>
+                <Text style={styles.chartEmptyCtaLabel}>Update weight</Text>
+                <ChevronRight size={16} color={Colors.primary} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {plateauStatus?.isPlateau && (
           <ReAnimated.View entering={FadeInDown.delay(350).springify().mass(0.5).damping(10)}>
@@ -1435,10 +1648,10 @@ function StatsScreenInner() {
               <View style={styles.goalProgressBarContainer}>
                 <View style={styles.goalProgressLabels}>
                   <Text style={styles.goalProgressStartLabel}>
-                    {profile?.weight || '--'} kg
+                    {formatWeightValue(profile?.weight, weightUnitLabel)} {weightUnitLabel}
                   </Text>
                   <Text style={styles.goalProgressEndLabel}>
-                    {profile?.goalWeight || '--'} kg
+                    {formatWeightValue(profile?.goalWeight, weightUnitLabel)} {weightUnitLabel}
                   </Text>
                 </View>
                 <View style={styles.goalProgressBar}>
@@ -1464,7 +1677,7 @@ function StatsScreenInner() {
               </View>
 
               <Text style={styles.goalRateText}>
-                Rate: {goalProgress.actualRatePerWeek} kg/week (target: {goalProgress.expectedRatePerWeek} kg/week)
+                Rate: {formatWeightValue(goalProgress.actualRatePerWeek, weightUnitLabel)} {weightUnitLabel}/week (target: {formatWeightValue(goalProgress.expectedRatePerWeek, weightUnitLabel)} {weightUnitLabel}/week)
               </Text>
             </View>
           </ReAnimated.View>
@@ -1739,6 +1952,130 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
+  momentumCoachCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  momentumCoachGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  momentumCoachHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  momentumCoachBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  momentumCoachBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  momentumCoachIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  momentumCoachTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+  },
+  momentumCoachBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 21,
+  },
+  momentumCoachAction: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+  },
+  momentumCoachActionLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+  },
+  starterSection: {
+    marginBottom: Spacing.lg,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: Spacing.md,
+  },
+  starterSectionTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  starterSectionBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  starterCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  starterIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  starterCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  starterTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  starterBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+  },
+  starterAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  starterActionLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
+  },
   // Range Selector
   rangeSelector: {
     flexDirection: 'row',
@@ -1903,6 +2240,32 @@ const styles = StyleSheet.create({
   chartFooter: {
     marginTop: Spacing.md,
     alignItems: 'center',
+  },
+  chartEmptyState: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.sm,
+  },
+  chartEmptyTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  chartEmptyBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  chartEmptyCta: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: Spacing.xs,
+  },
+  chartEmptyCtaLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
   },
   currentWeightText: {
     fontSize: FontSize.sm,

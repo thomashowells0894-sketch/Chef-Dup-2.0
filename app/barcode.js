@@ -35,6 +35,44 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SCAN_RECT_W = SCREEN_WIDTH * 0.78;
 const SCAN_RECT_H = SCAN_RECT_W * 0.45;
 
+function getBarcodeSourceLabel(source) {
+  switch (source) {
+    case 'user_corrected':
+      return 'Saved fix';
+    case 'user_submitted':
+      return 'Saved by you';
+    case 'usda':
+      return 'USDA';
+    case 'openfoodfacts':
+      return 'Open Food Facts';
+    case 'cache':
+      return 'Saved match';
+    default:
+      return 'Barcode match';
+  }
+}
+
+function getBarcodeConfidenceCopy(result) {
+  if (result?.source === 'user_corrected') {
+    return 'You already fixed this barcode. We are reusing your trusted match.';
+  }
+
+  if (result?.wasCached) {
+    return 'Saved locally for faster repeat scans.';
+  }
+
+  switch (result?.confidence) {
+    case 'high':
+      return 'Strong nutrition match with complete serving details.';
+    case 'medium':
+      return 'Looks usable, but double-check the label if this seems off.';
+    case 'low':
+      return 'This match is weak. Search and save the correct food if needed.';
+    default:
+      return 'Search instead if this does not look right.';
+  }
+}
+
 export default function BarcodeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -164,13 +202,14 @@ export default function BarcodeScreen() {
         }, 2000);
       }
     },
-    [isLoading]
+    [isLoading, selectedMeal]
   );
 
   const handleAddToDiary = useCallback(() => {
     if (!result?.food) return;
     const foodEntry = {
       id: Crypto.randomUUID(),
+      canonicalId: result.food.canonicalId || null,
       name: result.food.name,
       calories: result.food.calories || 0,
       protein: result.food.protein || 0,
@@ -185,6 +224,8 @@ export default function BarcodeScreen() {
       brand: result.food.brand || '',
       image: result.food.image || null,
       barcode: result.food.barcode || '',
+      source: result.source || 'barcode',
+      sourceLabel: result.food.sourceLabel || getBarcodeSourceLabel(result.source),
     };
 
     addFood(foodEntry, selectedMeal);
@@ -215,6 +256,8 @@ export default function BarcodeScreen() {
       fat: parseFloat(entryFat) || 0,
       serving: entryServing.trim() || '1 serving',
       brand: '',
+      source: 'user_submitted',
+      sourceLabel: 'Saved by you',
     };
 
     // Cache to both barcode caches so re-scanning finds it instantly
@@ -258,7 +301,7 @@ export default function BarcodeScreen() {
   // Search Instead: navigate to add screen with barcode digits as query
   const handleSearchInstead = useCallback(() => {
     hapticLight();
-    const preferredQuery = entryName.trim();
+    const preferredQuery = entryName.trim() || result?.food?.name || '';
     const fallbackQuery =
       preferredQuery &&
       preferredQuery.toLowerCase() !== 'scanned item'
@@ -266,9 +309,14 @@ export default function BarcodeScreen() {
         : scannedBarcode;
     router.replace({
       pathname: '/(tabs)/add',
-      params: { query: fallbackQuery, meal: selectedMeal, barcode: scannedBarcode },
+      params: {
+        query: fallbackQuery,
+        meal: selectedMeal,
+        barcode: scannedBarcode,
+        source: 'barcode_correction',
+      },
     });
-  }, [entryName, router, scannedBarcode, selectedMeal]);
+  }, [entryName, result, router, scannedBarcode, selectedMeal]);
 
   // Submit to Community: navigate to submit-food screen
   const handleSubmitToCommunity = useCallback(() => {
@@ -466,6 +514,26 @@ export default function BarcodeScreen() {
                 </View>
               </View>
 
+              <View style={styles.matchTrustCard}>
+                <View style={styles.matchTrustHeader}>
+                  <View style={styles.matchTrustBadge}>
+                    <Text style={styles.matchTrustBadgeText}>
+                      {getBarcodeSourceLabel(result.source)}
+                    </Text>
+                  </View>
+                  <Text style={styles.matchTrustConfidence}>
+                    {result.confidence === 'high'
+                      ? 'High confidence'
+                      : result.confidence === 'medium'
+                        ? 'Medium confidence'
+                        : 'Review match'}
+                  </Text>
+                </View>
+                <Text style={styles.matchTrustBody}>
+                  {getBarcodeConfidenceCopy(result)}
+                </Text>
+              </View>
+
               {/* Action buttons */}
               <Pressable style={styles.addButton} onPress={handleAddToDiary}>
                 <LinearGradient
@@ -476,6 +544,11 @@ export default function BarcodeScreen() {
                 >
                   <Text style={styles.addButtonText}>Add to Diary</Text>
                 </LinearGradient>
+              </Pressable>
+
+              <Pressable style={styles.searchFixButton} onPress={handleSearchInstead}>
+                <Search size={16} color={Colors.primary} />
+                <Text style={styles.searchFixText}>Wrong item? Search and fix it</Text>
               </Pressable>
 
               <Pressable style={styles.scanAnotherButton} onPress={handleScanAnother}>
@@ -947,6 +1020,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     marginBottom: Spacing.lg,
   },
+  matchTrustCard: {
+    width: '100%',
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    gap: Spacing.xs,
+  },
+  matchTrustHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  matchTrustBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary + '18',
+    borderWidth: 1,
+    borderColor: Colors.primary + '32',
+  },
+  matchTrustBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  matchTrustConfidence: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textSecondary,
+  },
+  matchTrustBody: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
   macroItem: {
     alignItems: 'center',
     gap: 4,
@@ -988,6 +1102,24 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.background,
+  },
+  searchFixButton: {
+    width: '100%',
+    minHeight: 46,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary + '32',
+    backgroundColor: Colors.primary + '10',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  searchFixText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.primary,
   },
   scanAnotherButton: {
     width: '100%',

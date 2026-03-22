@@ -13,7 +13,7 @@ import ReAnimated, {
 } from 'react-native-reanimated';
 import { Swipeable } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
-import { Plus, Coffee, Sun, Sunset, Cookie, Trash2, Copy, RotateCcw } from 'lucide-react-native';
+import { Plus, Coffee, Sun, Sunset, Cookie, Trash2, Copy, RotateCcw, BookmarkPlus } from 'lucide-react-native';
 import { hapticImpact, hapticLight } from '../lib/haptics';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../constants/theme';
 
@@ -59,11 +59,11 @@ const FoodItem = memo(function FoodItem({ item, onRemove, mealType, openSwipeabl
 
   const handlePressIn = useCallback(() => {
     scale.value = withSpring(0.98, { damping: 15, stiffness: 300 });
-  }, []);
+  }, [scale]);
 
   const handlePressOut = useCallback(() => {
     scale.value = withSpring(1, { damping: 10, stiffness: 200 });
-  }, []);
+  }, [scale]);
 
   const handleRemove = useCallback(async () => {
     await hapticImpact();
@@ -96,7 +96,7 @@ const FoodItem = memo(function FoodItem({ item, onRemove, mealType, openSwipeabl
         <Text style={styles.swipeDeleteText}>Delete</Text>
       </Pressable>
     );
-  }, [handleRemove]);
+  }, [handleRemove, item.name]);
 
   return (
     <Swipeable
@@ -152,7 +152,7 @@ const FoodItem = memo(function FoodItem({ item, onRemove, mealType, openSwipeabl
 });
 
 // Memoized MealSection - prevents unnecessary re-renders when other meals change
-const MealSection = memo(function MealSection({ mealType, items, calories, onAddPress, onRemoveFood, onCopyMeal, onRepeatYesterday, isCopyingRepeat }) {
+const MealSection = memo(function MealSection({ mealType, items, calories, onAddPress, onRemoveFood, onCopyMeal, onRepeatYesterday, onSaveMeal, isCopyingRepeat }) {
   const config = MEAL_CONFIG[mealType];
   const Icon = config.icon;
   const addScale = useSharedValue(1);
@@ -164,11 +164,11 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
 
   const handleAddPressIn = useCallback(() => {
     addScale.value = withSpring(0.92, { damping: 15, stiffness: 300 });
-  }, []);
+  }, [addScale]);
 
   const handleAddPressOut = useCallback(() => {
     addScale.value = withSpring(1, { damping: 10, stiffness: 200 });
-  }, []);
+  }, [addScale]);
 
   const handleAddPress = useCallback(async () => {
     await hapticLight();
@@ -195,9 +195,9 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
             )}
           </View>
         </View>
-        <View style={styles.headerActions}>
-          {items.length > 0 && onCopyMeal && (
-            <Pressable
+          <View style={styles.headerActions}>
+            {items.length > 0 && onCopyMeal && (
+              <Pressable
               style={styles.copyButton}
               onPress={() => {
                 hapticLight();
@@ -206,13 +206,27 @@ const MealSection = memo(function MealSection({ mealType, items, calories, onAdd
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel={`Copy ${config.label} to another day`}
-            >
-              <Copy size={16} color={Colors.textSecondary} />
-            </Pressable>
-          )}
-          <Pressable
-            onPress={handleAddPress}
-            onPressIn={handleAddPressIn}
+              >
+                <Copy size={16} color={Colors.textSecondary} />
+              </Pressable>
+            )}
+            {items.length > 0 && onSaveMeal && (
+              <Pressable
+                style={styles.copyButton}
+                onPress={() => {
+                  hapticLight();
+                  onSaveMeal(mealType);
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Save ${config.label} as a go-to meal`}
+              >
+                <BookmarkPlus size={16} color={Colors.textSecondary} />
+              </Pressable>
+            )}
+            <Pressable
+              onPress={handleAddPress}
+              onPressIn={handleAddPressIn}
             onPressOut={handleAddPressOut}
             accessibilityRole="button"
             accessibilityLabel={`Add food to ${config.label}`}

@@ -1,15 +1,15 @@
 import { Tabs } from 'expo-router';
-import { View, StyleSheet, Pressable, Animated, Platform, Dimensions } from 'react-native';
+import { View, StyleSheet, Pressable, Animated, Platform } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { Home, Plus, BarChart3, User } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { hapticImpact, hapticLight } from '../../lib/haptics';
 import ReAnimated, { FadeInUp } from 'react-native-reanimated';
-import { Colors, Spacing, BorderRadius, Gradients, Glass } from '../../constants/theme';
+import { Colors, Spacing, Gradients } from '../../constants/theme';
 import { trackEvent } from '../../lib/analytics';
+import { startTabSwitchTrace } from '../../lib/tabSwitchTrace';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const VISIBLE_ROUTE_ORDER = ['index', 'add', 'stats', 'profile'];
 
 // Kinetic FAB - The centerpiece button with living animations
@@ -240,6 +240,7 @@ function FloatingDock({ state, navigation }) {
             });
             if (!focused && !event.defaultPrevented) {
               // Track tab switch as a navigation event
+              startTabSwitchTrace(route.name);
               trackEvent('navigation', 'tab_switch', {
                 label: route.name,
                 metadata: { tabName: TAB_LABELS[route.name] || route.name },
@@ -290,6 +291,7 @@ function FloatingDock({ state, navigation }) {
 export default function TabLayout() {
   return (
     <Tabs
+      detachInactiveScreens={false}
       tabBar={(props) => <FloatingDock {...props} />}
       screenOptions={{
         headerShown: false,

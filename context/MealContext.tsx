@@ -24,6 +24,8 @@ import { mergeFrequentFoods, recordFrequentFood } from '../lib/frequentFoodsStor
 import { buildInitialMealHydration, normalizeCachedDayData } from '../lib/mealStartup';
 import { buildMealCacheKey, getLegacyMealCacheKeys } from '../lib/profileState';
 import { replaceRecentMealSnapshot, syncRecentMealsForDate } from '../lib/recentMeals';
+import { buildFoodLogInsertPayload } from '../lib/mealLogPayload';
+import { recordFirstFoodAddFromStartup } from '../lib/startupTrace';
 import type { ImportedFoodDiaryEntry } from '../services/importMyFitnessPal';
 import type {
   MealAction,
@@ -165,6 +167,28 @@ function getTodayString(): DateKey {
 
 function getDayData(state: MealState, dateKey: DateKey): DayData {
   return state.dayData[dateKey] || { ...EMPTY_DAY, meals: { ...EMPTY_DAY.meals } };
+}
+
+function cloneDayData(dayData?: DayData | null): DayData {
+  const source = dayData || EMPTY_DAY;
+  return {
+    meals: {
+      breakfast: [...(source.meals?.breakfast || [])],
+      lunch: [...(source.meals?.lunch || [])],
+      dinner: [...(source.meals?.dinner || [])],
+      snacks: [...(source.meals?.snacks || [])],
+    },
+    totals: {
+      calories: source.totals?.calories || 0,
+      protein: source.totals?.protein || 0,
+      carbs: source.totals?.carbs || 0,
+      fat: source.totals?.fat || 0,
+    },
+    waterIntake: source.waterIntake || 0,
+    exercises: [...(source.exercises || [])],
+    caloriesBurned: source.caloriesBurned || 0,
+    exerciseMinutes: source.exerciseMinutes || 0,
+  };
 }
 
 function createClientRequestId(): string {
@@ -609,6 +633,26 @@ export function MealProvider({
       if (foodError && __DEV__) console.error('[Meal] Food fetch error:', foodError.message);
       if (workoutError && __DEV__) console.error('[Meal] Workout fetch error:', workoutError.message);
 
+      const existingDay =
+        stateRef.current.dayData[dateKey] ||
+        await readCachedDayData(user.id, dateKey) ||
+        cloneDayData();
+
+      if (foodError && workoutError) {
+        if (!stateRef.current.dayData[dateKey]) {
+          dispatch({
+            type: 'HYDRATE',
+            payload: {
+              dayData: {
+                ...stateRef.current.dayData,
+                [dateKey]: existingDay,
+              },
+            },
+          });
+        }
+        return;
+      }
+
       const meals: Record<MealType, FoodLogEntry[]> = { breakfast: [], lunch: [], dinner: [], snacks: [] };
       const totals: MacroSet = { calories: 0, protein: 0, carbs: 0, fat: 0 };
       let waterIntake = 0;
@@ -650,7 +694,14 @@ export function MealProvider({
         });
       }
 
-      const nextDayData = { meals, totals, waterIntake, exercises, caloriesBurned, exerciseMinutes };
+      const nextDayData = {
+        meals: foodError ? existingDay.meals : meals,
+        totals: foodError ? existingDay.totals : totals,
+        waterIntake: foodError ? existingDay.waterIntake : waterIntake,
+        exercises: workoutError ? existingDay.exercises : exercises,
+        caloriesBurned: workoutError ? existingDay.caloriesBurned : caloriesBurned,
+        exerciseMinutes: workoutError ? existingDay.exerciseMinutes : exerciseMinutes,
+      };
 
       dispatch({
         type: 'HYDRATE',
@@ -855,6 +906,11 @@ export function MealProvider({
 
         // Optimistic update -- food appears instantly in UI regardless of network
         dispatch({ type: 'ADD_FOOD', payload: { food: optimisticFood, mealType: effectiveMealType, dateKey: selectedDateKey } });
+        recordFirstFoodAddFromStartup({
+          mealType: effectiveMealType,
+          selectedDateKey,
+          source: food.sourceLabel || food.source || 'manual',
+        });
         replaceRecentMealSnapshot({
           dateKey: selectedDateKey,
           mealType: effectiveMealType,
@@ -880,12 +936,7 @@ export function MealProvider({
           await queueOperation({
             table: 'food_logs',
             type: 'INSERT',
-            payload: {
-              user_id: user.id, date: selectedDateKey,
-              name: (food.name || '').trim(), calories: food.calories || 0,
-              protein: food.protein || 0, carbs: food.carbs || 0, fat: food.fat || 0,
-              meal_type: effectiveMealType,
-            },
+            payload: buildFoodLogInsertPayload(user.id, selectedDateKey, effectiveMealType, food),
             tempId,
           });
           await recordFrequentFood(optimisticFood);
@@ -897,12 +948,7 @@ export function MealProvider({
         try {
           const { data, error } = await supabase
             .from('food_logs')
-            .insert({
-              user_id: user.id, date: selectedDateKey,
-              name: (food.name || '').trim(), calories: food.calories || 0,
-              protein: food.protein || 0, carbs: food.carbs || 0, fat: food.fat || 0,
-              meal_type: effectiveMealType,
-            })
+            .insert(buildFoodLogInsertPayload(user.id, selectedDateKey, effectiveMealType, food))
             .select().single();
 
           if (error) {

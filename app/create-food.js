@@ -73,6 +73,13 @@ function getDefaultMealByTime() {
   return 'snacks';
 }
 
+function buildCustomFoodCanonicalId(name) {
+  return `custom-${String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`;
+}
+
 export default function CreateFoodScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -128,6 +135,7 @@ export default function CreateFoodScreen() {
 
     const food = {
       id: Crypto.randomUUID(),
+      canonicalId: buildCustomFoodCanonicalId(sanitizedName),
       name: sanitizedName,
       emoji: selectedEmoji,
       calories: validateMacro(calories, 10000),
@@ -137,6 +145,13 @@ export default function CreateFoodScreen() {
       serving: sanitizeText(serving, 50) || '1 serving',
       servingSize: 1,
       servingUnit: 'serving',
+      source: 'custom',
+      sourceLabel: 'Custom',
+      qualityLabel: 'Custom',
+      confidenceLevel: 'high',
+      confidenceReason: 'Saved by you',
+      trustScore: 92,
+      resultKind: 'custom',
     };
 
     addFood(food, meal);
